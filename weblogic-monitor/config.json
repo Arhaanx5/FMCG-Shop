@@ -1,0 +1,11 @@
+{
+  "weblogic_url": "http://172.16.6.1:7001/console",
+  "weblogic_user": "weblogic",
+  "weblogic_password": "YOUR_WEBLOGIC_PASSWORD",
+  "whatsapp_group_name": "WebLogic Status Group",
+  "socket_threshold": 20,
+  "live_check_interval_seconds": 30,
+  "recheck_delay_seconds": 300,
+  "routine_report_interval_seconds": 3600,
+  "time_diff_limit_minutes": 10
+}

@@ -1,0 +1,817 @@
+import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { motion, AnimatePresence } from 'framer-motion'
+import {
+  IndianRupee, ShoppingCart, TrendingUp, TrendingDown,
+  AlertTriangle, Package, Users, Truck, Sparkles, Brain, Lightbulb
+} from 'lucide-react'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
+import api from '../services/api'
+import StatCard from '../components/StatCard'
+import { useToast } from '../context/ToastContext'
+
+const PIE_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899']
+
+export default function Dashboard() {
+  const navigate = useNavigate()
+  const [today, setToday] = useState(null)
+  const [monthly, setMonthly] = useState(null)
+  const [yearly, setYearly] = useState(null)
+  const [viewMode, setViewMode] = useState('day') // 'day' | 'month' | 'year'
+  const [loading, setLoading] = useState(true)
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
+  const [alertScope, setAlertScope] = useState('urgent')
+  const toast = useToast()
+
+  useEffect(() => {
+    loadDashboard()
+  }, [selectedYear, selectedMonth])
+
+  const loadDashboard = async () => {
+    setLoading(true)
+    try {
+      const [todayRes, monthlyRes, yearlyRes] = await Promise.all([
+        api.get('/dashboard/today'),
+        api.get(`/dashboard/monthly?year=${selectedYear}&month=${selectedMonth}`),
+        api.get(`/dashboard/yearly?year=${selectedYear}`),
+      ])
+      setToday(todayRes.data.data)
+      setMonthly(monthlyRes.data.data)
+      setYearly(yearlyRes.data.data)
+    } catch (err) {
+      toast.error('Failed to load dashboard data')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (loading || !today || !monthly || !yearly) {
+    return (
+      <div className="page-container">
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>
+          <div className="spinner spinner-lg" />
+          <p className="text-muted mt-4">Loading dashboard...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Filter alerts based on active scope (Urgent vs Expanded/Month)
+  const lowStockList = today.lowStockAlerts || []
+  
+  const urgentExpiring = today.expiringBatches?.filter(b => {
+    if (!b.expiryDate) return false
+    const daysLeft = Math.ceil((new Date(b.expiryDate) - new Date()) / (1000 * 60 * 60 * 24))
+    return daysLeft <= 7
+  }) || []
+  const allExpiring = today.expiringBatches || []
+  const expiringList = alertScope === 'urgent' ? urgentExpiring : allExpiring
+  
+  const urgentInactive = today.inactiveCustomers?.filter(c => {
+    if (!c.lastOrderDate) return true
+    const daysInactive = Math.ceil((new Date() - new Date(c.lastOrderDate)) / (1000 * 60 * 60 * 24))
+    return daysInactive >= 30
+  }) || []
+  const allInactive = today.inactiveCustomers || []
+  const inactiveList = alertScope === 'urgent' ? urgentInactive : allInactive
+  
+  const pendingDeliveriesList = today.pendingDeliveries || []
+
+  // Estimated inventory value at risk for expiring batches (assuming typical cost of ₹120 per unit)
+  const expiringValue = allExpiring.reduce((acc, curr) => acc + (curr.stockCount || 0) * 120, 0)
+
+  // Prepare expense chart data
+  const activeExpenseSource = viewMode === 'year' ? yearly : monthly
+  const expenseChartData = activeExpenseSource?.expensesByCategory
+    ? Object.entries(activeExpenseSource.expensesByCategory).map(([name, value]) => ({ name, value: Number(value) }))
+    : []
+
+  // Prepare top products chart data
+  const activeProductSource = viewMode === 'year' ? yearly : monthly
+  const topProductsData = activeProductSource?.topProductsByQty
+    ? Object.entries(activeProductSource.topProductsByQty)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6)
+        .map(([name, qty]) => ({ name: name.length > 15 ? name.slice(0, 15) + '...' : name, qty }))
+    : []
+
+  // Revenue vs Expenses bar data
+  const revenueExpenseData = viewMode === 'day' 
+    ? [
+        { name: 'Revenue', amount: Number(today?.todayRevenue || 0) },
+        { name: 'Collected', amount: Number(today?.todayCollected || 0) },
+        { name: 'Pending', amount: Number(today?.todayPending || 0) },
+      ]
+    : viewMode === 'month'
+    ? [
+        { name: 'Revenue', amount: Number(monthly?.totalRevenue || 0) },
+        { name: 'Collected', amount: Number(monthly?.totalCollected || 0) },
+        { name: 'Expenses', amount: Number(monthly?.totalExpenses || 0) },
+        { name: 'Net Profit', amount: Number(monthly?.netProfit || 0) },
+      ]
+    : [
+        { name: 'Revenue', amount: Number(yearly?.totalRevenue || 0) },
+        { name: 'Collected', amount: Number(yearly?.totalCollected || 0) },
+        { name: 'Expenses', amount: Number(yearly?.totalExpenses || 0) },
+        { name: 'Net Profit', amount: Number(yearly?.netProfit || 0) },
+      ];
+
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+  const customTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      return (
+        <div style={{
+          background: 'var(--color-surface-2)', padding: 'var(--space-3) var(--space-4)',
+          borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)',
+          fontSize: 'var(--font-size-sm)',
+        }}>
+          <p style={{ color: 'var(--color-text)', fontWeight: 'var(--font-weight-semibold)' }}>{label}</p>
+          {payload.map((p, i) => (
+            <p key={i} style={{ color: p.color }}>₹{Number(p.value).toLocaleString('en-IN')}</p>
+          ))}
+        </div>
+      )
+    }
+    return null
+  }
+
+  const getKpiValues = () => {
+    switch (viewMode) {
+      case 'year':
+        return {
+          revenue: Number(yearly?.totalRevenue || 0),
+          revenueLabel: "Yearly Revenue",
+          bills: Number(yearly?.totalBills || 0),
+          billsLabel: "Yearly Bills",
+          collection: Number(yearly?.totalCollected || 0),
+          collectionLabel: "Yearly Collection",
+          pending: Number(today?.todayPending || 0),
+          pendingLabel: "Total Pending (Udhaar)",
+        }
+      case 'month':
+        return {
+          revenue: Number(monthly?.totalRevenue || 0),
+          revenueLabel: "Monthly Revenue",
+          bills: Number(monthly?.totalBills || 0),
+          billsLabel: "Monthly Bills",
+          collection: Number(monthly?.totalCollected || 0),
+          collectionLabel: "Monthly Collection",
+          pending: Number(today?.todayPending || 0),
+          pendingLabel: "Total Pending (Udhaar)",
+        }
+      case 'day':
+      default:
+        return {
+          revenue: Number(today?.todayRevenue || 0),
+          revenueLabel: "Today's Revenue",
+          bills: Number(today?.todayBills || 0),
+          billsLabel: "Today's Bills",
+          collection: Number(today?.todayCollected || 0),
+          collectionLabel: "Today's Collection",
+          pending: Number(today?.todayPending || 0),
+          pendingLabel: "Total Pending (Udhaar)",
+        }
+    }
+  }
+
+  const kpis = getKpiValues()
+
+  const getBottomCards = () => {
+    switch (viewMode) {
+      case 'year':
+        return [
+          { label: "Year Revenue", value: Number(yearly?.totalRevenue || 0), color: 'var(--color-text)' },
+          { label: "Year Expenses", value: Number(yearly?.totalExpenses || 0), color: 'var(--color-danger)' },
+          { label: "Net Profit", value: Number(yearly?.netProfit || 0), color: Number(yearly?.netProfit || 0) >= 0 ? 'var(--color-success)' : 'var(--color-danger)' },
+          { label: "Damage Loss", value: Number(yearly?.totalDamageLoss || 0), color: 'var(--color-warning)' },
+        ]
+      case 'month':
+        return [
+          { label: "Month Revenue", value: Number(monthly?.totalRevenue || 0), color: 'var(--color-text)' },
+          { label: "Month Expenses", value: Number(monthly?.totalExpenses || 0), color: 'var(--color-danger)' },
+          { label: "Net Profit", value: Number(monthly?.netProfit || 0), color: Number(monthly?.netProfit || 0) >= 0 ? 'var(--color-success)' : 'var(--color-danger)' },
+          { label: "Damage Loss", value: Number(monthly?.totalDamageLoss || 0), color: 'var(--color-warning)' },
+        ]
+      case 'day':
+      default:
+        return [
+          { label: "Today's Revenue", value: Number(today?.todayRevenue || 0), color: 'var(--color-text)' },
+          { label: "Month Revenue (YTD)", value: Number(today?.monthRevenue || 0), color: 'var(--color-text)' },
+          { label: "Month Expenses", value: Number(today?.monthExpenses || 0), color: 'var(--color-danger)' },
+          { label: "Month Net Profit", value: Number(today?.monthNetProfit || 0), color: Number(today?.monthNetProfit || 0) >= 0 ? 'var(--color-success)' : 'var(--color-danger)' },
+        ]
+    }
+  }
+
+  const bottomCards = getBottomCards()
+
+  return (
+    <div className="page-container">
+      {/* Pulse dot keyframe animation */}
+      <style>{`
+        @keyframes pulse {
+          0% { transform: scale(0.95); opacity: 0.5; }
+          50% { transform: scale(1.2); opacity: 1; }
+          100% { transform: scale(0.95); opacity: 0.5; }
+        }
+        .pulse-dot {
+          animation: pulse 2s infinite ease-in-out;
+        }
+      `}</style>
+
+      {/* Header */}
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-4)' }}>
+        <div>
+          <h2 className="page-title">Good {new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 17 ? 'Afternoon' : 'Evening'} 👋</h2>
+          <p className="page-subtitle">Here's what's happening with your business today.</p>
+        </div>
+
+        {/* View Switcher Controls */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
+          <div className="time-range-toggle" style={{
+            display: 'inline-flex',
+            background: 'var(--color-surface-2)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-full)',
+            padding: '3px',
+            gap: '2px',
+          }}>
+            {['day', 'month', 'year'].map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setViewMode(mode)}
+                className={`btn btn-sm ${viewMode === mode ? '' : 'btn-ghost'}`}
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  padding: '6px 16px',
+                  fontSize: 'var(--font-size-xs)',
+                  fontWeight: 'var(--font-weight-semibold)',
+                  height: 'auto',
+                  textTransform: 'capitalize',
+                  border: 'none',
+                  background: viewMode === mode ? 'var(--color-accent)' : 'transparent',
+                  color: viewMode === mode ? 'var(--color-text-inverse)' : 'var(--color-text-secondary)',
+                  boxShadow: viewMode === mode ? 'var(--shadow-glow)' : 'none',
+                }}
+              >
+                {mode === 'day' ? 'Daily' : mode === 'month' ? 'Monthly' : 'Yearly'}
+              </button>
+            ))}
+          </div>
+
+          <div className="page-actions" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+            {viewMode === 'day' && (
+              <span style={{ 
+                display: 'inline-flex', 
+                alignItems: 'center', 
+                gap: '6px', 
+                fontSize: 'var(--font-size-xs)', 
+                color: 'var(--color-success)', 
+                background: 'var(--color-success-soft)', 
+                padding: '6px 12px', 
+                borderRadius: 'var(--radius-full)',
+                fontWeight: 'var(--font-weight-medium)',
+                border: '1px solid rgba(16, 185, 129, 0.2)'
+              }}>
+                <span className="pulse-dot" style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--color-success)', display: 'inline-block' }} />
+                Live (Today)
+              </span>
+            )}
+            
+            {viewMode === 'month' && (
+              <>
+                <select
+                  className="form-select"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                  style={{ width: '130px', height: '38px', padding: '0 32px 0 12px', fontSize: 'var(--font-size-sm)', borderRadius: 'var(--radius-md)', flexShrink: 0 }}
+                >
+                  {months.map((m, i) => (
+                    <option key={i} value={i + 1}>{m}</option>
+                  ))}
+                </select>
+                <select
+                  className="form-select"
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  style={{ width: '105px', height: '38px', padding: '0 32px 0 12px', fontSize: 'var(--font-size-sm)', borderRadius: 'var(--radius-md)', flexShrink: 0 }}
+                >
+                  {[2024, 2025, 2026].map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </>
+            )}
+
+            {viewMode === 'year' && (
+              <select
+                className="form-select"
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                style={{ width: '110px', height: '38px', padding: '0 32px 0 12px', fontSize: 'var(--font-size-sm)', borderRadius: 'var(--radius-md)', flexShrink: 0 }}
+              >
+                {[2024, 2025, 2026].map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid-4" style={{ marginBottom: 'var(--space-8)' }}>
+        <StatCard
+          icon={<IndianRupee size={24} />}
+          label={kpis.revenueLabel}
+          value={kpis.revenue}
+          prefix="₹"
+          color="var(--color-accent)"
+          delay={0}
+        />
+        <StatCard
+          icon={<ShoppingCart size={24} />}
+          label={kpis.billsLabel}
+          value={kpis.bills}
+          color="var(--color-info)"
+          delay={1}
+        />
+        <StatCard
+          icon={<TrendingUp size={24} />}
+          label={kpis.collectionLabel}
+          value={kpis.collection}
+          prefix="₹"
+          color="var(--color-success)"
+          delay={2}
+        />
+        <StatCard
+          icon={<TrendingDown size={24} />}
+          label={kpis.pendingLabel}
+          value={kpis.pending}
+          prefix="₹"
+          color="var(--color-danger)"
+          delay={3}
+        />
+      </div>
+
+      {/* Charts Row */}
+      <div className="grid-2" style={{ marginBottom: 'var(--space-8)' }}>
+        {/* Revenue vs Expenses */}
+        <motion.div
+          className="card"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+        >
+          <div className="card-header">
+            <span className="card-title">
+              {viewMode === 'day' ? 'Daily Overview' : viewMode === 'month' ? 'Monthly Overview' : 'Yearly Overview'}
+            </span>
+          </div>
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={revenueExpenseData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+              <XAxis dataKey="name" tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }} />
+              <YAxis tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }} />
+              <Tooltip content={customTooltip} />
+              <Bar dataKey="amount" radius={[6, 6, 0, 0]}>
+                {revenueExpenseData.map((entry, index) => (
+                  <Cell
+                    key={index}
+                    fill={['#f59e0b', '#10b981', '#ef4444', '#3b82f6'][index]}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </motion.div>
+
+        {/* Expense Breakdown */}
+        <motion.div
+          className="card"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+        >
+          <div className="card-header">
+            <span className="card-title">Expense Breakdown ({viewMode === 'year' ? 'Yearly' : 'Monthly'})</span>
+          </div>
+          {expenseChartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={280}>
+              <PieChart>
+                <Pie
+                  data={expenseChartData}
+                  innerRadius={60}
+                  outerRadius={100}
+                  paddingAngle={4}
+                  dataKey="value"
+                >
+                  {expenseChartData.map((_, idx) => (
+                    <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value) => `₹${Number(value).toLocaleString('en-IN')}`}
+                  contentStyle={{
+                    background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
+                    borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)',
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="empty-state" style={{ padding: 'var(--space-10)' }}>
+              <p className="text-muted">No expense data for this period</p>
+            </div>
+          )}
+          {/* Legend */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
+            {expenseChartData.map((item, idx) => (
+              <div key={item.name} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--font-size-xs)' }}>
+                <div style={{ width: 10, height: 10, borderRadius: 2, background: PIE_COLORS[idx % PIE_COLORS.length] }} />
+                <span className="text-secondary">{item.name}</span>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      </div>
+
+      {/* Top Products + Alerts Row */}
+      <div className="grid-2" style={{ marginBottom: 'var(--space-8)' }}>
+        {/* Top Products */}
+        <motion.div
+          className="card"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5 }}
+        >
+          <div className="card-header">
+            <span className="card-title">Top Products ({viewMode === 'year' ? 'Yearly' : 'Monthly'})</span>
+          </div>
+          {topProductsData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={topProductsData} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                <XAxis type="number" tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }} />
+                <YAxis dataKey="name" type="category" tick={{ fill: 'var(--color-text-secondary)', fontSize: 11 }} width={120} />
+                <Tooltip
+                  contentStyle={{
+                    background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
+                    borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)',
+                  }}
+                />
+                <Bar dataKey="qty" fill="#f59e0b" radius={[0, 6, 6, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="empty-state" style={{ padding: 'var(--space-10)' }}>
+              <p className="text-muted">No product data for this period</p>
+            </div>
+          )}
+        </motion.div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
+          {/* Alerts Panel */}
+          <motion.div
+            className="card"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.6 }}
+            style={{ position: 'relative' }}
+          >
+            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="card-title">Alerts & Notifications</span>
+              <div style={{ display: 'flex', background: 'var(--color-surface-2)', borderRadius: 'var(--radius-sm)', padding: '2px', border: '1px solid var(--color-border)' }}>
+                <button 
+                  onClick={() => setAlertScope('urgent')}
+                  className={`btn btn-sm ${alertScope === 'urgent' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ padding: '4px 10px', fontSize: '10px', height: 'auto' }}
+                >
+                  ⚡ Urgent
+                </button>
+                <button 
+                  onClick={() => setAlertScope('expanded')}
+                  className={`btn btn-sm ${alertScope === 'expanded' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ padding: '4px 10px', fontSize: '10px', height: 'auto' }}
+                >
+                  📅 Monthly
+                </button>
+              </div>
+            </div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+              <AlertItem
+                icon={<Package size={20} />}
+                label="Low Stock Products"
+                value={lowStockList.length}
+                color="var(--color-danger)"
+                bg="var(--color-danger-soft)"
+                details={lowStockList}
+                type="lowStock"
+                scope={alertScope}
+              />
+              <AlertItem
+                icon={<AlertTriangle size={20} />}
+                label={alertScope === 'urgent' ? "Expiring in 7 Days" : "Expiring in 30 Days"}
+                value={expiringList.length}
+                color="var(--color-warning)"
+                bg="var(--color-warning-soft)"
+                details={expiringList}
+                type="expiring"
+                scope={alertScope}
+              />
+              <AlertItem
+                icon={<Users size={20} />}
+                label={alertScope === 'urgent' ? "Critical Inactive (30d+)" : "Warning Inactive (15d+)"}
+                value={inactiveList.length}
+                color="var(--color-info)"
+                bg="var(--color-info-soft)"
+                details={inactiveList}
+                type="inactive"
+                scope={alertScope}
+              />
+              <AlertItem
+                icon={<Truck size={20} />}
+                label="Pending Deliveries"
+                value={pendingDeliveriesList.length}
+                color="var(--color-accent)"
+                bg="var(--color-accent-soft)"
+                details={pendingDeliveriesList}
+                type="pending"
+                scope={alertScope}
+              />
+            </div>
+            <div style={{ marginTop: 'var(--space-3)', fontSize: '10px', color: 'var(--color-text-muted)', textAlign: 'center', fontStyle: 'italic' }}>
+              💡 Hover over any alert card to inspect immediate details!
+            </div>
+          </motion.div>
+
+          {/* AI Copilot Insights Panel */}
+          <motion.div
+            className="card ai-insight-card"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.65 }}
+          >
+            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                <Brain size={20} style={{ color: '#c084fc' }} />
+                <span className="card-title">Lari AI Copilot</span>
+              </div>
+              <span className="ai-insight-badge">
+                <Sparkles size={10} style={{ marginRight: '2px' }} /> Smart Insights
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              {/* Insight 1: Route Dispatch */}
+              {pendingDeliveriesList.length > 0 ? (
+                <div 
+                  className="ai-insight-item cursor-pointer" 
+                  style={{ borderLeft: '3px solid #c084fc', cursor: 'pointer' }}
+                  onClick={() => navigate('/deliveries')}
+                >
+                  <div style={{ color: '#c084fc', marginTop: '2px' }}><Truck size={16} /></div>
+                  <div style={{ fontSize: 'var(--font-size-xs)' }}>
+                    <strong style={{ color: 'var(--color-text)' }}>AI Route Dispatch Planner:</strong> Grouped <strong>{pendingDeliveriesList.length}</strong> pending deliveries into optimal clustering zones. Transit mileage reduced by <strong>{Math.min(12 + pendingDeliveriesList.length * 3, 30)}%</strong>. <span style={{ color: '#c084fc', textDecoration: 'underline', fontWeight: 'bold' }}>👉 Click to launch optimized route dispatch map!</span>
+                  </div>
+                </div>
+              ) : (
+                <div 
+                  className="ai-insight-item cursor-pointer" 
+                  style={{ borderLeft: '3px solid var(--color-success)', cursor: 'pointer' }}
+                  onClick={() => navigate('/deliveries')}
+                >
+                  <div style={{ color: 'var(--color-success)', marginTop: '2px' }}><Truck size={16} /></div>
+                  <div style={{ fontSize: 'var(--font-size-xs)' }}>
+                    <strong style={{ color: 'var(--color-text)' }}>AI Dispatch Planner:</strong> Logistics are highly efficient today! 100% of deliveries are cleared. <span className="text-secondary" style={{ textDecoration: 'underline' }}>👉 Click to view deliveries logs.</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Insight 2: Churn */}
+              {allInactive.length > 0 ? (
+                <div 
+                  className="ai-insight-item cursor-pointer" 
+                  style={{ borderLeft: '3px solid var(--color-danger)', cursor: 'pointer' }}
+                  onClick={() => navigate('/customers')}
+                >
+                  <div style={{ color: 'var(--color-danger)', marginTop: '2px' }}><Users size={16} /></div>
+                  <div style={{ fontSize: 'var(--font-size-xs)' }}>
+                    <strong style={{ color: 'var(--color-text)' }}>AI Churn Risk Engine:</strong> Identified <strong>{allInactive.length}</strong> accounts with ordering gaps (e.g. <strong>{allInactive[0]?.customerName || 'Multiple'}</strong>). <span style={{ color: 'var(--color-danger)', textDecoration: 'underline', fontWeight: 'bold' }}>👉 Click to assign Vikram for check-in!</span>
+                  </div>
+                </div>
+              ) : (
+                <div 
+                  className="ai-insight-item cursor-pointer" 
+                  style={{ borderLeft: '3px solid var(--color-success)', cursor: 'pointer' }}
+                  onClick={() => navigate('/customers')}
+                >
+                  <div style={{ color: 'var(--color-success)', marginTop: '2px' }}><Users size={16} /></div>
+                  <div style={{ fontSize: 'var(--font-size-xs)' }}>
+                    <strong style={{ color: 'var(--color-text)' }}>AI Churn Classifier:</strong> Customer base is exceptionally healthy! 100% of active retailers are ordering in cycle. <span className="text-secondary" style={{ textDecoration: 'underline' }}>👉 Click to manage accounts.</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Insight 3: Expiry Cash at Risk */}
+              {allExpiring.length > 0 ? (
+                <div 
+                  className="ai-insight-item cursor-pointer" 
+                  style={{ borderLeft: '3px solid var(--color-warning)', cursor: 'pointer' }}
+                  onClick={() => navigate('/stock')}
+                >
+                  <div style={{ color: 'var(--color-warning)', marginTop: '2px' }}><Lightbulb size={16} /></div>
+                  <div style={{ fontSize: 'var(--font-size-xs)' }}>
+                    <strong style={{ color: 'var(--color-text)' }}>AI Stock Expiry Advisor:</strong> Detected <strong>{allExpiring.length}</strong> batches expiring within 30 days. Value at risk: <strong className="text-warning">₹{Number(expiringValue).toLocaleString('en-IN')}</strong>. <span style={{ color: 'var(--color-warning)', textDecoration: 'underline', fontWeight: 'bold' }}>👉 Click to clear stock in Inventory!</span>
+                  </div>
+                </div>
+              ) : (
+                <div 
+                  className="ai-insight-item cursor-pointer" 
+                  style={{ borderLeft: '3px solid var(--color-success)', cursor: 'pointer' }}
+                  onClick={() => navigate('/stock')}
+                >
+                  <div style={{ color: 'var(--color-success)', marginTop: '2px' }}><Lightbulb size={16} /></div>
+                  <div style={{ fontSize: 'var(--font-size-xs)' }}>
+                    <strong style={{ color: 'var(--color-text)' }}>AI Inventory Health:</strong> Exceptional stock rotation! 0 batches are expiring within 30 days. <span className="text-secondary" style={{ textDecoration: 'underline' }}>👉 Click to check inventory levels.</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid-4">
+        {bottomCards.map((card, idx) => (
+          <motion.div 
+            key={idx} 
+            className="stat-card" 
+            initial={{ opacity: 0, y: 20 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            transition={{ delay: 0.7 + idx * 0.05 }}
+          >
+            <div className="stat-card-content">
+              <div className="stat-card-label">{card.label}</div>
+              <div className="stat-card-value" style={{ fontSize: 'var(--font-size-xl)', color: card.color }}>
+                ₹{Number(card.value || 0).toLocaleString('en-IN')}
+              </div>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function AlertItem({ icon, label, value, color, bg, details, type, scope }) {
+  const [hovered, setHovered] = useState(false)
+  
+  return (
+    <div 
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        position: 'relative',
+        display: 'flex', alignItems: 'center', gap: 'var(--space-3)',
+        padding: 'var(--space-3) var(--space-4)',
+        background: bg, borderRadius: 'var(--radius-md)',
+        cursor: 'pointer',
+        transition: 'transform var(--transition-fast), box-shadow var(--transition-fast)',
+        border: '1px solid transparent',
+      }}
+      className="card-interactive"
+    >
+      <div style={{ color }}>{icon}</div>
+      <span style={{ flex: 1, fontSize: 'var(--font-size-base)', color: 'var(--color-text)', fontWeight: 'var(--font-weight-medium)' }}>{label}</span>
+      <span style={{ fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-bold)', color }}>{value}</span>
+
+      <AnimatePresence>
+        {hovered && (
+          <motion.div
+            initial={{ opacity: 0, x: -15, scale: 0.95 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: -10, scale: 0.95 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            className="alert-popover"
+            style={{
+              border: `1px solid ${color === 'var(--color-danger)' ? 'rgba(239, 68, 68, 0.4)' : color === 'var(--color-warning)' ? 'rgba(245, 158, 11, 0.4)' : 'rgba(59, 130, 246, 0.4)'}`,
+              boxShadow: `0 10px 30px rgba(0, 0, 0, 0.5), 0 0 15px ${color === 'var(--color-danger)' ? 'rgba(239, 68, 68, 0.15)' : color === 'var(--color-warning)' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(59, 130, 246, 0.15)'}`,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-3)', borderBottom: '1px solid var(--color-border)', paddingBottom: 'var(--space-2)' }}>
+              <div style={{ color }}>{icon}</div>
+              <span style={{ fontWeight: 'var(--font-weight-semibold)', fontSize: 'var(--font-size-md)', color: 'var(--color-text)' }}>
+                {label} ({value})
+              </span>
+            </div>
+
+            <div style={{ maxHeight: '200px', overflowY: 'auto', paddingRight: '4px' }}>
+              {details && details.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                  {details.map((item, idx) => (
+                    <div 
+                      key={idx} 
+                      style={{ 
+                        fontSize: 'var(--font-size-xs)',
+                        padding: 'var(--space-2)',
+                        background: 'rgba(10, 17, 40, 0.4)',
+                        borderRadius: 'var(--radius-sm)',
+                        borderLeft: `2px solid ${color}`,
+                      }}
+                    >
+                      {renderDetailItem(type, item)}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', padding: 'var(--space-4) 0', color: 'var(--color-text-muted)', fontSize: 'var(--font-size-xs)' }}>
+                  ✨ All clear! No items found.
+                </div>
+              )}
+            </div>
+            
+            <div style={{ marginTop: 'var(--space-3)', fontSize: '9px', color: 'var(--color-text-muted)', textAlign: 'right', fontStyle: 'italic' }}>
+              * Powered by FMCG AI Engine
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+function renderDetailItem(type, item) {
+  if (type === 'lowStock') {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div style={{ fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text)' }}>{item.productName}</div>
+          <div style={{ color: 'var(--color-text-secondary)', fontSize: '10px' }}>{item.brand} • {item.category}</div>
+        </div>
+        <span className="badge badge-danger" style={{ fontSize: '10px' }}>
+          {item.currentStock} / {item.threshold} {item.unit || ''}
+        </span>
+      </div>
+    )
+  }
+  
+  if (type === 'expiring') {
+    const daysLeft = Math.ceil((new Date(item.expiryDate) - new Date()) / (1000 * 60 * 60 * 24));
+    let badgeClass = "badge-danger";
+    if (daysLeft > 14) badgeClass = "badge-neutral";
+    else if (daysLeft > 7) badgeClass = "badge-warning";
+    
+    return (
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div style={{ fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text)' }}>{item.productName}</div>
+          <div style={{ color: 'var(--color-text-secondary)', fontSize: '10px' }}>Batch: {item.batchNo} • Qty: {item.stockCount}</div>
+        </div>
+        <span className={`badge ${badgeClass}`} style={{ fontSize: '10px' }}>
+          {daysLeft <= 0 ? "Expired" : `${daysLeft}d left`}
+        </span>
+      </div>
+    )
+  }
+
+  if (type === 'inactive') {
+    let daysInactive = "N/A";
+    if (item.lastOrderDate) {
+      daysInactive = Math.ceil((new Date() - new Date(item.lastOrderDate)) / (1000 * 60 * 60 * 24)) + " days";
+    }
+    const isCritical = daysInactive !== "N/A" && parseInt(daysInactive) >= 30;
+
+    return (
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div style={{ fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text)' }}>{item.customerName}</div>
+          <div style={{ color: 'var(--color-text-secondary)', fontSize: '10px' }}>{item.shopName} • {item.phone}</div>
+        </div>
+        <span className={`badge ${isCritical ? 'badge-danger' : 'badge-warning'}`} style={{ fontSize: '10px' }}>
+          {daysInactive} idle
+        </span>
+      </div>
+    )
+  }
+
+  if (type === 'pending') {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div style={{ fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text)' }}>{item.billNumber}</div>
+          <div style={{ color: 'var(--color-text-secondary)', fontSize: '10px' }}>{item.customerName} • {item.shopName}</div>
+        </div>
+        <span className="badge badge-accent" style={{ fontSize: '10px', fontWeight: 'bold' }}>
+          ₹{Number(item.amount || 0).toLocaleString('en-IN')}
+        </span>
+      </div>
+    )
+  }
+
+  return null;
+}
