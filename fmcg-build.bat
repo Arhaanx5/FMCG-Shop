@@ -18,11 +18,15 @@ if %errorLevel% equ 0 (
     set SERVICE_NAME=fmcg-backend-uat
 )
 
-:: Update Capacitor configuration URL dynamically based on environment
+:: Update Android and Capacitor environment configurations dynamically based on environment
 if "%SERVICE_NAME%"=="fmcg-backend-prod" (
-    "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "(Get-Content frontend/capacitor.config.json) -replace 'uat.laritraders.store', 'app.laritraders.store' | Set-Content frontend/capacitor.config.json"
+    "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "(Get-Content frontend/capacitor.config.json) -replace '\"appId\":\s*\"[^\"]*\"', '\"appId\": \"com.laritraders.app\"' -replace '\"appName\":\s*\"[^\"]*\"', '\"appName\": \"Lari Traders\"' -replace '\"url\":\s*\"[^\"]*\"', '\"url\": \"https://app.laritraders.store\"' | Set-Content frontend/capacitor.config.json"
+    "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "(Get-Content frontend/android/app/src/main/res/values/strings.xml) -replace '<string name=\"app_name\">[^<]*</string>', '<string name=\"app_name\">Lari Traders</string>' -replace '<string name=\"title_activity_main\">[^<]*</string>', '<string name=\"title_activity_main\">Lari Traders</string>' -replace '<string name=\"package_name\">[^<]*</string>', '<string name=\"package_name\">com.laritraders.app</string>' -replace '<string name=\"custom_url_scheme\">[^<]*</string>', '<string name=\"custom_url_scheme\">com.laritraders.app</string>' | Set-Content frontend/android/app/src/main/res/values/strings.xml"
+    "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "(Get-Content frontend/android/app/build.gradle) -replace 'applicationId\s*\"[^\"]*\"', 'applicationId \"com.laritraders.app\"' | Set-Content frontend/android/app/build.gradle"
 ) else (
-    "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "(Get-Content frontend/capacitor.config.json) -replace 'app.laritraders.store', 'uat.laritraders.store' | Set-Content frontend/capacitor.config.json"
+    "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "(Get-Content frontend/capacitor.config.json) -replace '\"appId\":\s*\"[^\"]*\"', '\"appId\": \"com.laritraders.app.uat\"' -replace '\"appName\":\s*\"[^\"]*\"', '\"appName\": \"Lari Traders UAT\"' -replace '\"url\":\s*\"[^\"]*\"', '\"url\": \"https://uat.laritraders.store\"' | Set-Content frontend/capacitor.config.json"
+    "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "(Get-Content frontend/android/app/src/main/res/values/strings.xml) -replace '<string name=\"app_name\">[^<]*</string>', '<string name=\"app_name\">Lari Traders UAT</string>' -replace '<string name=\"title_activity_main\">[^<]*</string>', '<string name=\"title_activity_main\">Lari Traders UAT</string>' -replace '<string name=\"package_name\">[^<]*</string>', '<string name=\"package_name\">com.laritraders.app.uat</string>' -replace '<string name=\"custom_url_scheme\">[^<]*</string>', '<string name=\"custom_url_scheme\">com.laritraders.app.uat</string>' | Set-Content frontend/android/app/src/main/res/values/strings.xml"
+    "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "(Get-Content frontend/android/app/build.gradle) -replace 'applicationId\s*\"[^\"]*\"', 'applicationId \"com.laritraders.app.uat\"' | Set-Content frontend/android/app/build.gradle"
 )
 
 echo ==========================================
