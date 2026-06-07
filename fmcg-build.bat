@@ -18,6 +18,13 @@ if %errorLevel% equ 0 (
     set SERVICE_NAME=fmcg-backend-uat
 )
 
+:: Update Capacitor configuration URL dynamically based on environment
+if "%SERVICE_NAME%"=="fmcg-backend-prod" (
+    "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "(Get-Content frontend/capacitor.config.json) -replace 'uat.laritraders.store', 'app.laritraders.store' | Set-Content frontend/capacitor.config.json"
+) else (
+    "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "(Get-Content frontend/capacitor.config.json) -replace 'app.laritraders.store', 'uat.laritraders.store' | Set-Content frontend/capacitor.config.json"
+)
+
 echo ==========================================
 echo Project Directory: %~dp0
 echo Service Name:      %SERVICE_NAME%
