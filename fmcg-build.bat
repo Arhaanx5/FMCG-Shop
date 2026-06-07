@@ -8,10 +8,19 @@ if %errorLevel% neq 0 (
 )
 
 :: Go to the project root directory
-cd /d "d:\intelliJ2025\fmcg-shop\fmcg-shop"
+cd /d "%~dp0"
+
+:: Detect service name based on directory name
+echo %~dp0 | findstr /i "fmcg-shop-prod" >nul
+if %errorLevel% equ 0 (
+    set SERVICE_NAME=fmcg-backend-prod
+) else (
+    set SERVICE_NAME=fmcg-backend-uat
+)
 
 echo ==========================================
-echo Project Directory: d:\intelliJ2025\fmcg-shop\fmcg-shop
+echo Project Directory: %~dp0
+echo Service Name:      %SERVICE_NAME%
 echo ==========================================
 
 echo ==========================================
@@ -41,7 +50,7 @@ if %errorLevel% neq 0 (
 echo ==========================================
 echo 3. STOPPING BACKEND SERVICE...
 echo ==========================================
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Stop-Service fmcg-backend"
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Stop-Service %SERVICE_NAME%"
 
 echo ==========================================
 echo 4. PACKAGING BACKEND JAR...
@@ -56,7 +65,7 @@ if %errorLevel% neq 0 (
 echo ==========================================
 echo 5. STARTING BACKEND SERVICE...
 echo ==========================================
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Start-Service fmcg-backend"
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Start-Service %SERVICE_NAME%"
 
 echo ==========================================
 echo SUCCESS: Frontend and Backend built and restarted successfully!
