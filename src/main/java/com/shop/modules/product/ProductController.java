@@ -19,7 +19,7 @@ public class ProductController {
     private final ProductService productService;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','DELIVERY_BOY','SALESMAN')")
     public ResponseEntity<ApiResponse<org.springframework.data.domain.Page<ProductResponse>>>
     getAll(@RequestParam(required = false) String search,
            @RequestParam(defaultValue = "0") int page,
@@ -36,7 +36,7 @@ public class ProductController {
     }
 
     @GetMapping("/{idOrCode}")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','DELIVERY_BOY','SALESMAN')")
     public ResponseEntity<ApiResponse<ProductResponse>>
     getById(@PathVariable String idOrCode) {
         return ResponseEntity.ok(

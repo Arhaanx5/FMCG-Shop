@@ -42,20 +42,25 @@ public class BillItem {
     private int quantity;
 
     @Column(name = "free_quantity")
+    @Builder.Default
     private int freeQuantity = 0;
 
     private BigDecimal rate;
 
     @Column(name = "gst_percent")
+    @Builder.Default
     private BigDecimal gstPercent = BigDecimal.ZERO;
 
     @Column(name = "gst_amount")
+    @Builder.Default
     private BigDecimal gstAmount = BigDecimal.ZERO;
 
     @Column(name = "cess_percent")
+    @Builder.Default
     private BigDecimal cessPercent = BigDecimal.ZERO;
 
     @Column(name = "cess_amount")
+    @Builder.Default
     private BigDecimal cessAmount = BigDecimal.ZERO;
 
     private BigDecimal total;

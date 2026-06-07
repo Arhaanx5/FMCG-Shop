@@ -3,6 +3,7 @@ package com.shop.modules.product;
 import com.shop.modules.product.dto.CreateProductRequest;
 import com.shop.modules.product.dto.ProductResponse;
 import com.shop.modules.stock.StockRepository;
+import com.shop.modules.stock.StockService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
@@ -16,12 +17,11 @@ public class ProductService {
 
     private final ProductRepository productRepository;
     private final StockRepository stockRepository;
+    private final StockService stockService;
 
     private ProductResponse toResponse(Product product) {
 
-        var stock = stockRepository
-                .findByProductId(product.getId())
-                .orElse(null);
+        var stock = stockService.getOrCreateStock(product.getId());
 
         int totalPrimary = stock != null
                 ? stock.getTotalPrimaryUnits() : 0;

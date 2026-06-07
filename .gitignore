@@ -35,3 +35,11 @@ build/
 ### node_modules ###
 node_modules/
 frontend/node_modules/
+
+### WhatsApp Session & Cache ###
+session_data/
+.wwebjs_cache/
+whatsapp-service/session_data/
+whatsapp-service/.wwebjs_cache/
+**/session_data/
+**/.wwebjs_cache/

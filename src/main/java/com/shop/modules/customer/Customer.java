@@ -43,6 +43,7 @@ public class Customer {
     private String locationMethod;
 
     @Column(name = "total_pending")
+    @Builder.Default
     private BigDecimal totalPending = BigDecimal.ZERO;
 
     @Column(name = "credit_limit")
@@ -60,6 +61,7 @@ public class Customer {
     private LocalDateTime lastOrderAt;
 
     @Column(name = "is_active")
+    @Builder.Default
     private Boolean active = true;
 
     @Column(name = "created_at")

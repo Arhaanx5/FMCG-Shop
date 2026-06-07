@@ -1,17 +1,27 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Plus, AlertTriangle, Clock, Package, Edit2, History } from 'lucide-react'
+import { Plus, AlertTriangle, Clock, Package, Edit2, History, Trash2, Settings, PlayCircle, CheckCircle, XCircle } from 'lucide-react'
 import api from '../services/api'
 import DataTable from '../components/DataTable'
+import Pagination from '../components/Pagination'
 import Modal from '../components/Modal'
 import SearchSelect from '../components/SearchSelect'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 const emptyForm = { productId: '', batchNumber: '', primaryReceived: '', extraSecondaryReceived: '', buyPriceWithoutTax: '', buyPriceWithTax: '', expiryDate: '', supplierName: '' }
 
 export default function Stock() {
   const { isAdmin, isManager } = useAuth()
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
   const [stocks, setStocks] = useState([])
   const [products, setProducts] = useState([])
   const [expiring, setExpiring] = useState([])
@@ -24,6 +34,7 @@ export default function Stock() {
   const [batchProduct, setBatchProduct] = useState(null)
   const [batches, setBatches] = useState([])
   const [batchLoading, setBatchLoading] = useState(false)
+  const [writeOffTarget, setWriteOffTarget] = useState(null)
 
   // Adjust stock states
   const [adjustingBatch, setAdjustingBatch] = useState(null)
@@ -36,19 +47,40 @@ export default function Stock() {
   const [auditLogs, setAuditLogs] = useState([])
   const [logsLoading, setLogsLoading] = useState(false)
 
+  // Stock overview pagination
+  const [stockPage, setStockPage] = useState(0)
+  const [stockTotalPages, setStockTotalPages] = useState(0)
+  const [stockTotalElements, setStockTotalElements] = useState(0)
+  const STOCK_PAGE_SIZE = 20
+
+  // Audit log pagination
+  const [auditPage, setAuditPage] = useState(0)
+  const [auditTotalPages, setAuditTotalPages] = useState(0)
+  const [auditTotalElements, setAuditTotalElements] = useState(0)
+  const AUDIT_PAGE_SIZE = 15
+
+  // Scheduler panel state
+  const [schedulerStatus, setSchedulerStatus] = useState(null)
+  const [schedulerLoading, setSchedulerLoading] = useState(false)
+  const [runNowLoading, setRunNowLoading] = useState(false)
+  const [showRunNowConfirm, setShowRunNowConfirm] = useState(false)
+
   const clearError = (field) => {
     setValidationErrors(prev => ({ ...prev, [field]: null }))
   }
 
   const toast = useToast()
 
-  useEffect(() => { loadAll() }, [])
+  useEffect(() => { loadAll(0, true) }, [])
 
-  const loadAuditLogs = async () => {
+  const loadAuditLogs = async (pg = 0) => {
     setLogsLoading(true)
     try {
-      const res = await api.get('/stock/adjustments')
-      setAuditLogs(res.data.data || [])
+      const res = await api.get(`/stock/adjustments?page=${pg}&size=${AUDIT_PAGE_SIZE}`)
+      const pageData = res.data.data
+      setAuditLogs(pageData?.content || [])
+      setAuditTotalPages(pageData?.totalPages || 0)
+      setAuditTotalElements(pageData?.totalElements || 0)
     } catch {
       toast.error('Failed to load stock audit logs')
     } finally {
@@ -56,10 +88,36 @@ export default function Stock() {
     }
   }
 
-  useEffect(() => {
-    if (activeTab === 'audit' && isAdmin) {
-      loadAuditLogs()
+  const loadSchedulerStatus = async () => {
+    setSchedulerLoading(true)
+    try {
+      const res = await api.get('/scheduler/expiry/status')
+      setSchedulerStatus(res.data.data)
+    } catch {
+      toast.error('Failed to load scheduler status')
+    } finally {
+      setSchedulerLoading(false)
     }
+  }
+
+  const handleRunNow = async () => {
+    setRunNowLoading(true)
+    try {
+      const res = await api.post('/scheduler/expiry/run-now')
+      toast.success(res.data.message || 'Sweep completed!')
+      loadSchedulerStatus()
+      loadAll(0)
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Sweep failed')
+    } finally {
+      setRunNowLoading(false)
+      setShowRunNowConfirm(false)
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab === 'audit' && isAdmin) loadAuditLogs(0)
+    if (activeTab === 'scheduler' && isAdmin) loadSchedulerStatus()
   }, [activeTab])
 
   const handleAdjustPriceChange = (type, value) => {
@@ -127,19 +185,33 @@ export default function Stock() {
     }
   }
 
-  const loadAll = async () => {
-    setLoading(true)
+  const executeWriteOff = async (batchId) => {
+    try {
+      await api.post(`/stock/batches/${batchId}/write-off-expiry`)
+      toast.success('Expired stock written off to Damage Log successfully!')
+      setWriteOffTarget(null)
+      loadAll()
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to write off expired stock')
+    }
+  }
+
+  const loadAll = async (pg = 0, showSpinner = false) => {
+    if (showSpinner) setLoading(true)
     try {
       const [sRes, pRes, eRes] = await Promise.all([
-        api.get('/stock'),
+        api.get(`/stock/paged?page=${pg}&size=${STOCK_PAGE_SIZE}`),
         api.get('/products?size=500'),
         api.get('/stock/expiring-soon'),
       ])
-      setStocks(sRes.data.data || [])
+      const stockPage = sRes.data.data
+      setStocks(stockPage?.content || [])
+      setStockTotalPages(stockPage?.totalPages || 0)
+      setStockTotalElements(stockPage?.totalElements || 0)
       setProducts(pRes.data.data?.content || pRes.data.data || [])
       setExpiring(eRes.data.data || [])
     } catch { toast.error('Failed to load stock data') }
-    finally { setLoading(false) }
+    finally { if (showSpinner) setLoading(false) }
   }
 
   const loadBatches = async (productId, productName) => {
@@ -213,7 +285,14 @@ export default function Stock() {
   const stockColumns = [
     { header: 'Product', accessor: 'productName', render: (row) => (
       <div>
-        <div className="font-medium">{row.productName}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+          <span className="font-medium">{row.productName}</span>
+          {row.isLowStock && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', color: 'var(--color-danger)', fontSize: '10px', fontWeight: 'bold' }}>
+              ⚠️
+            </span>
+          )}
+        </div>
         {row.brand && <div className="text-xs text-muted">{row.brand}</div>}
       </div>
     )},
@@ -229,7 +308,12 @@ export default function Stock() {
         ? <span className="badge badge-danger"><AlertTriangle size={12} /> Low Stock</span>
         : <span className="badge badge-success">OK</span>
     },
-  ]
+  ].filter(col => {
+    if (isMobile) {
+      return !['category', 'openBox', 'stockStatus'].includes(col.accessor || col.key)
+    }
+    return true
+  })
 
   const expiringColumns = [
     { header: 'Product', accessor: 'productName', render: (row) => (
@@ -253,7 +337,12 @@ export default function Stock() {
         </div>
       ) : '—'
     }},
-  ]
+  ].filter(col => {
+    if (isMobile) {
+      return !['batchNumber', 'supplierName'].includes(col.accessor)
+    }
+    return true
+  })
 
   const batchColumns = [
     { header: 'Batch #', accessor: 'batchNumber' },
@@ -269,7 +358,12 @@ export default function Stock() {
         {!row.exhausted && !row.expiringSoon && <span className="badge badge-success">Active</span>}
       </div>
     )},
-  ]
+  ].filter(col => {
+    if (isMobile) {
+      return !['supplierName', 'received', 'batchStatus'].includes(col.accessor || col.key)
+    }
+    return true
+  })
 
   const auditColumns = [
     { header: 'Date', accessor: 'timestamp', render: (row) => row.timestamp ? new Date(row.timestamp).toLocaleString('en-IN') : '—' },
@@ -279,14 +373,19 @@ export default function Stock() {
     { header: 'New Quantity', accessor: 'newSecondaryRemaining', render: (row) => `${row.newSecondaryRemaining} units` },
     { header: 'Changed By', accessor: 'adjustedBy', render: (row) => <span className="badge badge-info">{row.adjustedBy}</span> },
     { header: 'Reason', accessor: 'reason' },
-  ]
+  ].filter(col => {
+    if (isMobile) {
+      return !['batchNumber', 'oldSecondaryRemaining', 'reason'].includes(col.accessor)
+    }
+    return true
+  })
 
   return (
     <div className="page-container">
       <div className="page-header">
         <div>
           <h2 className="page-title">Stock Management</h2>
-          <p className="page-subtitle">{stocks.length} products in stock</p>
+          <p className="page-subtitle">{stockTotalElements} products in stock</p>
         </div>
         <div className="page-actions">
           <motion.button className="btn btn-primary" onClick={() => setShowModal(true)} whileTap={{ scale: 0.95 }}>
@@ -307,17 +406,31 @@ export default function Stock() {
             <History size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Stock Audit Logs
           </button>
         )}
+        {isAdmin && (
+          <button className={`tab ${activeTab === 'scheduler' ? 'active' : ''}`} onClick={() => setActiveTab('scheduler')}>
+            <Settings size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Scheduler
+          </button>
+        )}
       </div>
 
       {activeTab === 'overview' && (
-        <DataTable
-          columns={stockColumns}
-          data={stocks}
-          loading={loading}
-          searchPlaceholder="Search stock..."
-          emptyMessage="No stock data"
-          onRowClick={(row) => row.productId && loadBatches(row.productId, row.productName)}
-        />
+        <>
+          <DataTable
+            columns={stockColumns}
+            data={stocks}
+            loading={loading}
+            searchPlaceholder="Search stock..."
+            emptyMessage="No stock data"
+            onRowClick={(row) => row.productId && loadBatches(row.productId, row.productName)}
+          />
+          <Pagination
+            page={stockPage}
+            totalPages={stockTotalPages}
+            totalElements={stockTotalElements}
+            pageSize={STOCK_PAGE_SIZE}
+            onPageChange={(p) => { setStockPage(p); loadAll(p) }}
+          />
+        </>
       )}
 
       {activeTab === 'expiring' && (
@@ -327,17 +440,124 @@ export default function Stock() {
           loading={loading}
           searchable={false}
           emptyMessage="No expiring batches — all good!"
+          actions={(row) => {
+            const d = row.expiryDate ? new Date(row.expiryDate) : null
+            const isExpired = d ? d <= new Date() : false
+            return (
+              <>
+                {isExpired && (isAdmin || isManager) && (
+                  <button
+                    className="btn btn-ghost btn-icon btn-sm"
+                    onClick={() => setWriteOffTarget(row)}
+                    title="Write Off Expired Stock to Damage Log"
+                    style={{ color: 'var(--color-danger)' }}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                )}
+              </>
+            )
+          }}
         />
       )}
 
       {activeTab === 'audit' && isAdmin && (
-        <DataTable
-          columns={auditColumns}
-          data={auditLogs}
-          loading={logsLoading}
-          searchPlaceholder="Search audit logs..."
-          emptyMessage="No adjustment logs found"
-        />
+        <>
+          <DataTable
+            columns={auditColumns}
+            data={auditLogs}
+            loading={logsLoading}
+            searchable={false}
+            emptyMessage="No adjustment logs found"
+          />
+          <Pagination
+            page={auditPage}
+            totalPages={auditTotalPages}
+            totalElements={auditTotalElements}
+            pageSize={AUDIT_PAGE_SIZE}
+            onPageChange={(p) => { setAuditPage(p); loadAuditLogs(p) }}
+          />
+        </>
+      )}
+
+      {activeTab === 'scheduler' && isAdmin && (
+        <div style={{ maxWidth: '640px' }}>
+          <div style={{
+            background: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-lg)',
+            padding: 'var(--space-6)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 'var(--space-5)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <h3 style={{ fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-semibold)', margin: 0 }}>Expiry Write-Off Scheduler</h3>
+                <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', margin: '4px 0 0' }}>Automatically writes off expired stock batches to Damage Logs</p>
+              </div>
+              {schedulerStatus && (
+                schedulerStatus.enabled
+                  ? <span className="badge badge-success" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '6px 12px' }}><CheckCircle size={14} /> Enabled</span>
+                  : <span className="badge badge-danger" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '6px 12px' }}><XCircle size={14} /> Disabled</span>
+              )}
+            </div>
+
+            {schedulerLoading ? (
+              <div style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--color-text-muted)' }}>Loading scheduler info...</div>
+            ) : schedulerStatus ? (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+                  <div style={{ background: 'var(--color-surface-alt, var(--color-bg))', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)', border: '1px solid var(--color-border)' }}>
+                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Schedule</div>
+                    <div style={{ fontWeight: 'var(--font-weight-semibold)' }}>Daily at 1:00 AM</div>
+                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: 2 }}>{schedulerStatus.cronExpression}</div>
+                  </div>
+                  <div style={{ background: 'var(--color-surface-alt, var(--color-bg))', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)', border: '1px solid var(--color-border)' }}>
+                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Last Run</div>
+                    <div style={{ fontWeight: 'var(--font-weight-semibold)' }}>
+                      {schedulerStatus.lastRunTime ? new Date(schedulerStatus.lastRunTime).toLocaleString('en-IN') : '—'}
+                    </div>
+                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: 2 }}>
+                      {schedulerStatus.lastRunBatchesProcessed ?? 0} batch(es) written off
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ background: 'var(--color-surface-alt, var(--color-bg))', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)', border: '1px solid var(--color-border)' }}>
+                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Last Run Status</div>
+                  <div style={{ fontSize: 'var(--font-size-sm)', color: schedulerStatus.lastRunStatus?.includes('error') ? 'var(--color-danger)' : 'var(--color-text)' }}>
+                    {schedulerStatus.lastRunStatus || 'Never run'}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: 'var(--space-3)', paddingTop: 'var(--space-2)', borderTop: '1px solid var(--color-border)' }}>
+                  <motion.button
+                    className="btn btn-primary"
+                    onClick={() => setShowRunNowConfirm(true)}
+                    disabled={runNowLoading || !schedulerStatus.enabled}
+                    whileTap={{ scale: 0.97 }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}
+                  >
+                    <PlayCircle size={18} />
+                    {runNowLoading ? 'Running...' : 'Run Sweep Now'}
+                  </motion.button>
+                  <button className="btn btn-ghost" onClick={loadSchedulerStatus} disabled={schedulerLoading}>
+                    Refresh Status
+                  </button>
+                </div>
+
+                {!schedulerStatus.enabled && (
+                  <div style={{ padding: 'var(--space-3)', background: 'rgba(239,68,68,0.08)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(239,68,68,0.2)', fontSize: 'var(--font-size-sm)', color: 'var(--color-danger)' }}>
+                    ⚠️ Scheduler is disabled. To enable, set <code>app.scheduler.expiry.enabled=true</code> in <code>application.properties</code> and restart the server.
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--color-text-muted)' }}>No scheduler data available.</div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Batches Modal */}
@@ -543,6 +763,27 @@ export default function Stock() {
           </div>
         </form>
       </Modal>
+      
+      {/* Write Off Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={!!writeOffTarget}
+        onClose={() => setWriteOffTarget(null)}
+        onConfirm={() => executeWriteOff(writeOffTarget.id)}
+        title="Write Off Expired Stock"
+        message={`Are you sure you want to write off the expired stock for batch ${writeOffTarget?.batchNumber}? This will set remaining stock to 0 and log a financial loss of ₹${(Number(writeOffTarget?.buyPriceWithTax || 0) / (writeOffTarget?.secondaryPerPrimary || 1) * (writeOffTarget?.secondaryRemaining || 0)).toLocaleString('en-IN')} under Damage Logs.`}
+        confirmLabel="Write Off"
+        danger={true}
+      />
+
+      <ConfirmDialog
+        isOpen={showRunNowConfirm}
+        onClose={() => setShowRunNowConfirm(false)}
+        onConfirm={handleRunNow}
+        title="Run Expiry Sweep Now"
+        message="This will immediately scan all stock batches and write off any expired ones to Damage Logs. This action cannot be undone. Continue?"
+        confirmLabel="Run Sweep"
+        danger={true}
+      />
     </div>
   )
 }

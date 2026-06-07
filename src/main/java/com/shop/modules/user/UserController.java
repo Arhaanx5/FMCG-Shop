@@ -1,6 +1,7 @@
 package com.shop.modules.user;
 
 import com.shop.common.ApiResponse;
+import com.shop.config.LocationBroadcastService;
 import com.shop.modules.user.dto.CreateUserRequest;
 import com.shop.modules.user.dto.UserResponse;
 import jakarta.validation.Valid;
@@ -17,6 +18,7 @@ import java.util.UUID;
 public class UserController {
 
     private final UserService userService;
+    private final LocationBroadcastService locationBroadcastService;
 
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
@@ -37,7 +39,7 @@ public class UserController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','DELIVERY_BOY','SALESMAN')")
     public ResponseEntity<ApiResponse<UserResponse>>
     getById(@PathVariable UUID id) {
         return ResponseEntity.ok(
@@ -91,7 +93,14 @@ public class UserController {
     public ResponseEntity<ApiResponse<String>> updateLiveLocation(
             @Valid @RequestBody LiveLocationRequest req,
             org.springframework.security.core.Authentication auth) {
-        userService.updateLiveLocation(auth.getName(), req.getLatitude(), req.getLongitude());
+        User updated = userService.updateLiveLocation(auth.getName(), req.getLatitude(), req.getLongitude());
+        // Broadcast real-time location to all WebSocket clients watching this user
+        if (updated != null) {
+            locationBroadcastService.broadcastLocation(
+                updated.getId(), updated.getName(),
+                req.getLatitude(), req.getLongitude()
+            );
+        }
         return ResponseEntity.ok(
                 ApiResponse.success("Live location updated", null));
     }

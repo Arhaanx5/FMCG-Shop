@@ -1,16 +1,121 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Plus, Edit2, Trash2, MessageCircle, MapPin } from 'lucide-react'
+import { Plus, Edit2, Trash2, MessageCircle, MapPin, Eye, ChevronDown, ChevronUp } from 'lucide-react'
 import api from '../services/api'
 import DataTable from '../components/DataTable'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import SearchSelect from '../components/SearchSelect'
+import Pagination from '../components/Pagination'
 import { useToast } from '../context/ToastContext'
 
 const emptyForm = { name: '', shopName: '', phone: '', areaId: '', openingBalance: '', creditLimit: '', isManualOverride: false, isNpa: false }
 
+const getCustomerLedger = (customer, allBills, allPayments) => {
+  const custPayments = allPayments.filter(p => p.customerId === customer.id)
+  const custBills = allBills.filter(b => b.customerId === customer.id)
+  const openingBalance = Number(customer.openingBalance || 0)
+
+  const ledger = []
+
+  // 1. Opening Balance
+  if (openingBalance > 0) {
+    ledger.push({
+      type: 'OPENING',
+      description: 'Opening Balance',
+      debit: openingBalance,
+      credit: 0,
+      date: new Date(customer.createdAt || 0).getTime() - 86400000,
+      createdAt: customer.createdAt || null
+    })
+  }
+
+  // 2. Bills (Udhar/Partial only — use grandTotal as immutable debit amount)
+  custBills.forEach(b => {
+    if (b.status === 'CANCELLED' || (b.paymentMode !== 'UDHAR' && b.paymentMode !== 'PARTIAL')) return
+    const billAmount = Number(b.grandTotal || 0)
+    if (billAmount <= 0) return
+    ledger.push({
+      type: 'BILL',
+      id: b.id,
+      billNumber: b.billNumber,
+      description: b.paymentMode === 'PARTIAL' ? `Partial Bill #${b.billNumber}` : `Credit Bill #${b.billNumber}`,
+      debit: billAmount,
+      credit: 0,
+      date: new Date(b.createdAt).getTime(),
+      createdAt: b.createdAt,
+      bill: b
+    })
+
+    // Down payment for PARTIAL bills
+    if (b.paymentMode === 'PARTIAL') {
+      const linkedPayments = custPayments.filter(p => p.billId === b.id)
+      const sumLinked = linkedPayments.reduce((sum, p) => sum + Number(p.appliedAmount || p.amount || 0), 0)
+      const downPayment = Number(b.paidAmount || 0) - sumLinked
+      if (downPayment > 0) {
+        ledger.push({
+          type: 'PAYMENT',
+          id: `downpayment-${b.id}`,
+          description: `Down Payment at Billing — Bill ${b.billNumber}`,
+          adjustmentType: 'NORMAL',
+          debit: 0,
+          credit: downPayment,
+          date: new Date(b.createdAt).getTime(),
+          createdAt: b.createdAt
+        })
+      }
+    }
+  })
+
+  // 3. Payments
+  custPayments.forEach(p => {
+    const baseDesc = `Payment Received (${p.paymentMode})`
+    const billLink = p.billNumber ? ` — Bill ${p.billNumber}` : ''
+    const notePart = p.notes ? ` · ${p.notes}` : ''
+    const adjustNote = p.adjustmentNote ? ` 🔁 ${p.adjustmentNote}` : ''
+    const creditAmt = Number(p.appliedAmount || p.amount || 0)
+    ledger.push({
+      type: 'PAYMENT',
+      id: p.id,
+      description: baseDesc + billLink + notePart + adjustNote,
+      adjustmentType: p.adjustmentType || 'NORMAL',
+      debit: 0,
+      credit: creditAmt,
+      date: new Date(p.paidAt).getTime(),
+      createdAt: p.paidAt,
+      payment: p
+    })
+  })
+
+  // Sort chronological
+  ledger.sort((a, b) => {
+    if (a.date !== b.date) return a.date - b.date
+    const typeWeight = { OPENING: 1, BILL: 2, PAYMENT: 3 }
+    return typeWeight[a.type] - typeWeight[b.type]
+  })
+
+  // Calculate running balance
+  let running = 0
+  return ledger.map(entry => {
+    running += (entry.debit - entry.credit)
+    return {
+      ...entry,
+      runningBalance: running
+    }
+  })
+}
+
 export default function Customers() {
+  const navigate = useNavigate()
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
   const [customers, setCustomers] = useState([])
   const [areas, setAreas] = useState([])
   const [loading, setLoading] = useState(true)
@@ -24,18 +129,331 @@ export default function Customers() {
   const [showLocationModal, setShowLocationModal] = useState(false)
   const [locationCustomer, setLocationCustomer] = useState(null)
   const [locForm, setLocForm] = useState({ latitude: '', longitude: '', method: 'MANUAL' })
+  // Server-side pagination
+  const [page, setPage] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
+  const [totalElements, setTotalElements] = useState(0)
+  const [searchQuery, setSearchQuery] = useState('')
+  const PAGE_SIZE = 20
   const toast = useToast()
 
-  useEffect(() => { loadCustomers(); loadAreas() }, [])
+  // Transaction History Modal States
+  const [historyCustomer, setHistoryCustomer] = useState(null)
+  const [customerBills, setCustomerBills] = useState([])
+  const [customerPayments, setCustomerPayments] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyModalTab, setHistoryModalTab] = useState('purchases')
+  const [expandedBills, setExpandedBills] = useState({})
 
-  const loadCustomers = async () => {
+  const toggleExpandBill = (billId) => {
+    setExpandedBills(prev => ({ ...prev, [billId]: !prev[billId] }))
+  }
+
+  const openHistory = async (customer) => {
+    setHistoryCustomer(customer)
+    setHistoryLoading(true)
+    setHistoryModalTab('udhar')
+    try {
+      const [billsRes, paymentsRes] = await Promise.all([
+        api.get(`/bills/customer/${customer.id}`),
+        api.get(`/payments/customer/${customer.id}`)
+      ])
+      const fetchedBills = (billsRes.data?.data || []).map(b => ({ ...b, customerId: customer.id }))
+      const fetchedPayments = (paymentsRes.data || []).map(p => ({ ...p, customerId: customer.id }))
+      setCustomerBills(fetchedBills)
+      setCustomerPayments(fetchedPayments)
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to load transaction history')
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
+  const renderCustomerLedgerTable = (customer, customerBills, customerPayments) => {
+    const ledger = getCustomerLedger(customer, customerBills, customerPayments)
+    
+    if (ledger.length === 0) {
+      return <div className="text-center py-6 text-xs text-muted">No transactions found for this customer.</div>
+    }
+
+    return (
+      <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-theme shadow-sm">
+        <table className="w-full border-collapse text-left text-sm text-slate-500 dark:text-slate-400">
+          <thead>
+            <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
+              <th className="px-4 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Date & Time</th>
+              <th className="px-4 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Transaction Details</th>
+              <th className="px-4 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Udhar Taken (Dr / +)</th>
+              <th className="px-4 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Amount Paid (Cr / -)</th>
+              <th className="px-4 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">O/S Balance (After)</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+            {ledger.map((row, idx) => (
+              <tr key={idx} className="border-b border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors duration-150">
+                <td className="px-4 py-3 align-middle whitespace-nowrap">
+                  {row.createdAt ? new Date(row.createdAt).toLocaleString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
+                </td>
+                <td className="px-4 py-3 align-middle">
+                  <span className="font-medium">{row.description}</span>
+                  {row.type === 'PAYMENT' && (
+                    <div className="text-xs text-muted" style={{ marginTop: 2 }}>
+                      Collected By: <span className="font-semibold text-secondary" style={{ color: 'var(--color-text-secondary)' }}>{row.payment?.collectedBy || 'System'}</span>
+                    </div>
+                  )}
+                  {row.type === 'BILL' && (
+                    <div className="text-xs text-muted" style={{ marginTop: 2 }}>
+                      Booked By: <span className="font-semibold text-secondary" style={{ color: 'var(--color-text-secondary)' }}>{row.bill?.createdBy || 'System'}</span>
+                    </div>
+                  )}
+                </td>
+                <td className="px-4 py-3 align-middle whitespace-nowrap font-medium text-slate-600 dark:text-slate-300">
+                  {row.debit > 0 ? `₹${Number(row.debit).toLocaleString('en-IN')}` : '—'}
+                </td>
+                <td className="px-4 py-3 align-middle whitespace-nowrap font-medium text-success">
+                  {row.credit > 0 ? `₹${Number(row.credit).toLocaleString('en-IN')}` : '—'}
+                </td>
+                <td className={`px-4 py-3 align-middle whitespace-nowrap font-bold ${row.runningBalance > 0 ? 'text-danger' : 'text-success'}`}>
+                  ₹{Number(row.runningBalance).toLocaleString('en-IN')}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+
+  const renderCustomerUdharTable = (customer, customerBills, customerPayments) => {
+    const custBills = customerBills.filter(b => 
+      b.status !== 'CANCELLED' && 
+      (b.paymentMode === 'UDHAR' || b.paymentMode === 'PARTIAL' || b.paymentMode === 'CREDIT')
+    )
+    
+    const openingBalance = Number(customer.openingBalance || 0)
+    const custPendingBills = custBills.filter(b => Number(b.pendingAmount || 0) > 0)
+    const pendingBillsTotal = custPendingBills.reduce((sum, b) => sum + Number(b.pendingAmount || 0), 0)
+    const totalPending = Number(customer.totalPending || 0)
+    const unpaidOpeningBalance = Math.max(0, totalPending - pendingBillsTotal)
+    
+    const virtualOpening = []
+    if (openingBalance > 0) {
+      const pendingAmt = Math.min(openingBalance, unpaidOpeningBalance)
+      const paidAmt = openingBalance - pendingAmt
+      const isPaid = (pendingAmt <= 0)
+      
+      virtualOpening.push({
+        id: `opening-${customer.id}`,
+        billNumber: 'Opening Balance',
+        grandTotal: openingBalance,
+        paidAmount: paidAmt,
+        pendingAmount: pendingAmt,
+        createdAt: customer.createdAt || null,
+        status: isPaid ? 'PAID' : 'CONFIRMED'
+      })
+    }
+    
+    const combinedEntries = [...virtualOpening, ...custBills].map(b => {
+      if (b.id.startsWith?.('opening-')) {
+        return {
+          ...b,
+          initialUdhar: b.grandTotal,
+          paidAfterwards: b.paidAmount,
+        }
+      }
+      const billPayments = customerPayments.filter(p => p.billId === b.id)
+      const sumPaidAfterwards = billPayments.reduce((sum, p) => sum + Number(p.appliedAmount || p.amount || 0), 0)
+      const downPayment = Math.max(0, Number(b.paidAmount || 0) - sumPaidAfterwards)
+      const initialUdhar = Number(b.grandTotal || 0) - downPayment
+      return {
+        ...b,
+        initialUdhar,
+        paidAfterwards: sumPaidAfterwards,
+      }
+    }).sort((a, b) => {
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0
+      return dateB - dateA
+    })
+    
+    if (combinedEntries.length === 0) {
+      return <div className="text-center py-6 text-xs text-muted">No credit records found for this customer.</div>
+    }
+    
+    return (
+      <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-theme shadow-sm">
+        <table className="w-full border-collapse text-left text-sm text-slate-500 dark:text-slate-400">
+          <thead>
+            <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
+              <th className="px-4 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Bill #</th>
+              <th className="px-4 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Date & Time</th>
+              <th className="px-4 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Original Amount</th>
+              <th className="px-4 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Udhar Taken</th>
+              <th className="px-4 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Total Paid</th>
+              <th className="px-4 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Outstanding Balance</th>
+              <th className="px-4 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+            {combinedEntries.map((row, idx) => {
+              const statusColors = { CONFIRMED: 'badge-neutral', PARTIAL: 'badge-warning', PAID: 'badge-success' }
+              const statusLabels = { CONFIRMED: 'UNPAID', PARTIAL: 'PARTIAL', PAID: 'PAID' }
+              return (
+                <tr key={idx} className="border-b border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors duration-150">
+                  <td className="px-4 py-3 align-middle font-medium">
+                    {row.billNumber}
+                    {!row.id.startsWith?.('opening-') && (
+                      <div className="text-xs text-muted font-normal" style={{ marginTop: 2 }}>
+                        Booked By: <span className="font-semibold text-secondary" style={{ color: 'var(--color-text-secondary)' }}>{row.createdBy || 'System'}</span>
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 align-middle whitespace-nowrap">
+                    {row.createdAt ? new Date(row.createdAt).toLocaleString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
+                  </td>
+                  <td className="px-4 py-3 align-middle whitespace-nowrap text-slate-500 dark:text-slate-400">
+                    ₹{Number(row.grandTotal || 0).toLocaleString('en-IN')}
+                  </td>
+                  <td className="px-4 py-3 align-middle whitespace-nowrap font-bold text-slate-800 dark:text-slate-200">
+                    ₹{Number(row.initialUdhar || 0).toLocaleString('en-IN')}
+                  </td>
+                  <td className="px-4 py-3 align-middle whitespace-nowrap text-success font-semibold">
+                    ₹{Number(row.paidAfterwards || 0).toLocaleString('en-IN')}
+                  </td>
+                  <td className="px-4 py-3 align-middle whitespace-nowrap text-danger font-bold">
+                    ₹{Number(row.pendingAmount || 0).toLocaleString('en-IN')}
+                  </td>
+                  <td className="px-4 py-3 align-middle">
+                    <span className={`badge ${statusColors[row.status] || 'badge-neutral'}`}>
+                      {statusLabels[row.status] || row.status}
+                    </span>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+
+  const renderCustomerPurchaseTable = (customer, customerBills) => {
+    const activeBills = customerBills.filter(b => b.status !== 'CANCELLED')
+    if (activeBills.length === 0) {
+      return <div className="text-center py-6 text-xs text-muted">No purchase records found for this customer.</div>
+    }
+    
+    return (
+      <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-theme shadow-sm">
+        <table className="w-full border-collapse text-left text-sm text-slate-500 dark:text-slate-400">
+          <thead>
+            <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
+              <th className="px-4 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider" style={{ width: '40px' }}></th>
+              <th className="px-4 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Bill #</th>
+              <th className="px-4 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Date & Time</th>
+              <th className="px-4 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Payment Mode</th>
+              <th className="px-4 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Total Amount</th>
+              <th className="px-4 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Paid Amount</th>
+              <th className="px-4 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Pending Amount</th>
+              <th className="px-4 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Status</th>
+            </tr>
+          </thead>
+            {activeBills.map((bill) => {
+              const isExpanded = !!expandedBills[bill.id]
+              const statusColors = { CONFIRMED: 'badge-success', PARTIAL: 'badge-warning', PAID: 'badge-success', DRAFT: 'badge-warning' }
+              const paymentColors = { CASH: 'badge-success', UPI: 'badge-info', UDHAR: 'badge-danger', PARTIAL: 'badge-warning' }
+              
+              return (
+                <tbody key={bill.id} className="border-b last:border-0 border-slate-200 dark:border-slate-700">
+                  <tr className="text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors duration-150 cursor-pointer" onClick={() => toggleExpandBill(bill.id)}>
+                    <td className="px-4 py-3 align-middle text-center">
+                      {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </td>
+                    <td className="px-4 py-3 align-middle font-medium">{bill.billNumber}</td>
+                    <td className="px-4 py-3 align-middle whitespace-nowrap">
+                      {bill.createdAt ? new Date(bill.createdAt).toLocaleString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
+                    </td>
+                    <td className="px-4 py-3 align-middle">
+                      <span className={`badge ${paymentColors[bill.paymentMode] || 'badge-neutral'}`}>
+                        {bill.paymentMode}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 align-middle font-bold">₹{Number(bill.grandTotal || 0).toLocaleString('en-IN')}</td>
+                    <td className="px-4 py-3 align-middle text-success font-semibold">₹{Number(bill.paidAmount || 0).toLocaleString('en-IN')}</td>
+                    <td className="px-4 py-3 align-middle text-danger font-semibold">₹{Number(bill.pendingAmount || 0).toLocaleString('en-IN')}</td>
+                    <td className="px-4 py-3 align-middle">
+                      <span className={`badge ${statusColors[bill.status] || 'badge-neutral'}`}>
+                        {bill.status}
+                      </span>
+                    </td>
+                  </tr>
+                  {isExpanded && (
+                    <tr className="bg-slate-50 dark:bg-slate-900/40">
+                      <td colSpan="8" className="px-6 py-4">
+                        <div style={{ padding: '4px' }}>
+                          <h5 className="font-semibold text-xs text-slate-500 uppercase tracking-wider mb-2">Items Purchased</h5>
+                          <table className="min-w-full text-xs text-slate-600 dark:text-slate-400">
+                            <thead>
+                              <tr className="border-b border-slate-200 dark:border-slate-700 text-left">
+                                <th className="py-1">Product</th>
+                                <th className="py-1 text-center">Qty</th>
+                                <th className="py-1 text-right">Rate</th>
+                                <th className="py-1 text-right">GST</th>
+                                <th className="py-1 text-right">Total</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(bill.items || []).map((item, idx) => (
+                                <tr key={idx} className="border-b border-slate-100 dark:border-slate-800 last:border-0 text-slate-800 dark:text-slate-300">
+                                  <td className="py-2">{item.productName} {item.brand && <span className="text-muted">({item.brand})</span>}</td>
+                                  <td className="py-2 text-center">{item.quantity} {item.unitType} {item.freeQuantity > 0 && <span className="text-success">(+{item.freeQuantity} free)</span>}</td>
+                                  <td className="py-2 text-right">₹{Number(item.rate || 0).toLocaleString('en-IN')}</td>
+                                  <td className="py-2 text-right">{item.gstPercent}%</td>
+                                  <td className="py-2 text-right font-medium">₹{Number(item.total || 0).toLocaleString('en-IN')}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          <div className="mt-3 text-xs text-slate-500 flex justify-between items-center flex-wrap gap-2">
+                            <span><strong>Booked By:</strong> <span className="text-secondary" style={{ color: 'var(--color-text-secondary)' }}>{bill.createdBy || 'System'}</span></span>
+                            {bill.notes && <span><strong>Notes:</strong> {bill.notes}</span>}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              )
+            })}
+        </table>
+      </div>
+    )
+  }
+
+  useEffect(() => { loadCustomers(0); loadAreas() }, [])
+
+  const loadCustomers = useCallback(async (pg = page, tab = activeTab, search = searchQuery) => {
     setLoading(true)
     try {
-      const res = await api.get('/customers?size=500')
-      setCustomers(res.data.data?.content || res.data.data || [])
+      const params = new URLSearchParams()
+      params.set('page', pg)
+      params.set('size', PAGE_SIZE)
+      if (search && search.trim()) params.set('search', search.trim())
+      // Customers API returns all; filter active/inactive client-side on page data
+      const res = await api.get(`/customers?${params.toString()}`)
+      const pageData = res.data.data
+      const content = pageData?.content || []
+      // Filter by tab (active/inactive)
+      const filtered = tab === 'active'
+        ? content.filter(c => c.active !== false)
+        : content.filter(c => c.active === false)
+      setCustomers(filtered)
+      setTotalPages(pageData?.totalPages || 0)
+      setTotalElements(pageData?.totalElements || 0)
     } catch { toast.error('Failed to load customers') }
     finally { setLoading(false) }
-  }
+  }, [page, activeTab, searchQuery])
 
   const loadAreas = async () => {
     try {
@@ -44,9 +462,7 @@ export default function Customers() {
     } catch {}
   }
 
-  const activeCustomers = customers.filter(c => c.active !== false)
-  const inactiveCustomers = customers.filter(c => c.active === false)
-  const displayList = activeTab === 'active' ? activeCustomers : inactiveCustomers
+
 
   const openCreate = () => { setForm({ ...emptyForm }); setEditingId(null); setShowModal(true) }
 
@@ -80,7 +496,7 @@ export default function Customers() {
         toast.success('Customer created!')
       }
       setShowModal(false)
-      loadCustomers()
+      loadCustomers(0, activeTab, searchQuery)
     } catch (err) {
       toast.error(err.response?.data?.message || 'Save failed')
     } finally { setSaving(false) }
@@ -91,7 +507,7 @@ export default function Customers() {
       await api.delete(`/customers/${deleteTarget}`)
       toast.success('Customer deactivated')
       setDeleteTarget(null)
-      loadCustomers()
+      loadCustomers(0, activeTab, searchQuery)
     } catch { toast.error('Deactivation failed') }
   }
 
@@ -165,10 +581,13 @@ export default function Customers() {
 
   const columns = [
     { header: 'Customer', accessor: 'name', render: (row) => (
-      <div>
-        <div style={{ fontWeight: 'var(--font-weight-medium)' }}>{row.name}</div>
-        {row.shopName && <div className="text-xs text-muted">{row.shopName}</div>}
-        {row.customerCode && <div className="text-xs text-muted">{row.customerCode}</div>}
+      <div title={`Name: ${row.name}${row.customerCode ? ` | Code: ${row.customerCode}` : ''}`} style={{ cursor: 'help' }}>
+        <div style={{ fontWeight: 'var(--font-weight-medium)' }}>{row.shopName || row.name}</div>
+        {isMobile && row.areaName && (
+          <div className="text-xs text-muted" style={{ display: 'flex', alignItems: 'center', gap: '3px', marginTop: '2px' }}>
+            <span>📍 {row.areaName}</span>
+          </div>
+        )}
       </div>
     )},
     { header: 'Phone', accessor: 'phone' },
@@ -251,14 +670,19 @@ export default function Customers() {
       : <span className="text-muted text-xs">No GPS</span>,
       sortable: false,
     },
-  ]
+  ].filter(col => {
+    if (isMobile) {
+      return !['phone', 'areaName', 'location', 'status'].includes(col.accessor || col.key)
+    }
+    return true
+  })
 
   return (
     <div className="page-container">
       <div className="page-header">
         <div>
           <h2 className="page-title">Customers</h2>
-          <p className="page-subtitle">{activeCustomers.length} active, {inactiveCustomers.length} inactive</p>
+          <p className="page-subtitle">{totalElements} customers total</p>
         </div>
         <div className="page-actions">
           <motion.button className="btn btn-primary" onClick={openCreate} whileTap={{ scale: 0.95 }}>
@@ -267,23 +691,47 @@ export default function Customers() {
         </div>
       </div>
 
+      {/* Search */}
+      <div style={{ marginBottom: 'var(--space-4)' }}>
+        <input
+          className="form-input"
+          placeholder="Search by name, phone, shop name..."
+          value={searchQuery}
+          onChange={e => {
+            const q = e.target.value
+            setSearchQuery(q)
+            setPage(0)
+            loadCustomers(0, activeTab, q)
+          }}
+          style={{ maxWidth: '300px', height: '38px' }}
+        />
+      </div>
+
       <div className="tabs">
-        <button className={`tab ${activeTab === 'active' ? 'active' : ''}`} onClick={() => setActiveTab('active')}>
-          Active ({activeCustomers.length})
+        <button className={`tab ${activeTab === 'active' ? 'active' : ''}`} onClick={() => { setActiveTab('active'); setPage(0); loadCustomers(0, 'active', searchQuery) }}>
+          Active
         </button>
-        <button className={`tab ${activeTab === 'inactive' ? 'active' : ''}`} onClick={() => setActiveTab('inactive')}>
-          Inactive ({inactiveCustomers.length})
+        <button className={`tab ${activeTab === 'inactive' ? 'active' : ''}`} onClick={() => { setActiveTab('inactive'); setPage(0); loadCustomers(0, 'inactive', searchQuery) }}>
+          Inactive
         </button>
       </div>
 
       <DataTable
         columns={columns}
-        data={displayList}
+        data={customers}
         loading={loading}
-        searchPlaceholder="Search by name, phone, shop name..."
+        searchable={false}
         emptyMessage="No customers found"
         actions={(row) => (
           <>
+            <button 
+              className="btn btn-ghost btn-icon btn-sm" 
+              onClick={() => openHistory(row)} 
+              title="View Transaction History" 
+              style={{ color: 'var(--color-accent)' }}
+            >
+              <Eye size={15} />
+            </button>
             {Number(row.totalPending || 0) > 0 && (
               <button
                 className="btn btn-ghost btn-icon btn-sm"
@@ -307,6 +755,13 @@ export default function Customers() {
             <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setDeleteTarget(row.id)} title="Deactivate" style={{ color: 'var(--color-danger)' }}><Trash2 size={15} /></button>
           </>
         )}
+      />
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        totalElements={totalElements}
+        pageSize={PAGE_SIZE}
+        onPageChange={(p) => { setPage(p); loadCustomers(p, activeTab, searchQuery) }}
       />
 
       {/* Create/Edit Modal */}
@@ -444,6 +899,123 @@ export default function Customers() {
           </div>
         </form>
       </Modal>
+
+      {/* Transaction History Modal */}
+      <Modal isOpen={!!historyCustomer} onClose={() => setHistoryCustomer(null)} title="Customer Transaction History" xl>
+        {historyCustomer && (() => {
+          const activeBills = customerBills.filter(b => b.status !== 'CANCELLED')
+          const totalPurchases = activeBills.reduce((sum, b) => sum + Number(b.grandTotal || 0), 0) + Number(historyCustomer.openingBalance || 0)
+          const totalPaid = Math.max(0, totalPurchases - Number(historyCustomer.totalPending || 0))
+          const billCount = activeBills.length
+          const pendingCount = customerBills.filter(b => b.status !== 'CANCELLED' && Number(b.pendingAmount || 0) > 0).length
+          const limit = Number(historyCustomer.effectiveCreditLimit || 0)
+          const isNpa = historyCustomer.isNpa
+
+          return (
+            <div>
+              {/* Customer Details Summary Cards */}
+              <div className="grid-4" style={{ marginBottom: 'var(--space-6)', gap: 'var(--space-4)' }}>
+                {/* Card 1: Customer Details */}
+                <div className="card" style={{ padding: 'var(--space-3) var(--space-4)', background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <div className="text-xs text-muted" style={{ marginBottom: '2px' }}>Customer Info</div>
+                  <div className="font-bold text-sm text-slate-800 dark:text-slate-200">{historyCustomer.name}</div>
+                  {historyCustomer.shopName && <div className="text-xs text-slate-600 dark:text-slate-400 font-medium" style={{ marginTop: '2px' }}>{historyCustomer.shopName}</div>}
+                  <div className="text-xs text-muted" style={{ marginTop: '4px' }}>Phone: {historyCustomer.phone || '—'}</div>
+                </div>
+
+                {/* Card 2: Purchase & Loyalty KPIs */}
+                <div className="card" style={{ padding: 'var(--space-3) var(--space-4)', background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <div className="text-xs text-muted" style={{ marginBottom: '2px' }}>Loyalty & Purchases</div>
+                  <div className="font-bold text-sm text-success">
+                    ₹{totalPaid.toLocaleString('en-IN')} <span className="text-xs font-normal text-muted">paid of ₹{totalPurchases.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="text-xs text-muted" style={{ marginTop: '4px' }}>
+                    Bills: {billCount} | Avg Bill: ₹{billCount > 0 ? Math.round(totalPurchases / billCount).toLocaleString('en-IN') : '0'}
+                  </div>
+                </div>
+
+                {/* Card 3: Outstanding Udhar */}
+                <div className="card" style={{ padding: 'var(--space-3) var(--space-4)', background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <div className="text-xs text-muted" style={{ marginBottom: '2px' }}>Outstanding Udhar</div>
+                  <div className="font-bold text-sm text-danger">₹{Number(historyCustomer.totalPending || 0).toLocaleString('en-IN')}</div>
+                  <div className="text-xs text-muted" style={{ marginTop: '4px' }}>
+                    Pending Bills: {pendingCount}
+                  </div>
+                </div>
+
+                {/* Card 4: Trust Tier & Limit */}
+                <div className="card" style={{ padding: 'var(--space-3) var(--space-4)', background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <div className="text-xs text-muted" style={{ marginBottom: '2px' }}>Credit Limit & Tier</div>
+                  <div className="font-bold text-sm text-info">₹{limit.toLocaleString('en-IN')}</div>
+                  <div className="text-xs font-semibold" style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    {isNpa ? (
+                      <span className="badge badge-danger" style={{ fontSize: '10px', padding: '2px 8px' }}>⚠️ Defaulter (NPA)</span>
+                    ) : totalPaid >= 25000 || limit >= 25000 ? (
+                      <span className="badge" style={{ fontSize: '10px', padding: '2px 8px', background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: 'white', border: 'none' }}>🏆 Gold Trust Tier</span>
+                    ) : totalPaid >= 10000 || limit >= 10000 ? (
+                      <span className="badge" style={{ fontSize: '10px', padding: '2px 8px', background: 'linear-gradient(135deg, #94a3b8, #64748b)', color: 'white', border: 'none' }}>🥈 Silver Trust Tier</span>
+                    ) : (
+                      <span className="badge badge-neutral" style={{ fontSize: '10px', padding: '2px 8px', color: 'var(--color-text-muted)' }}>Bronze / Regular Tier</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Toggle tabs */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                <div className="flex gap-2">
+                  <button 
+                    type="button"
+                    className={`btn btn-sm ${historyModalTab === 'purchases' ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setHistoryModalTab('purchases')}
+                  >
+                    Purchase History (All Bills)
+                  </button>
+                  <button 
+                    type="button"
+                    className={`btn btn-sm ${historyModalTab === 'ledger' ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setHistoryModalTab('ledger')}
+                  >
+                    Ledger Statement
+                  </button>
+                  <button 
+                    type="button"
+                    className={`btn btn-sm ${historyModalTab === 'udhar' ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setHistoryModalTab('udhar')}
+                  >
+                    Bill-wise Udhar History
+                  </button>
+                </div>
+                <h4 className="font-semibold text-sm text-slate-700 dark:text-slate-300">
+                  {historyModalTab === 'purchases' ? 'Customer Complete Purchase History' : historyModalTab === 'ledger' ? 'Customer Account Ledger Statement' : 'Customer Bill-wise Udhar Records'}
+                </h4>
+              </div>
+
+              {historyLoading ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-10)' }}>
+                  <div className="spinner" style={{ width: '30px', height: '30px', borderTopColor: 'var(--color-accent)' }}></div>
+                  <p className="text-muted text-xs mt-3">Fetching transaction history...</p>
+                </div>
+              ) : (
+                <div>
+                  {historyModalTab === 'purchases' ? (
+                    renderCustomerPurchaseTable(historyCustomer, customerBills)
+                  ) : historyModalTab === 'ledger' ? (
+                    renderCustomerLedgerTable(historyCustomer, customerBills, customerPayments)
+                  ) : (
+                    renderCustomerUdharTable(historyCustomer, customerBills, customerPayments)
+                  )}
+                </div>
+              )}
+              
+              <div className="form-actions" style={{ marginTop: 'var(--space-6)' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setHistoryCustomer(null)}>Close History</button>
+              </div>
+            </div>
+          )
+        })()}
+      </Modal>
+
     </div>
   )
 }

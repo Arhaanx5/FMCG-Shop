@@ -37,23 +37,30 @@ public class Bill {
     @JsonIgnore  // ← use DTO fields instead
     private Customer customer;
 
+    @Builder.Default
     private BigDecimal subtotal = BigDecimal.ZERO;
 
     @Column(name = "gst_total")
+    @Builder.Default
     private BigDecimal gstTotal = BigDecimal.ZERO;
 
     @Column(name = "cess_total")
+    @Builder.Default
     private BigDecimal cessTotal = BigDecimal.ZERO;
 
+    @Builder.Default
     private BigDecimal discount = BigDecimal.ZERO;
 
     @Column(name = "grand_total")
+    @Builder.Default
     private BigDecimal grandTotal = BigDecimal.ZERO;
 
     @Column(name = "paid_amount")
+    @Builder.Default
     private BigDecimal paidAmount = BigDecimal.ZERO;
 
     @Column(name = "pending_amount")
+    @Builder.Default
     private BigDecimal pendingAmount = BigDecimal.ZERO;
 
     @Enumerated(EnumType.STRING)
@@ -61,6 +68,7 @@ public class Bill {
     private PaymentMode paymentMode;
 
     @Enumerated(EnumType.STRING)
+    @Builder.Default
     private BillStatus status = BillStatus.CONFIRMED;
 
     private String notes;

@@ -4,6 +4,9 @@ import com.shop.modules.product.Product;
 import com.shop.modules.product.ProductRepository;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
@@ -13,6 +16,11 @@ import java.util.List;
 import java.util.UUID;
 
 import com.shop.modules.user.UserRepository;
+import com.shop.modules.damage.DamageLogRepository;
+import com.shop.modules.damage.DamageLog;
+import com.shop.modules.damage.DamageReason;
+import com.shop.modules.damage.UnitLevel;
+import com.shop.modules.damage.ClaimStatus;
 
 @Service
 @RequiredArgsConstructor
@@ -23,20 +31,55 @@ public class StockService {
     private final ProductRepository productRepository;
     private final StockAdjustmentLogRepository stockAdjustmentLogRepository;
     private final UserRepository userRepository;
+    private final DamageLogRepository damageLogRepository;
 
-    // ── Get all stock ──
+    // ── Get all stock (non-paginated, for backward compat) ──
     public List<Stock> getAllStock() {
         return stockRepository.findAll();
     }
 
+    // ── Get all stock paginated ──
+    public Page<Stock> getAllStockPaged(int page, int size) {
+        return stockRepository.findAll(PageRequest.of(page, size, Sort.by("lastUpdated").descending()));
+    }
+
+    // ── GetOrCreateStock ──
+    @Transactional
+    public Stock getOrCreateStock(UUID productId) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Product not found: " + productId));
+
+        Stock stock = stockRepository.findByProductId(productId).orElse(null);
+        if (stock == null) {
+            stock = Stock.builder()
+                    .product(product)
+                    .totalPrimaryUnits(0)
+                    .totalSecondaryUnits(0)
+                    .openPrimaryRemaining(0)
+                    .hasOpenPrimary(false)
+                    .lastUpdated(java.time.LocalDateTime.now())
+                    .build();
+        }
+
+        // Always sync with active batches if any exist
+        List<StockBatch> batches = batchRepository.findByProductId(productId);
+        if (batches != null && !batches.isEmpty()) {
+            int totalSecondary = batches.stream()
+                    .filter(b -> b.getExhausted() == null || !b.getExhausted())
+                    .mapToInt(b -> b.getSecondaryRemaining() != null ? b.getSecondaryRemaining() : 0)
+                    .sum();
+
+            stock.setTotalSecondaryUnits(totalSecondary);
+        }
+        normalizeStock(stock, product);
+
+        stockRepository.save(stock);
+        return stock;
+    }
+
     // ── Get stock by product ──
     public Stock getStockByProduct(UUID productId) {
-        return stockRepository
-                .findByProductId(productId)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "No stock found for product: "
-                                        + productId));
+        return getOrCreateStock(productId);
     }
 
     // ── Get batch by ID ──
@@ -155,12 +198,7 @@ public class StockService {
                         new RuntimeException(
                                 "Product not found"));
 
-        Stock stock = stockRepository
-                .findByProductId(productId)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "No stock found for: "
-                                        + product.getName()));
+        Stock stock = getOrCreateStock(productId);
 
         int secondaryPerPrimary =
                 product.getSecondaryPerPrimary();
@@ -216,12 +254,7 @@ public class StockService {
                         new RuntimeException(
                                 "Product not found"));
 
-        Stock stock = stockRepository
-                .findByProductId(productId)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "No stock found for: "
-                                        + product.getName()));
+        Stock stock = getOrCreateStock(productId);
 
         // Check enough secondary units
         if (stock.getTotalSecondaryUnits() < quantity) {
@@ -399,8 +432,7 @@ public class StockService {
         // Update product overall stock
         Product product = batch.getProduct();
         if (product != null) {
-            Stock stock = stockRepository.findByProductId(product.getId())
-                    .orElseThrow(() -> new RuntimeException("Stock record not found for product: " + product.getName()));
+            Stock stock = getOrCreateStock(product.getId());
             
             stock.setTotalSecondaryUnits(stock.getTotalSecondaryUnits() + change);
             normalizeStock(stock, product);
@@ -453,9 +485,97 @@ public class StockService {
         stockAdjustmentLogRepository.save(log);
     }
 
-    // ── Retrieve adjustment log (Admin only) ──
+    // ── Retrieve adjustment log (Admin only) — non-paginated ──
     public List<StockAdjustmentLog> getAdjustmentLogs() {
         return stockAdjustmentLogRepository.findAllByOrderByTimestampDesc();
+    }
+
+    // ── Retrieve adjustment log paginated ──
+    public Page<StockAdjustmentLog> getAdjustmentLogsPaged(int page, int size) {
+        return stockAdjustmentLogRepository.findAllByOrderByTimestampDesc(
+                PageRequest.of(page, size));
+    }
+
+    // ── Write off expired stock batch to Damage Log ──
+    @Transactional(rollbackFor = Exception.class)
+    public void writeOffExpiredBatch(UUID batchId, String adjustedBy) {
+        StockBatch batch = getBatchById(batchId);
+        if (batch.getExhausted() != null && batch.getExhausted()) {
+            throw new RuntimeException("Batch is already exhausted");
+        }
+
+        int qty = batch.getSecondaryRemaining();
+        if (qty <= 0) {
+            batch.setExhausted(true);
+            batchRepository.save(batch);
+            return;
+        }
+
+        Product product = batch.getProduct();
+        
+        // Determine unit type to log in damage log
+        com.shop.modules.product.UnitType unitType = com.shop.modules.product.UnitType.SINGLE;
+        if (product.getSecondaryUnit() != null) {
+            try {
+                unitType = com.shop.modules.product.UnitType.valueOf(product.getSecondaryUnit().toUpperCase());
+            } catch (Exception e) {
+                // fallback
+            }
+        }
+
+        // Calculate value loss
+        BigDecimal buyPricePerSecondary = product.getBuyPricePerSecondary();
+        if (buyPricePerSecondary == null || buyPricePerSecondary.compareTo(BigDecimal.ZERO) == 0) {
+            buyPricePerSecondary = batch.getBuyPricePerSecondary(product.getSecondaryPerPrimary());
+        }
+        BigDecimal valueLoss = buyPricePerSecondary.multiply(BigDecimal.valueOf(qty));
+
+        // Get user for logger
+        com.shop.modules.user.User user = null;
+        if (adjustedBy != null && !adjustedBy.equals("System")) {
+            user = userRepository.findByPhone(adjustedBy).orElse(null);
+        }
+
+        // Create damage log
+        DamageLog damage = DamageLog.builder()
+                .product(product)
+                .batch(batch)
+                .unitType(unitType)
+                .unitLevel(UnitLevel.SECONDARY)
+                .claimStatus(ClaimStatus.NON_CLAIMABLE)
+                .quantity(qty)
+                .reason(DamageReason.EXPIRE)
+                .valueLoss(valueLoss)
+                .notes("Stock expired. Write-off logged. Expiry date: " + batch.getExpiryDate() + " (Batch: " + batch.getBatchNumber() + ")")
+                .loggedBy(user)
+                .build();
+
+        damageLogRepository.save(damage);
+
+        // Adjust batch remaining to 0
+        batch.setSecondaryRemaining(0);
+        batch.setExhausted(true);
+        batchRepository.save(batch);
+
+        // Decrease overall stock
+        Stock stock = getOrCreateStock(product.getId());
+        stock.setTotalSecondaryUnits(Math.max(0, stock.getTotalSecondaryUnits() - qty));
+        normalizeStock(stock, product);
+        stockRepository.save(stock);
+
+        // Save adjustment audit log
+        StockAdjustmentLog log = StockAdjustmentLog.builder()
+                .batchId(batchId)
+                .batchNumber(batch.getBatchNumber())
+                .productName(product.getName())
+                .oldSecondaryRemaining(qty)
+                .newSecondaryRemaining(0)
+                .adjustedBy(user != null ? user.getName() : adjustedBy)
+                .reason("Expired stock written off. Expiry: " + batch.getExpiryDate())
+                .timestamp(java.time.LocalDateTime.now())
+                .build();
+
+        stockAdjustmentLogRepository.save(log);
     }
 
     // ── Inner request class ──

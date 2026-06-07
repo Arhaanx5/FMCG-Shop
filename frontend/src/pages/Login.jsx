@@ -5,6 +5,7 @@ import { Phone, Lock, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import Modal from '../components/Modal'
+import lariLogo from '../assets/lari-traders-logo.png'
 
 export default function Login() {
   const [phone, setPhone] = useState('')
@@ -81,33 +82,35 @@ export default function Login() {
       >
         {/* Logo */}
         <motion.div
-          style={{ textAlign: 'center', marginBottom: 'var(--space-8)' }}
+          style={{ textAlign: 'center', marginBottom: 'var(--space-6)' }}
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
         >
           <motion.div
             animate={{
-              boxShadow: [
-                '0 0 20px rgba(245, 158, 11, 0.2)',
-                '0 0 40px rgba(245, 158, 11, 0.35)',
-                '0 0 20px rgba(245, 158, 11, 0.2)',
+              filter: [
+                'drop-shadow(0 0 8px rgba(139,26,26,0.15))',
+                'drop-shadow(0 0 20px rgba(139,26,26,0.30))',
+                'drop-shadow(0 0 8px rgba(139,26,26,0.15))',
               ],
             }}
             transition={{ duration: 3, repeat: Infinity }}
             style={{
-              width: 72, height: 72, borderRadius: 'var(--radius-xl)',
-              background: 'linear-gradient(135deg, var(--color-accent), #d97706)',
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '30px', fontWeight: 800, color: 'var(--color-text-inverse)',
-              marginBottom: 'var(--space-4)',
+              display: 'inline-block',
+              marginBottom: 'var(--space-2)',
             }}
           >
-            LT
+            <img
+              src={lariLogo}
+              alt="Lari Traders"
+              style={{
+                width: 240,
+                height: 'auto',
+                display: 'block',
+              }}
+            />
           </motion.div>
-          <h1 style={{ fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)', color: 'var(--color-text)' }}>
-            Lari Traders
-          </h1>
           <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', marginTop: 'var(--space-1)' }}>
             Sign in to your account
           </p>

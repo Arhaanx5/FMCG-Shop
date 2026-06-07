@@ -1,5 +1,6 @@
 package com.shop.modules.khata.dto;
 
+import com.shop.modules.khata.AdjustmentType;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import lombok.Data;
@@ -22,4 +23,14 @@ public class RecordPaymentRequest {
     private String paymentMode;
 
     private String notes;
-}
+
+    // ── Overpayment resolution fields (sent only when excess is detected) ──
+    /** How to handle excess: MANUAL_ADJUST or AUTO_ADJUST */
+    private AdjustmentType adjustmentType;
+
+    /** For MANUAL_ADJUST: the other bill chosen by the user to receive the excess */
+    private UUID targetBillId;
+
+    /** Safety flag — frontend must set true after user explicitly confirms */
+    private boolean confirmedByUser = false;
+}

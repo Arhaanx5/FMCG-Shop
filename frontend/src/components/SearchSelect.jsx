@@ -40,8 +40,8 @@ export default function SearchSelect({ options = [], value, onChange, placeholde
       {open && (
         <div style={{
           position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
-          background: 'var(--color-surface)', border: '1px solid var(--color-border)',
-          borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
+          background: 'var(--color-dropdown-bg)', border: '1px solid var(--color-border)',
+          borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-lg)',
           zIndex: 'var(--z-dropdown)', maxHeight: 260, overflow: 'hidden',
           display: 'flex', flexDirection: 'column',
         }}>
@@ -58,9 +58,9 @@ export default function SearchSelect({ options = [], value, onChange, placeholde
               />
             </div>
           </div>
-          <div style={{ overflowY: 'auto', flex: 1 }}>
+          <div style={{ overflowY: 'auto', flex: 1, paddingBottom: '8px' }}>
             {filtered.length === 0 ? (
-              <div style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)' }}>
+               <div style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)' }}>
                 No results found
               </div>
             ) : (
@@ -69,12 +69,13 @@ export default function SearchSelect({ options = [], value, onChange, placeholde
                   key={opt[valueKey]}
                   onClick={() => { onChange(opt[valueKey]); setOpen(false); setQuery(''); }}
                   style={{
-                    padding: 'var(--space-3) var(--space-4)',
+                    padding: '10px 24px 10px 16px',
                     cursor: 'pointer',
                     fontSize: 'var(--font-size-base)',
                     color: opt[valueKey] === value ? 'var(--color-accent)' : 'var(--color-text)',
                     background: opt[valueKey] === value ? 'var(--color-accent-soft)' : 'transparent',
                     transition: 'background 150ms',
+                    overflow: 'hidden'
                   }}
                   onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-surface-hover)' }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = opt[valueKey] === value ? 'var(--color-accent-soft)' : 'transparent' }}

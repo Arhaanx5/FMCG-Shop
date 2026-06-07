@@ -181,12 +181,12 @@ public class UserService {
     }
 
     @org.springframework.transaction.annotation.Transactional
-    public void updateLiveLocation(String phone, Double lat, Double lng) {
+    public User updateLiveLocation(String phone, Double lat, Double lng) {
         User user = userRepository.findByPhone(phone)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         user.setLastLatitude(lat);
         user.setLastLongitude(lng);
         user.setLastLocationTime(java.time.LocalDateTime.now());
-        userRepository.save(user);
+        return userRepository.save(user);
     }
 }

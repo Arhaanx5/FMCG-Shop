@@ -72,6 +72,9 @@ public class DashboardService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         BigDecimal todayPending = customerRepository.getTotalPendingBalance();
+        if (todayPending == null) {
+            todayPending = BigDecimal.ZERO;
+        }
 
         // Month range
         LocalDateTime monthStart =

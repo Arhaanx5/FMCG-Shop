@@ -20,6 +20,92 @@ public class CustomerController {
 
     private final CustomerService customerService;
     private final AiReminderService aiReminderService;
+    private final WhatsAppService whatsAppService;
+
+    @GetMapping("/whatsapp/status")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<java.util.Map<String, String>>> getWhatsAppStatus() {
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Status fetched successfully",
+                        java.util.Map.of("status", whatsAppService.getStatus())
+                )
+        );
+    }
+
+    @GetMapping("/whatsapp/qr")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<java.util.Map<String, String>>> getWhatsAppQr() {
+        String qr = whatsAppService.getQrCode();
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "QR Code fetched successfully",
+                        java.util.Map.of("qr", qr != null ? qr : "")
+                )
+        );
+    }
+
+    @PostMapping("/whatsapp/logout")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<String>> logoutWhatsApp() {
+        whatsAppService.logout();
+        return ResponseEntity.ok(
+                ApiResponse.success("Successfully logged out WhatsApp session", null)
+        );
+    }
+
+    @PostMapping("/whatsapp/send-bulk")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<String>> sendBulkReminders(@RequestBody java.util.List<String> customerIds) {
+        whatsAppService.startBulkSending(customerIds);
+        return ResponseEntity.ok(
+                ApiResponse.success("Background bulk reminders initiated successfully", null)
+        );
+    }
+
+    @GetMapping("/whatsapp/bulk-progress")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<java.util.Map<String, Object>>> getBulkProgress() {
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Bulk progress fetched successfully",
+                        whatsAppService.getProgress()
+                )
+        );
+    }
+
+    @PostMapping("/whatsapp/send-media")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<String>> sendWhatsAppMedia(@RequestBody WhatsAppMediaRequest req) {
+        whatsAppService.sendMedia(req.getPhone(), req.getMedia(), req.getFilename(), req.getCaption());
+        return ResponseEntity.ok(
+                ApiResponse.success("WhatsApp media sent successfully", null)
+        );
+    }
+
+    @PostMapping("/whatsapp/send-text")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<String>> sendWhatsAppText(@RequestBody WhatsAppTextRequest req) {
+        whatsAppService.sendText(req.getPhone(), req.getMessage());
+        return ResponseEntity.ok(
+                ApiResponse.success("WhatsApp text message sent successfully", null)
+        );
+    }
+
+    @Data
+    public static class WhatsAppMediaRequest {
+        private String phone;
+        private String media;
+        private String filename;
+        private String caption;
+    }
+
+    @Data
+    public static class WhatsAppTextRequest {
+        private String phone;
+        private String message;
+    }
+
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','DELIVERY_BOY','SALESMAN')")
@@ -71,7 +157,7 @@ public class CustomerController {
     }
 
     @PutMapping("/{idOrCode}/location")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','DELIVERY_BOY')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','DELIVERY_BOY','SALESMAN')")
     public ResponseEntity<ApiResponse<CustomerResponse>>
     updateLocation(@PathVariable String idOrCode,
                    @RequestBody LocationRequest req) {

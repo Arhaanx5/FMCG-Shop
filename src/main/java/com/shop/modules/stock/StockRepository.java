@@ -1,5 +1,7 @@
 package com.shop.modules.stock;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -14,6 +16,8 @@ public interface StockRepository
         extends JpaRepository<Stock, UUID> {
 
     Optional<Stock> findByProductId(UUID productId);
+
+    Page<Stock> findAll(Pageable pageable);
 
     // Low stock items using new field name
     @Query("SELECT s FROM Stock s " +

@@ -34,7 +34,32 @@ public class Payment {
     @JoinColumn(name = "customer_id")
     private Customer customer;
 
+    /** Total amount the user typed in — the face value of this payment record */
     private BigDecimal amount;
+
+    /** Portion of `amount` actually applied to `bill` */
+    @Column(name = "applied_amount")
+    @Builder.Default
+    private BigDecimal appliedAmount = BigDecimal.ZERO;
+
+    /** Portion of `amount` that exceeded bill's pending and was redirected */
+    @Column(name = "excess_amount")
+    @Builder.Default
+    private BigDecimal excessAmount = BigDecimal.ZERO;
+
+    /** The OTHER bill that received the excess (nullable for NORMAL payments) */
+    @Column(name = "adjusted_bill_id")
+    private UUID adjustedBillId;
+
+    /** How was the excess handled */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "adjustment_type")
+    @Builder.Default
+    private AdjustmentType adjustmentType = AdjustmentType.NORMAL;
+
+    /** Human-readable summary, e.g. "Excess ₹50 auto-adjusted to BILL-00023" */
+    @Column(name = "adjustment_note")
+    private String adjustmentNote;
 
     @Column(name = "payment_mode")
     private String paymentMode;
@@ -51,5 +76,8 @@ public class Payment {
     @PrePersist
     public void prePersist() {
         paidAt = LocalDateTime.now();
+        if (appliedAmount == null) appliedAmount = BigDecimal.ZERO;
+        if (excessAmount == null) excessAmount = BigDecimal.ZERO;
+        if (adjustmentType == null) adjustmentType = AdjustmentType.NORMAL;
     }
-}
+}

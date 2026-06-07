@@ -4,33 +4,37 @@ import { X } from 'lucide-react'
 export default function Modal({ isOpen, onClose, title, children, wide, xl }) {
   if (!isOpen) return null
 
-  const sizeClass = xl ? 'modal-xl' : wide ? 'modal-wide' : ''
+  // Tailwind size configurations
+  const widthClass = xl ? 'max-w-5xl' : wide ? 'max-w-2xl' : 'max-w-lg'
 
   return (
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          className="modal-overlay"
+          className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center z-[300] p-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={onClose}
         >
           <motion.div
-            className={`modal-content ${sizeClass}`}
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            className={`bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-theme shadow-2xl w-full p-6 md:p-8 overflow-y-auto max-h-[90vh] ${widthClass}`}
+            initial={{ opacity: 0, scale: 0.96, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+            exit={{ opacity: 0, scale: 0.96, y: 12 }}
+            transition={{ type: 'spring', stiffness: 380, damping: 30 }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="modal-header">
-              <h2 className="modal-title">{title}</h2>
-              <button className="btn btn-ghost btn-icon btn-sm" onClick={onClose}>
-                <X size={18} />
+            <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-100 dark:border-slate-700">
+              <h2 className="text-lg md:text-xl font-bold text-slate-900 dark:text-slate-50">{title}</h2>
+              <button
+                className="p-1 rounded-theme-sm text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors duration-150"
+                onClick={onClose}
+              >
+                <X size={20} />
               </button>
             </div>
-            {children}
+            <div>{children}</div>
           </motion.div>
         </motion.div>
       )}

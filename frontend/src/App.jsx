@@ -15,6 +15,7 @@ import Areas from './pages/Areas'
 import Users from './pages/Users'
 import Salesmen from './pages/Salesmen'
 import Deliveries from './pages/Deliveries'
+import WhatsAppSetup from './pages/WhatsAppSetup'
 
 function ProtectedRoute({ children, roles }) {
   const { isAuthenticated, user } = useAuth()
@@ -50,9 +51,10 @@ export default function App() {
         }
       >
         <Route index element={<DashboardRedirect />} />
-        <Route path="billing" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><Billing /></ProtectedRoute>} />
+        <Route path="billing" element={<ProtectedRoute roles={['ADMIN', 'MANAGER', 'SALESMAN', 'DELIVERY_BOY']}><Billing /></ProtectedRoute>} />
         <Route path="products" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><Products /></ProtectedRoute>} />
         <Route path="customers" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><Customers /></ProtectedRoute>} />
+        <Route path="whatsapp" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><WhatsAppSetup /></ProtectedRoute>} />
         <Route path="salesmen" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><Salesmen /></ProtectedRoute>} />
         <Route path="stock" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><Stock /></ProtectedRoute>} />
         <Route path="khata" element={<ProtectedRoute roles={['ADMIN', 'MANAGER', 'DELIVERY_BOY', 'SALESMAN']}><Khata /></ProtectedRoute>} />

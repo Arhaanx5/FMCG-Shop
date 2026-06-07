@@ -7,6 +7,7 @@ import com.shop.modules.stock.dto.StockBatchResponse;
 import com.shop.modules.stock.dto.StockResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -97,8 +98,18 @@ public class StockController {
         return ResponseEntity.ok(ApiResponse.success(stockList));
     }
 
-    @GetMapping("/product/{productId}")
+    @GetMapping("/paged")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<Page<StockResponse>>> getAllStockPaged(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        Page<StockResponse> result = stockService.getAllStockPaged(page, size)
+                .map(this::toStockResponse);
+        return ResponseEntity.ok(ApiResponse.success(result));
+    }
+
+    @GetMapping("/product/{productId}")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','DELIVERY_BOY','SALESMAN')")
     public ResponseEntity<ApiResponse<StockResponse>> getByProduct(
             @PathVariable UUID productId) {
         Stock stock = stockService.getStockByProduct(productId);
@@ -106,7 +117,7 @@ public class StockController {
     }
 
     @GetMapping("/batches/{productId}")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','DELIVERY_BOY','SALESMAN')")
     public ResponseEntity<ApiResponse<List<StockBatchResponse>>> getBatches(
             @PathVariable UUID productId) {
         List<StockBatchResponse> batches = stockService
@@ -170,11 +181,26 @@ public class StockController {
         return ResponseEntity.ok(ApiResponse.success("Stock batch adjusted successfully", null));
     }
 
+    // ── Write off expired stock batch to Damage Log (Admin & Manager only) ──
+    @PostMapping("/batches/{batchId}/write-off-expiry")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<Void>> writeOffExpiry(
+            @PathVariable UUID batchId,
+            java.security.Principal principal) {
+        
+        String username = principal != null ? principal.getName() : "System";
+        stockService.writeOffExpiredBatch(batchId, username);
+        
+        return ResponseEntity.ok(ApiResponse.success("Expired stock written off successfully", null));
+    }
+
     // ── View Stock Audit Logs (Strictly Admin only) ──
     @GetMapping("/adjustments")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<List<StockAdjustmentLog>>> getAdjustmentLogs() {
-        List<StockAdjustmentLog> logs = stockService.getAdjustmentLogs();
+    public ResponseEntity<ApiResponse<Page<StockAdjustmentLog>>> getAdjustmentLogs(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "15") int size) {
+        Page<StockAdjustmentLog> logs = stockService.getAdjustmentLogsPaged(page, size);
         return ResponseEntity.ok(ApiResponse.success(logs));
     }
 

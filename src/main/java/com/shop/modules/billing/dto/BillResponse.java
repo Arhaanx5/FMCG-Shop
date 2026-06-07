@@ -21,6 +21,7 @@ public class BillResponse {
     private String createdBy;
 
     // Customer info — flat, no nested object
+    private UUID customerId;
     private String customerName;
     private String customerShopName;
     private String customerPhone;

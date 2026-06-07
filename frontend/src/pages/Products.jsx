@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { Plus, Edit2, Trash2, AlertTriangle } from 'lucide-react'
 import api from '../services/api'
 import DataTable from '../components/DataTable'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
+import Pagination from '../components/Pagination'
 import { useToast } from '../context/ToastContext'
 
 const CATEGORIES = ['SNACKS', 'BEVERAGES', 'CIGARETTES', 'BISCUITS', 'NAMKEEN', 'OTHER']
@@ -18,6 +19,14 @@ const emptyForm = {
 }
 
 export default function Products() {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('ALL')
@@ -26,24 +35,44 @@ export default function Products() {
   const [form, setForm] = useState({ ...emptyForm })
   const [saving, setSaving] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
+  // Server-side pagination
+  const [page, setPage] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
+  const [totalElements, setTotalElements] = useState(0)
+  const [searchQuery, setSearchQuery] = useState('')
+  const PAGE_SIZE = 25
   const toast = useToast()
 
-  useEffect(() => { loadProducts() }, [])
-
-  const loadProducts = async () => {
+  const loadProducts = useCallback(async (pg = page, search = searchQuery, category = activeTab) => {
     setLoading(true)
     try {
-      const res = await api.get('/products?size=500')
-      setProducts(res.data.data?.content || res.data.data || [])
+      const params = new URLSearchParams()
+      params.set('page', pg)
+      params.set('size', PAGE_SIZE)
+      if (search && search.trim()) params.set('search', search.trim())
+      const res = await api.get(`/products?${params.toString()}`)
+      const pageData = res.data.data
+      let content = pageData?.content || []
+      // Apply category filter client-side (categories not many, safe to filter)
+      if (category !== 'ALL') {
+        if (category.startsWith('OTHER:')) {
+          const customCat = category.replace('OTHER:', '').toLowerCase()
+          content = content.filter(p => p.category === 'OTHER' && p.otherCategoryDetail?.trim().toLowerCase() === customCat)
+        } else {
+          content = content.filter(p => p.category === category)
+        }
+      }
+      setProducts(content)
+      setTotalPages(pageData?.totalPages || 0)
+      setTotalElements(pageData?.totalElements || 0)
     } catch { toast.error('Failed to load products') }
     finally { setLoading(false) }
-  }
+  }, [page, searchQuery, activeTab])
 
-  const filtered = activeTab === 'ALL' 
-    ? products 
-    : activeTab.startsWith('OTHER:')
-    ? products.filter(p => p.category === 'OTHER' && p.otherCategoryDetail && p.otherCategoryDetail.trim().toLowerCase() === activeTab.replace('OTHER:', '').toLowerCase())
-    : products.filter(p => p.category === activeTab)
+  useEffect(() => { loadProducts(0, searchQuery, activeTab) }, [activeTab])
+  useEffect(() => { loadProducts(page, searchQuery, activeTab) }, [page])
+
+
 
   const openCreate = () => {
     setForm({ ...emptyForm, buyPriceWithTax: '', isCessApplicable: false, otherCategoryDetail: '', customSecondaryUnit: '' })
@@ -166,7 +195,7 @@ export default function Products() {
         toast.success('Product created!')
       }
       setShowModal(false)
-      loadProducts()
+      loadProducts(0, searchQuery, activeTab)
     } catch (err) {
       toast.error(err.response?.data?.message || 'Save failed')
     } finally { setSaving(false) }
@@ -177,7 +206,7 @@ export default function Products() {
       await api.delete(`/products/${deleteTarget}`)
       toast.success('Product deactivated')
       setDeleteTarget(null)
-      loadProducts()
+      loadProducts(0, searchQuery, activeTab)
     } catch { toast.error('Delete failed') }
   }
 
@@ -185,7 +214,11 @@ export default function Products() {
     { header: 'Name', accessor: 'name', render: (row) => (
       <div>
         <div style={{ fontWeight: 'var(--font-weight-medium)' }}>{row.name}</div>
-        {row.productCode && <div className="text-xs text-muted">{row.productCode}</div>}
+        {isMobile && row.brand && (
+          <div className="text-xs text-muted" style={{ marginTop: '2px' }}>
+            {row.brand}
+          </div>
+        )}
       </div>
     )},
     { header: 'Brand', accessor: 'brand' },
@@ -205,7 +238,12 @@ export default function Products() {
     )},
     { header: 'GST', accessor: 'gstPercent', render: (row) => `${row.gstPercent}%` },
     { header: 'Cess', accessor: 'cessPercent', render: (row) => row.cessPercent > 0 ? `${row.cessPercent}%` : <span className="text-muted">—</span> },
-  ]
+  ].filter(col => {
+    if (isMobile) {
+      return !['brand', 'category', 'buyPriceWithoutTax', 'sellPricePrimary', 'gstPercent', 'cessPercent'].includes(col.accessor)
+    }
+    return true
+  })
 
   const updateField = (key, val) => setForm(f => ({ ...f, [key]: val }))
 
@@ -214,7 +252,7 @@ export default function Products() {
       <div className="page-header">
         <div>
           <h2 className="page-title">Products</h2>
-          <p className="page-subtitle">{products.length} products total</p>
+          <p className="page-subtitle">{totalElements} products total</p>
         </div>
         <div className="page-actions">
           <motion.button className="btn btn-primary" onClick={openCreate} whileTap={{ scale: 0.95 }}>
@@ -223,10 +261,22 @@ export default function Products() {
         </div>
       </div>
 
-      {/* Category filter dropdown - responsive and overflow-safe */}
+      {/* Search + Category filter */}
       <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', marginBottom: 'var(--space-6)', flexWrap: 'wrap' }}>
+        <input
+          className="form-input"
+          placeholder="Search products by name or brand..."
+          value={searchQuery}
+          onChange={e => {
+            const q = e.target.value
+            setSearchQuery(q)
+            setPage(0)
+            loadProducts(0, q, activeTab)
+          }}
+          style={{ maxWidth: '280px', height: '38px' }}
+        />
         <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', fontWeight: 'var(--font-weight-semibold)' }}>
-          Filter Category:
+          Category:
         </span>
         <select
           className="form-select"
@@ -251,9 +301,9 @@ export default function Products() {
 
       <DataTable
         columns={columns}
-        data={filtered}
+        data={products}
         loading={loading}
-        searchPlaceholder="Search products by name, brand, or code..."
+        searchable={false}
         emptyMessage="No products found"
         actions={(row) => (
           <>
@@ -261,6 +311,13 @@ export default function Products() {
             <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setDeleteTarget(row.id)} title="Delete" style={{ color: 'var(--color-danger)' }}><Trash2 size={15} /></button>
           </>
         )}
+      />
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        totalElements={totalElements}
+        pageSize={PAGE_SIZE}
+        onPageChange={(p) => setPage(p)}
       />
 
       {/* Create/Edit Modal */}

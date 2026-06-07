@@ -1,0 +1,9 @@
+{
+  "appId": "com.laritraders.app",
+  "appName": "Lari Traders",
+  "webDir": "dist",
+  "server": {
+    "url": "https://app.laritraders.store",
+    "cleartext": true
+  }
+}

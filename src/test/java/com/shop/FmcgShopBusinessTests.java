@@ -75,7 +75,7 @@ public class FmcgShopBusinessTests {
 
     @org.junit.jupiter.api.BeforeEach
     public void setUp() {
-        this.stockService = new StockService(stockRepository, batchRepository, productRepository, stockAdjustmentLogRepository);
+        this.stockService = new StockService(stockRepository, batchRepository, productRepository, stockAdjustmentLogRepository, userRepository, damageLogRepository);
         
         this.damageService = new DamageService(
                 damageLogRepository,
@@ -95,7 +95,8 @@ public class FmcgShopBusinessTests {
                 stockRepository,
                 customerServiceMock,
                 productServiceMock,
-                batchRepository
+                batchRepository,
+                paymentRepository
         );
 
         this.customerService = new CustomerService(
@@ -232,12 +233,22 @@ public class FmcgShopBusinessTests {
         request.setItems(Collections.singletonList(itemReq));
         request.setDiscount(BigDecimal.ZERO);
 
+        StockBatch batch = StockBatch.builder()
+                .product(product)
+                .batchNumber("B-901")
+                .secondaryReceived(120)
+                .secondaryRemaining(120)
+                .buyPriceWithoutTax(BigDecimal.valueOf(900))
+                .build();
+
         // Inject mocks for BillService (using service-level mocks since BillService now calls services not repos)
         when(customerServiceMock.findCustomerByIdentifier(customerId.toString())).thenReturn(customer);
         when(userRepository.findByPhone("9450821033")).thenReturn(Optional.of(user));
         when(productServiceMock.findProductByIdentifier(productId.toString())).thenReturn(product);
         when(productRepository.findById(productId)).thenReturn(Optional.of(product));
         when(stockRepository.findByProductId(productId)).thenReturn(Optional.of(stock));
+        when(batchRepository.findActiveBatchesFIFO(productId)).thenReturn(Collections.singletonList(batch));
+        when(batchRepository.findByProductId(productId)).thenReturn(Collections.singletonList(batch));
         when(billRepository.findMaxBillSequence()).thenReturn(0);
         when(billRepository.save(any(Bill.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -413,6 +424,7 @@ public class FmcgShopBusinessTests {
         when(stockRepository.findByProductId(productId)).thenReturn(Optional.of(stock));
         when(stockRepository.save(any(Stock.class))).thenReturn(stock);
         when(batchRepository.findById(batchId)).thenReturn(Optional.of(batch));
+        when(batchRepository.findByProductId(productId)).thenReturn(Collections.singletonList(batch));
         when(billRepository.findMaxBillSequence()).thenReturn(0);
         when(billRepository.save(any(Bill.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -488,6 +500,7 @@ public class FmcgShopBusinessTests {
         request.setReturnedItems(Collections.singletonList(returnItem));
 
         when(billRepository.findById(billId)).thenReturn(Optional.of(bill));
+        when(billRepository.findByCustomerId(customerId)).thenReturn(Collections.singletonList(bill));
         when(stockRepository.findByProductId(productId)).thenReturn(Optional.of(stock));
         when(batchRepository.findById(batchId)).thenReturn(Optional.of(batch));
         when(billRepository.save(any(Bill.class))).thenReturn(bill);
@@ -685,11 +698,21 @@ public class FmcgShopBusinessTests {
                 .totalSecondaryUnits(120)
                 .build();
 
+        StockBatch batch = StockBatch.builder()
+                .product(product)
+                .batchNumber("B-901")
+                .secondaryReceived(120)
+                .secondaryRemaining(120)
+                .buyPriceWithoutTax(BigDecimal.valueOf(900))
+                .build();
+
         when(customerServiceMock.findCustomerByIdentifier(customerId.toString())).thenReturn(customer);
         when(userRepository.findByPhone("9450821033")).thenReturn(Optional.of(user));
         when(productServiceMock.findProductByIdentifier(productId.toString())).thenReturn(product);
         when(productRepository.findById(productId)).thenReturn(Optional.of(product));
         when(stockRepository.findByProductId(productId)).thenReturn(Optional.of(stock));
+        when(batchRepository.findActiveBatchesFIFO(productId)).thenReturn(Collections.singletonList(batch));
+        when(batchRepository.findByProductId(productId)).thenReturn(Collections.singletonList(batch));
         
         // Mock dynamic effective limit to ₹5000
         when(customerServiceMock.calculateEffectiveCreditLimit(customer)).thenReturn(BigDecimal.valueOf(5000));
@@ -840,4 +863,49 @@ public class FmcgShopBusinessTests {
         assertEquals(firstStopNum + 1, stopsA.get(1).getStopNumber());
         assertEquals(firstStopNum + 2, stopsA.get(2).getStopNumber());
     }
+
+    // ── 14. Custom Hinglish Reminder Template Fallback & Formatting Tests ──
+    @Test
+    public void testAiReminderGeneratorFallbackAndFormatting() {
+        class TestReminderGenerator extends com.shop.modules.customer.AiReminderGenerator {
+            public String testFallback(String name, String shopName, BigDecimal pendingAmount) {
+                return generateLocalFallback(name, shopName, pendingAmount);
+            }
+        }
+        TestReminderGenerator generator = new TestReminderGenerator();
+        String message = generator.testFallback("Mahfooz", "Lari Traders Store", BigDecimal.valueOf(34579.40));
+
+        String expected = "Mahfooz Ji (Lari Traders Store),\n\n" +
+                "Lari Traders ki taraf se namaskar.\n\n" +
+                "Hamare records ke anusaar aapka outstanding balance ₹34,579.40 hai. Kripya is baki rashi ka bhugtan jald se jald karne ka kasht karein, taaki vyavsayik len-den sughar roop se jaari rahe.\n\n" +
+                "Yadi payment kar diya gaya hai, kripya is sandesh ko nazarandaaz karein. Kisi bhi prakar ki jankari ya sahayata ke liye hume sampark karein.\n\n" +
+                "Dhanyavaad.\n\n" +
+                "Lari Traders\n" +
+                "📞 8707867040";
+
+        assertEquals(expected, message);
+    }
+
+    @Test
+    public void testAiReminderGeneratorFallbackNoShopName() {
+        class TestReminderGenerator extends com.shop.modules.customer.AiReminderGenerator {
+            public String testFallback(String name, String shopName, BigDecimal pendingAmount) {
+                return generateLocalFallback(name, shopName, pendingAmount);
+            }
+        }
+        TestReminderGenerator generator = new TestReminderGenerator();
+        String message = generator.testFallback("Mahfooz", "", BigDecimal.valueOf(12500));
+
+        String expected = "Mahfooz Ji,\n\n" +
+                "Lari Traders ki taraf se namaskar.\n\n" +
+                "Hamare records ke anusaar aapka outstanding balance ₹12,500.00 hai. Kripya is baki rashi ka bhugtan jald se jald karne ka kasht karein, taaki vyavsayik len-den sughar roop se jaari rahe.\n\n" +
+                "Yadi payment kar diya gaya hai, kripya is sandesh ko nazarandaaz karein. Kisi bhi prakar ki jankari ya sahayata ke liye hume sampark karein.\n\n" +
+                "Dhanyavaad.\n\n" +
+                "Lari Traders\n" +
+                "📞 8707867040";
+
+        assertEquals(expected, message);
+    }
 }
+
+

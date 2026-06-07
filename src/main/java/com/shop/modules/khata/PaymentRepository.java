@@ -25,8 +25,10 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
             @Param("start") LocalDateTime start,
             @Param("end") LocalDateTime end);
 
+    List<Payment> findAllByOrderByPaidAtDesc();
+
     @Query("SELECT p FROM Payment p WHERE " +
-            "p.paidAt BETWEEN :start AND :end")
+            "p.paidAt BETWEEN :start AND :end ORDER BY p.paidAt DESC")
     List<Payment> findBetween(
             @Param("start") LocalDateTime start,
             @Param("end") LocalDateTime end);

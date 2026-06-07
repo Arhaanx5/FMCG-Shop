@@ -5,6 +5,7 @@ import api from '../services/api'
 import DataTable from '../components/DataTable'
 import Modal from '../components/Modal'
 import DeliveryMap from '../components/DeliveryMap'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
 
@@ -29,23 +30,32 @@ export default function Deliveries() {
   const [bills, setBills] = useState([])
   const [deliveryBoys, setDeliveryBoys] = useState([])
   const [selectedBoy, setSelectedBoy] = useState('')
+  const [statusUpdateTarget, setStatusUpdateTarget] = useState(null) // holds { id, status }
   const toast = useToast()
   const { user } = useAuth()
   const isDeliveryBoyOrSalesman = user?.role === 'DELIVERY_BOY' || user?.role === 'SALESMAN'
+  const [deliveryTab, setDeliveryTab] = useState('pending')
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   const [assignForm, setAssignForm] = useState({
     billId: '', deliveryBoyId: '', type: 'SAME_DAY', scheduledDate: new Date().toISOString().split('T')[0],
   })
 
-  useEffect(() => { loadDeliveries(); loadStats() }, [])
+  useEffect(() => { loadDeliveries(true); loadStats() }, [])
 
-  const loadDeliveries = async () => {
-    setLoading(true)
+  const loadDeliveries = async (showSpinner = false) => {
+    if (showSpinner) setLoading(true)
     try {
       const res = await api.get('/deliveries')
       setDeliveries(res.data.data || [])
     } catch { toast.error('Failed to load deliveries') }
-    finally { setLoading(false) }
+    finally { if (showSpinner) setLoading(false) }
   }
 
   const loadStats = async () => {
@@ -91,13 +101,17 @@ export default function Deliveries() {
     finally { setSaving(false) }
   }
 
-  const updateStatus = async (id, status) => {
+  const executeStatusUpdate = async (id, status) => {
     try {
       await api.put(`/deliveries/${id}/status`, { status })
       toast.success(`Status updated to ${status}`)
       loadDeliveries()
       loadStats()
-    } catch { toast.error('Status update failed') }
+    } catch {
+      toast.error('Status update failed')
+    } finally {
+      setStatusUpdateTarget(null)
+    }
   }
 
   const openRouteMap = async (deliveryBoyId) => {
@@ -134,18 +148,19 @@ export default function Deliveries() {
   ).values()]
 
   const columns = [
-    { header: 'Bill #', accessor: 'billNumber', render: (row) => (
+    { header: 'Bill #', accessor: 'billNumber', width: 120, render: (row) => (
       <span style={{ fontWeight: 600, color: 'var(--color-accent)' }}>{row.billNumber}</span>
     )},
-    { header: 'Customer', accessor: 'customerName', render: (row) => (
+    { header: 'Customer', accessor: 'customerName', width: 170, render: (row) => (
       <div>
         <div className="font-medium">{row.shopName || row.customerName}</div>
-        {row.shopName && <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{row.customerName}</div>}
+        {row.areaName && (
+          <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+            📍 {row.areaName}
+          </div>
+        )}
       </div>
     )},
-    { header: 'Area', accessor: 'areaName', render: (row) =>
-      row.areaName ? <span className="badge badge-info">{row.areaName}</span> : <span className="text-muted">—</span>
-    },
     { header: 'Delivery Boy', accessor: 'deliveryBoyName', render: (row) =>
       row.deliveryBoyName || <span className="text-muted">Unassigned</span>
     },
@@ -160,7 +175,17 @@ export default function Deliveries() {
     { header: 'Scheduled', accessor: 'scheduledDate', render: (row) =>
       row.scheduledDate || <span className="text-muted">—</span>
     },
-  ]
+  ].filter(col => {
+    if (isMobile) {
+      return !['deliveryBoyName', 'scheduledDate'].includes(col.accessor)
+    }
+    return true
+  })
+
+  const filteredDeliveries = deliveries.filter(d => {
+    const isPending = ['PENDING', 'PACKED', 'OUT'].includes(d.status)
+    return deliveryTab === 'pending' ? isPending : !isPending
+  })
 
   return (
     <div className="page-container">
@@ -260,29 +285,45 @@ export default function Deliveries() {
         })}
       </div>
 
+      {/* Tabs */}
+      <div className="tabs" style={{ marginBottom: 'var(--space-4)' }}>
+        <button
+          className={`tab ${deliveryTab === 'pending' ? 'active' : ''}`}
+          onClick={() => setDeliveryTab('pending')}
+        >
+          ⏳ Pendings
+        </button>
+        <button
+          className={`tab ${deliveryTab === 'completed' ? 'active' : ''}`}
+          onClick={() => setDeliveryTab('completed')}
+        >
+          ✅ Completed
+        </button>
+      </div>
+
       {/* Deliveries Table */}
       <DataTable
         columns={columns}
-        data={deliveries}
+        data={filteredDeliveries}
         loading={loading}
         searchPlaceholder="Search deliveries..."
         emptyMessage="No deliveries found. Assign a delivery to get started."
         actions={(row) => (
           <>
             {row.status === 'PENDING' && (
-              <button className="btn btn-ghost btn-sm" onClick={() => updateStatus(row.id, 'PACKED')}
+              <button className="btn btn-ghost btn-sm" onClick={() => setStatusUpdateTarget({ id: row.id, status: 'PACKED' })}
                 style={{ fontSize: '11px', color: 'var(--color-info)' }}>
                 <Package size={14} /> Pack
               </button>
             )}
             {row.status === 'PACKED' && (
-              <button className="btn btn-ghost btn-sm" onClick={() => updateStatus(row.id, 'OUT')}
+              <button className="btn btn-ghost btn-sm" onClick={() => setStatusUpdateTarget({ id: row.id, status: 'OUT' })}
                 style={{ fontSize: '11px', color: 'var(--color-accent)' }}>
                 <Truck size={14} /> Dispatch
               </button>
             )}
             {row.status === 'OUT' && (
-              <button className="btn btn-ghost btn-sm" onClick={() => updateStatus(row.id, 'DELIVERED')}
+              <button className="btn btn-ghost btn-sm" onClick={() => setStatusUpdateTarget({ id: row.id, status: 'DELIVERED' })}
                 style={{ fontSize: '11px', color: 'var(--color-success)' }}>
                 <CheckCircle size={14} /> Delivered
               </button>
@@ -365,6 +406,17 @@ export default function Deliveries() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Accidental click protection dialog */}
+      <ConfirmDialog
+        isOpen={!!statusUpdateTarget}
+        onClose={() => setStatusUpdateTarget(null)}
+        onConfirm={() => executeStatusUpdate(statusUpdateTarget.id, statusUpdateTarget.status)}
+        title="Update Delivery Status"
+        message={`Are you sure you want to update the delivery status to ${statusUpdateTarget?.status}?`}
+        confirmLabel={`Update to ${statusUpdateTarget?.status}`}
+        danger={false}
+      />
     </div>
   )
 }

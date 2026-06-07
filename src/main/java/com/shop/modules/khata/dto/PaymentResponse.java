@@ -17,9 +17,17 @@ public class PaymentResponse {
     private UUID billId;
     private String billNumber;
     private BigDecimal amount;
+    private BigDecimal appliedAmount;
+    private BigDecimal excessAmount;
+    private String adjustmentType;
+    private String adjustmentNote;
+    private UUID adjustedBillId;
+    private String adjustedBillNumber;
     private String paymentMode;
     private String notes;
     private LocalDateTime paidAt;
     private String collectedBy;
     private BigDecimal customerPendingBalance;
-}
+    private BigDecimal billGrandTotal;
+    private BigDecimal billPendingAmount;
+}

@@ -1,5 +1,5 @@
 package com.shop.modules.billing;
 
 public enum BillStatus {
-    DRAFT, CONFIRMED, CANCELLED
+    DRAFT, CONFIRMED, PARTIAL, PAID, CANCELLED
 }

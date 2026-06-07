@@ -31,19 +31,23 @@ public class StockBatch {
 
     // Primary units received (BOX/CRATE/CARTON)
     @Column(name = "primary_received")
+    @Builder.Default
     private Integer primaryReceived = 0;
 
     // Secondary units received (LADI/BOTTLE/PACK)
     // auto calculated from primary × secondaryPerPrimary
     @Column(name = "secondary_received")
+    @Builder.Default
     private Integer secondaryReceived = 0;
 
     // Secondary units remaining (for FIFO)
     @Column(name = "secondary_remaining")
+    @Builder.Default
     private Integer secondaryRemaining = 0;
 
     // Secondary units soft reserved for draft bookings
     @Column(name = "secondary_soft_reserved")
+    @Builder.Default
     private Integer secondarySoftReserved = 0;
 
     // Buy price without tax per PRIMARY unit
@@ -56,6 +60,7 @@ public class StockBatch {
 
     // GST percent at time of purchase
     @Column(name = "gst_percent")
+    @Builder.Default
     private BigDecimal gstPercent = BigDecimal.ZERO;
 
     @Column(name = "expiry_date")
@@ -68,6 +73,7 @@ public class StockBatch {
     private String supplierName;
 
     @Column(name = "is_exhausted")
+    @Builder.Default
     private Boolean exhausted = false;
 
     @PrePersist

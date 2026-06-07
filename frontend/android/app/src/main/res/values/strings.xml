@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Lari Traders</string>
+    <string name="title_activity_main">Lari Traders</string>
+    <string name="package_name">com.laritraders.app</string>
+    <string name="custom_url_scheme">com.laritraders.app</string>
+</resources>

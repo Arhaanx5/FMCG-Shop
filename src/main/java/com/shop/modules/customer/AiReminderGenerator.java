@@ -20,17 +20,25 @@ public class AiReminderGenerator {
     @Value("${app.gemini.api-key:}")
     private String apiKey;
 
-    @Cacheable(value = "aiReminders", key = "#customerId.toString() + '_' + #pendingAmount.toString() + '_' + #currentDate")
+    @Cacheable(value = "aiReminders", key = "#customerId.toString() + '_' + #pendingAmount.toString() + '_' + #currentDate + '_' + #name + '_' + #shopName")
     public String generateReminderMessage(UUID customerId, BigDecimal pendingAmount, String currentDate, String name, String shopName) {
         log.info("Cache miss for customer {}. Generating fresh AI Hinglish reminder from Gemini API.", customerId);
         
-        String prompt = "You are a friendly and polite Indian FMCG distributor assistant. " +
-                "Generate a respectful, professional, and friendly payment reminder message in Hinglish (Hindi written in English script) " +
+        String prompt = "You are a friendly and polite Indian FMCG distributor assistant for Lari Traders. " +
+                "Generate a payment reminder message in Hinglish (Hindi written in English script) " +
                 "for the customer named: " + name + (shopName != null && !shopName.isBlank() ? " of shop: " + shopName : "") + ". " +
-                "Their outstanding pending balance is Rs. " + pendingAmount + ". " +
-                "Keep the tone extremely polite, warm, and cooperative (using words like 'ji', 'pranam', 'namaskar', 'request', 'clear'). " +
-                "Do NOT use placeholder tags (like [date], [your name]). " +
-                "Output ONLY the final message content, and absolutely nothing else. Keep it under 150 words.";
+                "Their outstanding pending balance is ₹" + formatAmount(pendingAmount) + ". " +
+                "You MUST output the reminder message EXACTLY in the following format (substituting the placeholders, and using exact wording):" +
+                "\n\n" +
+                name + " Ji" + (shopName != null && !shopName.isBlank() ? " (" + shopName + ")" : "") + ",\n\n" +
+                "Lari Traders ki taraf se namaskar.\n\n" +
+                "Hamare records ke anusaar aapka outstanding balance ₹" + formatAmount(pendingAmount) + " hai. Kripya is baki rashi ka bhugtan jald se jald karne ka kasht karein, taaki vyavsayik len-den sughar roop se jaari rahe.\n\n" +
+                "Yadi payment kar diya gaya hai, kripya is sandesh ko nazarandaaz karein. Kisi bhi prakar ki jankari ya sahayata ke liye hume sampark karein.\n\n" +
+                "Dhanyavaad.\n\n" +
+                "Lari Traders\n" +
+                "📞 8707867040" +
+                "\n\n" +
+                "Output ONLY the final message content, and absolutely nothing else.";
 
         // Use system environment fallback if property not set
         String activeKey = (apiKey == null || apiKey.trim().isEmpty()) ? System.getenv("GEMINI_API_KEY") : apiKey;
@@ -75,12 +83,27 @@ public class AiReminderGenerator {
         return generateLocalFallback(name, shopName, pendingAmount);
     }
 
-    private String generateLocalFallback(String name, String shopName, BigDecimal pendingAmount) {
+    protected String generateLocalFallback(String name, String shopName, BigDecimal pendingAmount) {
         String shopDetail = (shopName != null && !shopName.isBlank()) ? " (" + shopName + ")" : "";
-        return "Pranam " + name + " ji" + shopDetail + ",\n\n" +
-               "FMCG Shop se namaskar. Aapka outstanding balance Rs. " + pendingAmount + " hai. " +
-               "Aapse nivedan hai ki kripya jald se jald iska payment clear karein taaki humara business smooth chalta rahe.\n\n" +
-               "Kisi bhi query ke liye aap hume call kar sakte hain. Dhan्यवाद!";
+        return name + " Ji" + shopDetail + ",\n\n" +
+               "Lari Traders ki taraf se namaskar.\n\n" +
+               "Hamare records ke anusaar aapka outstanding balance ₹" + formatAmount(pendingAmount) + " hai. Kripya is baki rashi ka bhugtan jald se jald karne ka kasht karein, taaki vyavsayik len-den sughar roop se jaari rahe.\n\n" +
+               "Yadi payment kar diya gaya hai, kripya is sandesh ko nazarandaaz karein. Kisi bhi prakar ki jankari ya sahayata ke liye hume sampark karein.\n\n" +
+               "Dhanyavaad.\n\n" +
+               "Lari Traders\n" +
+               "📞 8707867040";
+    }
+
+    protected String formatAmount(BigDecimal amount) {
+        if (amount == null) return "0.00";
+        try {
+            java.text.NumberFormat nf = java.text.NumberFormat.getNumberInstance(new java.util.Locale("en", "IN"));
+            nf.setMinimumFractionDigits(2);
+            nf.setMaximumFractionDigits(2);
+            return nf.format(amount);
+        } catch (Exception e) {
+            return amount.setScale(2, java.math.RoundingMode.HALF_UP).toString();
+        }
     }
 
     private String escapeJsonString(String input) {

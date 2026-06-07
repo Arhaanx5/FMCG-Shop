@@ -40,6 +40,7 @@ public class DamageLog {
     private DamageReason reason;
 
     @Column(name = "value_loss")
+    @Builder.Default
     private BigDecimal valueLoss = BigDecimal.ZERO;
 
     @Enumerated(EnumType.STRING)

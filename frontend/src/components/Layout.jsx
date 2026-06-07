@@ -3,17 +3,20 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '../context/AuthContext'
 import api from '../services/api'
+import lariLogo from '../assets/lari-traders-logo.png'
 import {
   LayoutDashboard, Package, Users, ShoppingCart, Warehouse,
   BookOpen, Receipt, AlertTriangle, MapPin, UserCog,
-  Menu, X, LogOut, ChevronLeft, Award, Truck
+  Menu, X, LogOut, ChevronLeft, Award, Truck, Sun, Moon, Palette,
+  MessageSquare
 } from 'lucide-react'
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard, roles: ['ADMIN', 'MANAGER'] },
-  { path: '/billing', label: 'Billing', icon: ShoppingCart, roles: ['ADMIN', 'MANAGER'] },
+  { path: '/billing', label: 'Billing', icon: ShoppingCart, roles: ['ADMIN', 'MANAGER', 'SALESMAN', 'DELIVERY_BOY'] },
   { path: '/products', label: 'Products', icon: Package, roles: ['ADMIN', 'MANAGER'] },
   { path: '/customers', label: 'Customers', icon: Users, roles: ['ADMIN', 'MANAGER'] },
+  { path: '/whatsapp', label: 'Bulk Reminders', icon: MessageSquare, roles: ['ADMIN', 'MANAGER'] },
   { path: '/salesmen', label: 'Salesmen', icon: Award, roles: ['ADMIN', 'MANAGER'] },
   { path: '/stock', label: 'Stock', icon: Warehouse, roles: ['ADMIN', 'MANAGER'] },
   { path: '/khata', label: 'Khata', icon: BookOpen, roles: ['ADMIN', 'MANAGER', 'DELIVERY_BOY', 'SALESMAN'] },
@@ -29,6 +32,7 @@ const pageNames = {
   '/billing': 'Billing',
   '/products': 'Products',
   '/customers': 'Customers',
+  '/whatsapp': 'WhatsApp Bulk Reminders',
   '/salesmen': 'Salesmen & Routes',
   '/stock': 'Stock',
   '/khata': 'Khata / Payments',
@@ -44,8 +48,44 @@ export default function Layout() {
   const location = useLocation()
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  // Dark Mode state
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const saved = localStorage.getItem('theme')
+    return saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)
+  })
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark')
+      localStorage.setItem('theme', 'dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+      localStorage.setItem('theme', 'light')
+    }
+  }, [isDarkMode])
+
+  // UI Theme state ('classic' | 'modern')
+  const [uiTheme, setUiTheme] = useState(() => {
+    return localStorage.getItem('uiTheme') || 'modern'
+  })
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', uiTheme)
+    localStorage.setItem('uiTheme', uiTheme)
+  }, [uiTheme])
 
   // Live location background GPS reporter for delivery boys / salesmen
+  // Smart GPS calibration: only sends update if moved >15m AND accuracy is good
   useEffect(() => {
     if (!user) return
     const isDeliveryBoy = user.role === 'DELIVERY_BOY' || user.role === 'SALESMAN'
@@ -56,29 +96,73 @@ export default function Layout() {
       return
     }
 
-    const reportLocation = async (lat, lng) => {
+    // Haversine distance in meters between two [lat,lng] coords
+    const haversineDistance = (lat1, lng1, lat2, lng2) => {
+      const R = 6371000 // Earth radius in meters
+      const dLat = ((lat2 - lat1) * Math.PI) / 180
+      const dLng = ((lng2 - lng1) * Math.PI) / 180
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos((lat1 * Math.PI) / 180) *
+          Math.cos((lat2 * Math.PI) / 180) *
+          Math.sin(dLng / 2) * Math.sin(dLng / 2)
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    }
+
+    let lastReportedLat = null
+    let lastReportedLng = null
+    const MIN_DISTANCE_METERS = 15   // Only update if moved at least 15 meters
+    const MAX_ACCURACY_METERS = 200  // Ignore readings with poor GPS accuracy (>200m uncertainty, relaxed for indoor/testing)
+
+    const reportLocation = async (lat, lng, accuracy) => {
+      // Skip if GPS accuracy is too poor (phone indoor / weak signal)
+      if (accuracy > MAX_ACCURACY_METERS) {
+        console.log(`GPS: Skipping update — accuracy too low: ${Math.round(accuracy)}m`)
+        return
+      }
+
+      // Skip if hasn't moved enough (kills GPS noise jitter when standing still)
+      if (lastReportedLat !== null && lastReportedLng !== null) {
+        const dist = haversineDistance(lastReportedLat, lastReportedLng, lat, lng)
+        if (dist < MIN_DISTANCE_METERS) {
+          console.log(`GPS: Skipping update — only moved ${Math.round(dist)}m (min: ${MIN_DISTANCE_METERS}m)`)
+          return
+        }
+      }
+
+      lastReportedLat = lat
+      lastReportedLng = lng
+
       try {
         await api.put('/users/live-location', { latitude: lat, longitude: lng })
+        console.log(`GPS: Updated location — accuracy: ${Math.round(accuracy)}m`)
       } catch (err) {
         console.error('Failed to update live location:', err)
       }
     }
 
-    // Capture location once immediately, then watch
+    // Capture initial position immediately on login
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        reportLocation(position.coords.latitude, position.coords.longitude)
+        const { latitude, longitude, accuracy } = position.coords
+        reportLocation(latitude, longitude, accuracy)
       },
-      null,
-      { enableHighAccuracy: true }
+      (err) => console.warn('GPS getCurrentPosition error:', err.message),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     )
 
+    // Watch for position changes — maximumAge: 0 means always fresh (no cached GPS)
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
-        reportLocation(position.coords.latitude, position.coords.longitude)
+        const { latitude, longitude, accuracy } = position.coords
+        reportLocation(latitude, longitude, accuracy)
       },
-      null,
-      { enableHighAccuracy: true, timeout: 30000, maximumAge: 30000 }
+      (err) => console.warn('GPS watchPosition error:', err.message),
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,  // Never use cached location — always ask fresh GPS
+      }
     )
 
     return () => {
@@ -91,7 +175,7 @@ export default function Layout() {
   const currentPage = pageNames[location.pathname] || 'Lari Traders'
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
+    <div className="flex min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 transition-colors duration-200">
       {/* Mobile overlay */}
       <AnimatePresence>
         {mobileOpen && (
@@ -100,150 +184,168 @@ export default function Layout() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => setMobileOpen(false)}
-            style={{
-              position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-              zIndex: 250, display: 'none',
-            }}
-            className="mobile-overlay"
+            className="fixed inset-0 bg-black/50 z-[250] md:hidden"
           />
         )}
       </AnimatePresence>
 
       {/* Sidebar */}
       <motion.aside
-        className="app-sidebar"
         animate={{ width: collapsed ? 72 : 260 }}
         transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-        style={{
-          position: 'fixed', top: 0, left: 0, bottom: 0,
-          background: 'var(--color-surface)',
-          borderRight: '1px solid var(--color-border)',
-          display: 'flex', flexDirection: 'column',
-          zIndex: 260, overflow: 'hidden',
-        }}
+        className={`app-sidebar fixed top-0 left-0 bottom-0 ${
+          uiTheme !== 'classic' ? 'glass-panel border-r' : 'bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700'
+        } flex flex-col z-[260] overflow-hidden transition-transform duration-300 md:translate-x-0 ${
+          mobileOpen ? 'translate-x-0 shadow-2xl w-[260px]' : '-translate-x-full'
+        }`}
       >
         {/* Logo */}
-        <div style={{
-          padding: collapsed ? 'var(--space-4)' : 'var(--space-5) var(--space-6)',
-          borderBottom: '1px solid var(--color-border)',
-          display: 'flex', alignItems: 'center', gap: 'var(--space-3)',
-          minHeight: 'var(--topbar-height)',
-        }}>
-          <div style={{
-            width: 40, height: 40, borderRadius: 'var(--radius-md)', flexShrink: 0,
-            background: 'linear-gradient(135deg, var(--color-accent), #d97706)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '16px', fontWeight: 800, color: 'var(--color-text-inverse)',
-            boxShadow: '0 0 16px rgba(245, 158, 11, 0.3)',
-          }}>
-            LT
-          </div>
-          {!collapsed && (
+        <div className={`flex items-center border-b ${
+          uiTheme !== 'classic' ? 'border-border' : 'border-slate-200 dark:border-slate-700'
+        } min-h-16 ${
+          collapsed ? 'justify-center px-2 py-2' : 'px-4 py-2'
+        }`}>
+          {collapsed ? (
+            /* Collapsed: show just the eagle icon mark */
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 'var(--radius-md)',
+                overflow: 'hidden',
+                background: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
+              }}
+            >
+              {/* Eagle-only crop via clipped img */}
+              <img
+                src={lariLogo}
+                alt="LT"
+                style={{
+                  width: 80,
+                  height: 60,
+                  objectFit: 'cover',
+                  objectPosition: '50% 0%',
+                  marginTop: 4,
+                }}
+              />
+            </div>
+          ) : (
+            /* Expanded: full logo */
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 0.1 }}
-              style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}
+              transition={{ delay: 0.05 }}
+              style={{ width: '100%' }}
             >
-              <div style={{ fontSize: 'var(--font-size-md)', fontWeight: 'var(--font-weight-bold)', color: 'var(--color-text)' }}>
-                Lari Traders
-              </div>
-              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
-                FMCG Management
-              </div>
+              <img
+                src={lariLogo}
+                alt="Lari Traders"
+                style={{
+                  width: '100%',
+                  maxWidth: 210,
+                  height: 'auto',
+                  display: 'block',
+                  // Invert in dark mode so logo is visible
+                  filter: 'none',
+                }}
+                className="dark:brightness-90"
+              />
             </motion.div>
           )}
         </div>
 
         {/* Nav */}
-        <nav style={{ flex: 1, padding: 'var(--space-3)', overflowY: 'auto' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-            {visibleItems.map((item, i) => {
-              const Icon = item.icon
-              return (
-                <NavLink
-                  key={item.path}
-                  to={item.path}
-                  end={item.path === '/'}
-                  onClick={() => setMobileOpen(false)}
-                  style={({ isActive }) => ({
-                    display: 'flex', alignItems: 'center',
-                    gap: 'var(--space-3)',
-                    padding: collapsed ? 'var(--space-3)' : 'var(--space-3) var(--space-4)',
-                    borderRadius: 'var(--radius-md)',
-                    fontSize: 'var(--font-size-base)',
-                    fontWeight: isActive ? 'var(--font-weight-semibold)' : 'var(--font-weight-medium)',
-                    color: isActive ? 'var(--color-accent)' : 'var(--color-text-secondary)',
-                    background: isActive ? 'var(--color-accent-soft)' : 'transparent',
-                    textDecoration: 'none',
-                    transition: 'all 150ms',
-                    justifyContent: collapsed ? 'center' : 'flex-start',
-                    position: 'relative',
-                    overflow: 'hidden',
-                  })}
-                  className="nav-link"
-                >
-                  {({ isActive }) => (
-                    <>
-                      {isActive && (
-                        <motion.div
-                          layoutId="nav-active"
-                          style={{
-                            position: 'absolute', inset: 0,
-                            background: 'var(--color-accent-soft)',
-                            borderRadius: 'var(--radius-md)',
-                          }}
-                          transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-                        />
-                      )}
-                      <Icon size={20} style={{ position: 'relative', zIndex: 1, flexShrink: 0 }} />
-                      {!collapsed && (
-                        <span style={{ position: 'relative', zIndex: 1, whiteSpace: 'nowrap' }}>{item.label}</span>
-                      )}
-                    </>
-                  )}
-                </NavLink>
-              )
-            })}
-          </div>
+        <nav className="flex-1 py-3 px-3 overflow-y-auto space-y-1">
+          {visibleItems.map((item) => {
+            const Icon = item.icon
+            return (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                end={item.path === '/'}
+                onClick={() => setMobileOpen(false)}
+                className={({ isActive }) => `
+                  flex items-center gap-3 py-2.5 px-3 rounded-theme-sm text-sm transition-all duration-150 relative overflow-hidden
+                  ${collapsed ? 'justify-center' : 'justify-start'}
+                  ${isActive
+                    ? uiTheme === 'modern'
+                      ? 'text-violet-500 dark:text-violet-400 font-semibold bg-violet-500/10 dark:bg-violet-400/10'
+                      : uiTheme === 'cyber'
+                      ? 'text-blue-500 dark:text-cyan-400 font-semibold bg-blue-500/10 dark:bg-cyan-400/10'
+                      : uiTheme === 'neon'
+                      ? 'text-teal-600 dark:text-emerald-400 font-semibold bg-teal-500/10 dark:bg-emerald-400/10'
+                      : 'text-amber-500 font-semibold bg-amber-500/10 dark:bg-amber-500/10'
+                    : 'text-slate-600 dark:text-slate-300 font-medium hover:bg-slate-100 dark:hover:bg-slate-700/40 hover:text-slate-900 dark:hover:text-slate-100'}
+                `}
+              >
+                {({ isActive }) => (
+                  <>
+                    {isActive && (
+                      <motion.div
+                        layoutId="nav-active"
+                        className={`absolute inset-0 ${
+                          uiTheme === 'modern'
+                            ? 'bg-violet-500/5 dark:bg-violet-400/5 border-l-2 border-violet-500 dark:border-violet-400'
+                            : uiTheme === 'cyber'
+                            ? 'bg-blue-500/5 dark:bg-cyan-400/5 border-l-2 border-blue-500 dark:border-cyan-400'
+                            : uiTheme === 'neon'
+                            ? 'bg-teal-500/5 dark:bg-emerald-400/5 border-l-2 border-teal-500 dark:border-emerald-400'
+                            : 'bg-amber-500/5 dark:bg-amber-500/5 border-l-2 border-amber-500'
+                        }`}
+                        transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                      />
+                    )}
+                    <Icon size={20} className="relative z-10 flex-shrink-0" />
+                    {!collapsed && (
+                      <span className="relative z-10 whitespace-nowrap">{item.label}</span>
+                    )}
+                  </>
+                )}
+              </NavLink>
+            )
+          })}
         </nav>
 
         {/* User + collapse */}
-        <div style={{
-          padding: collapsed ? 'var(--space-3)' : 'var(--space-4) var(--space-5)',
-          borderTop: '1px solid var(--color-border)',
-          display: 'flex', flexDirection: 'column', gap: 'var(--space-3)',
-        }}>
+        <div className="p-4 border-t border-slate-200 dark:border-slate-700 flex flex-col gap-3">
           {!collapsed && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-              <div style={{
-                width: 36, height: 36, borderRadius: 'var(--radius-full)',
-                background: 'var(--color-surface-3)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-bold)',
-                color: 'var(--color-accent)', flexShrink: 0,
-              }}>
+            <div className="flex items-center gap-3">
+              <div className={`w-9 h-9 rounded-theme-md flex items-center justify-center text-sm font-bold flex-shrink-0 ${
+                uiTheme === 'modern' ? 'bg-violet-100 dark:bg-violet-950/40 text-violet-500' :
+                uiTheme === 'cyber' ? 'bg-blue-100 dark:bg-cyan-950/40 text-blue-500 dark:text-cyan-400' :
+                uiTheme === 'neon' ? 'bg-teal-100 dark:bg-emerald-950/40 text-teal-600 dark:text-emerald-400' :
+                'bg-slate-100 dark:bg-slate-700/50 text-amber-500'
+              }`}>
                 {(user?.name || 'U')[0].toUpperCase()}
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="truncate" style={{ fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-medium)' }}>
+              <div className="flex-1 min-w-0">
+                <div className="truncate text-xs font-semibold text-slate-800 dark:text-slate-200">
                   {user?.name || 'User'}
                 </div>
-                <div className="truncate" style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
+                <div className="truncate text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                   {role}
                 </div>
               </div>
             </div>
           )}
-          <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: collapsed ? 'center' : 'flex-start' }}>
+          <div className={`flex gap-1.5 ${collapsed ? 'justify-center' : 'justify-start'}`}>
             <button
-              className="btn btn-ghost btn-icon btn-sm"
+              className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-850 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-theme-sm transition-colors"
               onClick={() => setCollapsed(!collapsed)}
               title={collapsed ? 'Expand' : 'Collapse'}
             >
-              <ChevronLeft size={18} style={{ transform: collapsed ? 'rotate(180deg)' : 'none', transition: 'transform 300ms' }} />
+              <ChevronLeft size={18} className={`transition-transform duration-300 ${collapsed ? 'rotate-180' : ''}`} />
             </button>
-            <button className="btn btn-ghost btn-icon btn-sm" onClick={logout} title="Logout">
+            <button
+              className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-red-500 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-theme-sm transition-colors"
+              onClick={logout}
+              title="Logout"
+            >
               <LogOut size={18} />
             </button>
           </div>
@@ -252,83 +354,75 @@ export default function Layout() {
 
       {/* Main content */}
       <div 
-        className="app-content"
+        className="app-content flex-1 flex flex-col min-h-screen transition-all duration-300"
         style={{
-          flex: 1,
-          marginLeft: collapsed ? 72 : 260,
-          transition: 'margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          display: 'flex', flexDirection: 'column', minHeight: '100vh',
+          marginLeft: isMobile ? 0 : (collapsed ? 72 : 260),
+          minWidth: 0,
+          overflowX: 'hidden',
         }}
       >
         {/* Top bar */}
-        <header 
-          className="app-header"
-          style={{
-            height: 'var(--topbar-height)',
-            background: 'var(--color-surface)',
-            borderBottom: '1px solid var(--color-border)',
-            display: 'flex', alignItems: 'center',
-            padding: '0 var(--space-8)',
-            position: 'sticky', top: 0,
-            zIndex: 'var(--z-sticky)',
-            gap: 'var(--space-4)',
-          }}
-        >
+        <header className={`sticky top-0 h-16 ${
+          uiTheme !== 'classic' ? 'glass-panel border-b' : 'bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700'
+        } flex items-center px-4 md:px-8 z-[200] gap-4`}>
           <button
-            className="btn btn-ghost btn-icon btn-sm mobile-menu-btn"
+            className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-850 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-theme-sm md:hidden"
             onClick={() => setMobileOpen(true)}
-            style={{ display: 'none' }}
           >
             <Menu size={20} />
           </button>
-          <h1 style={{
-            fontSize: 'var(--font-size-lg)',
-            fontWeight: 'var(--font-weight-semibold)',
-            color: 'var(--color-text)',
-          }}>
+          <h1 className="text-sm md:text-lg font-bold text-slate-800 dark:text-slate-100 truncate flex-1 min-w-0">
             {currentPage}
           </h1>
+
+          {/* Theme Switcher */}
+          <button
+            className="ml-auto p-1.5 text-slate-500 dark:text-slate-400 hover:text-amber-500 dark:hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-theme-sm transition-colors mr-1"
+            onClick={() => {
+              const themes = ['classic', 'modern', 'cyber', 'neon']
+              const nextTheme = themes[(themes.indexOf(uiTheme) + 1) % themes.length]
+              setUiTheme(nextTheme)
+            }}
+            title={`Current Theme: ${uiTheme.toUpperCase()}. Click to switch theme.`}
+          >
+            <Palette size={20} />
+          </button>
+
+          {/* Dark Mode Toggle */}
+          <button
+            className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-amber-500 dark:hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-theme-sm transition-colors"
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          >
+            {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+          </button>
         </header>
 
         {/* Page content with animation */}
-        <main style={{ flex: 1 }}>
+        <main className="flex-1">
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}
-              initial={{ opacity: 0, y: 12 }}
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -12 }}
-              transition={{ duration: 0.25 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
             >
-              <Outlet />
+              <Outlet context={[uiTheme, setUiTheme]} />
             </motion.div>
           </AnimatePresence>
         </main>
       </div>
 
       <style>{`
-        .nav-link:hover {
-          background: var(--color-surface-hover) !important;
-          color: var(--color-text) !important;
-        }
         @media (max-width: 768px) {
-          .mobile-overlay {
-            display: ${mobileOpen ? 'block' : 'none'} !important;
-          }
-          .mobile-menu-btn {
-            display: flex !important;
-          }
           .app-sidebar {
             transform: ${mobileOpen ? 'translateX(0)' : 'translateX(-260px)'} !important;
             width: 260px !important;
-            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-            box-shadow: ${mobileOpen ? 'var(--shadow-xl)' : 'none'} !important;
+            box-shadow: ${mobileOpen ? '0 20px 25px -5px rgba(0, 0, 0, 0.15)' : 'none'} !important;
           }
           .app-content {
             margin-left: 0 !important;
-          }
-          .app-header {
-            padding: 0 var(--space-4) !important;
           }
         }
       `}</style>

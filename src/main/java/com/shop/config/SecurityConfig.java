@@ -1,5 +1,9 @@
 package com.shop.config;
 
+import com.shop.modules.user.UserRepository;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import com.shop.auth.JwtFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -24,6 +28,21 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtFilter jwtFilter;
+    private final UserRepository userRepository;
+
+    @Bean
+    public UserDetailsService userDetailsService() {
+        return phone -> {
+            com.shop.modules.user.User user = userRepository.findByPhone(phone)
+                    .orElseThrow(() -> new UsernameNotFoundException("User not found with phone: " + phone));
+            return User.builder()
+                    .username(user.getPhone())
+                    .password(user.getPasswordHash())
+                    .roles(user.getRole().name())
+                    .build();
+        };
+    }
+
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http)
             throws Exception {
@@ -36,7 +55,25 @@ public class SecurityConfig {
                                 SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
+                                "/",
+                                "/index.html",
+                                "/assets/**",
+                                "/favicon.ico",
+                                "/login",
+                                "/billing",
+                                "/products",
+                                "/customers",
+                                "/whatsapp",
+                                "/salesmen",
+                                "/stock",
+                                "/khata",
+                                "/expenses",
+                                "/damage",
+                                "/areas",
+                                "/deliveries",
+                                "/users",
                                 "/api/auth/**",
+                                "/ws/**",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/swagger-ui/index.html",
@@ -46,7 +83,6 @@ public class SecurityConfig {
                                 "/swagger-resources/**",
                                 "/swagger-resources",
                                 "/webjars/**",
-                                "/favicon.ico",
                                 "/actuator/**",
                                 "/error"
                         ).permitAll()

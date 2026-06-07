@@ -2,8 +2,10 @@ package com.shop.modules.khata;
 
 import com.shop.modules.billing.Bill;
 import com.shop.modules.billing.BillRepository;
+import com.shop.modules.billing.BillStatus;
 import com.shop.modules.customer.Customer;
 import com.shop.modules.customer.CustomerRepository;
+import com.shop.modules.khata.dto.OverpaymentPreviewResponse;
 import com.shop.modules.khata.dto.PaymentResponse;
 import com.shop.modules.khata.dto.RecordPaymentRequest;
 import com.shop.modules.user.User;
@@ -11,12 +13,15 @@ import com.shop.modules.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import jakarta.persistence.EntityNotFoundException;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import jakarta.persistence.EntityNotFoundException;
 
 @Service
 @RequiredArgsConstructor
@@ -27,178 +32,528 @@ public class KhataService {
     private final BillRepository billRepository;
     private final UserRepository userRepository;
 
-    // Convert Payment entity to PaymentResponse DTO
+    // ─────────────────────────────────────────────────────────────
+    // Helpers
+    // ─────────────────────────────────────────────────────────────
+
     private PaymentResponse toResponse(Payment payment) {
+        String adjustedBillNumber = null;
+        if (payment.getAdjustedBillId() != null) {
+            adjustedBillNumber = billRepository.findById(payment.getAdjustedBillId())
+                    .map(Bill::getBillNumber).orElse(null);
+        }
         return PaymentResponse.builder()
                 .id(payment.getId())
                 .customerId(payment.getCustomer().getId())
                 .customerName(payment.getCustomer().getName())
-                .customerShopName(
-                        payment.getCustomer().getShopName())
-                .billId(payment.getBill() != null
-                        ? payment.getBill().getId() : null)
-                .billNumber(payment.getBill() != null
-                        ? payment.getBill().getBillNumber() : null)
+                .customerShopName(payment.getCustomer().getShopName())
+                .billId(payment.getBill() != null ? payment.getBill().getId() : null)
+                .billNumber(payment.getBill() != null ? payment.getBill().getBillNumber() : null)
                 .amount(payment.getAmount())
+                .appliedAmount(payment.getAppliedAmount())
+                .excessAmount(payment.getExcessAmount())
+                .adjustmentType(payment.getAdjustmentType() != null
+                        ? payment.getAdjustmentType().name() : null)
+                .adjustmentNote(payment.getAdjustmentNote())
+                .adjustedBillId(payment.getAdjustedBillId())
+                .adjustedBillNumber(adjustedBillNumber)
                 .paymentMode(payment.getPaymentMode())
                 .notes(payment.getNotes())
                 .paidAt(payment.getPaidAt())
                 .collectedBy(payment.getCollectedBy() != null
                         ? payment.getCollectedBy().getName() : null)
                 .customerPendingBalance(payment.getCustomer().getTotalPending())
+                .billGrandTotal(payment.getBill() != null ? payment.getBill().getGrandTotal() : null)
+                .billPendingAmount(payment.getBill() != null ? payment.getBill().getPendingAmount() : null)
                 .build();
     }
 
-    public List<PaymentResponse> getCustomerPayments(
-            UUID customerId) {
+    /**
+     * Update a bill's paidAmount and pendingAmount, then derive its status:
+     *   paidAmount == 0             → CONFIRMED  (all pending)
+     *   0 < paidAmount < grandTotal → PARTIAL
+     *   paidAmount >= grandTotal    → PAID
+     */
+    private void applyPaymentToBill(Bill bill, BigDecimal amountToApply) {
+        bill.setPaidAmount(bill.getPaidAmount().add(amountToApply));
+        BigDecimal newPending = bill.getGrandTotal().subtract(bill.getPaidAmount());
+        bill.setPendingAmount(newPending.compareTo(BigDecimal.ZERO) < 0
+                ? BigDecimal.ZERO : newPending);
+        bill.setStatus(deriveBillStatus(bill));
+        billRepository.save(bill);
+    }
+
+    private BillStatus deriveBillStatus(Bill bill) {
+        if (bill.getPaidAmount().compareTo(BigDecimal.ZERO) == 0) {
+            return BillStatus.CONFIRMED;
+        } else if (bill.getPendingAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            return BillStatus.PAID;
+        } else {
+            return BillStatus.PARTIAL;
+        }
+    }
+
+    private void recalculateCustomerPending(Customer customer) {
+        BigDecimal totalGeneralPayments = paymentRepository.findByCustomerIdOrderByPaidAtDesc(customer.getId())
+                .stream()
+                .filter(p -> p.getBill() == null)
+                .map(p -> p.getAppliedAmount() != null ? p.getAppliedAmount() : p.getAmount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal unpaidOpeningBalance = customer.getOpeningBalance() != null
+                ? customer.getOpeningBalance().subtract(totalGeneralPayments)
+                : BigDecimal.ZERO;
+        if (unpaidOpeningBalance.compareTo(BigDecimal.ZERO) < 0) {
+            unpaidOpeningBalance = BigDecimal.ZERO;
+        }
+
+        BigDecimal totalBillPending = billRepository.findByCustomerId(customer.getId())
+                .stream()
+                .filter(b -> b.getStatus() != BillStatus.CANCELLED)
+                .map(Bill::getPendingAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        customer.setTotalPending(unpaidOpeningBalance.add(totalBillPending));
+        customerRepository.save(customer);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Read endpoints
+    // ─────────────────────────────────────────────────────────────
+
+    public List<PaymentResponse> getCustomerPayments(UUID customerId) {
         return paymentRepository
                 .findByCustomerIdOrderByPaidAtDesc(customerId)
-                .stream()
-                .map(this::toResponse)
-                .collect(Collectors.toList());
+                .stream().map(this::toResponse).collect(Collectors.toList());
     }
 
     public List<PaymentResponse> getTodayCollections() {
-        LocalDateTime start =
-                LocalDateTime.now().toLocalDate().atStartOfDay();
+        LocalDateTime start = LocalDateTime.now().toLocalDate().atStartOfDay();
         LocalDateTime end = start.plusDays(1);
         return paymentRepository.findBetween(start, end)
-                .stream()
-                .map(this::toResponse)
-                .collect(Collectors.toList());
+                .stream().map(this::toResponse).collect(Collectors.toList());
     }
 
     public List<PaymentResponse> getAllPayments() {
-        return paymentRepository.findAll()
-                .stream()
-                .map(this::toResponse)
-                .collect(Collectors.toList());
+        return paymentRepository.findAllByOrderByPaidAtDesc()
+                .stream().map(this::toResponse).collect(Collectors.toList());
     }
 
     public List<PaymentResponse> getCollectedByPayments(UUID salesmanId) {
         return paymentRepository.findByCollectedByIdOrderByPaidAtDesc(salesmanId)
-                .stream()
-                .map(this::toResponse)
-                .collect(Collectors.toList());
+                .stream().map(this::toResponse).collect(Collectors.toList());
     }
 
     public List<PaymentResponse> getTodayCollectedByPayments(UUID salesmanId) {
         LocalDateTime start = LocalDateTime.now().toLocalDate().atStartOfDay();
         LocalDateTime end = start.plusDays(1);
         return paymentRepository.findByCollectedByIdAndBetween(salesmanId, start, end)
-                .stream()
-                .map(this::toResponse)
-                .collect(Collectors.toList());
+                .stream().map(this::toResponse).collect(Collectors.toList());
     }
+
+    // ─────────────────────────────────────────────────────────────
+    // Preview overpayment — called BEFORE saving
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * Returns an OverpaymentPreviewResponse when amount > bill.pendingAmount.
+     * Returns null if amount is within the pending amount (normal payment).
+     */
+    public OverpaymentPreviewResponse previewOverpayment(
+            UUID customerId, UUID billId, BigDecimal amount) {
+
+        if (billId == null) return null; // No specific bill → existing FIFO handles it
+
+        Bill bill = billRepository.findById(billId)
+                .orElseThrow(() -> new RuntimeException("Bill not found"));
+
+        BigDecimal pending = bill.getPendingAmount();
+        if (amount.compareTo(pending) <= 0) return null; // Normal, no overpayment
+
+        BigDecimal excess = amount.subtract(pending);
+
+        // Get other pending bills for FIFO preview
+        List<Bill> otherBills = billRepository
+                .findPendingBillsForCustomerExcluding(customerId, billId);
+
+        List<OverpaymentPreviewResponse.BillSummary> summaries = otherBills.stream()
+                .map(b -> OverpaymentPreviewResponse.BillSummary.builder()
+                        .billId(b.getId())
+                        .billNumber(b.getBillNumber())
+                        .pendingAmount(b.getPendingAmount())
+                        .grandTotal(b.getGrandTotal())
+                        .createdAt(b.getCreatedAt() != null ? b.getCreatedAt().toString() : null)
+                        .build())
+                .collect(Collectors.toList());
+
+        // Compute FIFO auto-distribution preview
+        List<OverpaymentPreviewResponse.AutoDistributionEntry> autoEntries = new ArrayList<>();
+        BigDecimal remaining = excess;
+        for (Bill ob : otherBills) {
+            if (remaining.compareTo(BigDecimal.ZERO) <= 0) break;
+            BigDecimal apply = remaining.min(ob.getPendingAmount());
+            autoEntries.add(OverpaymentPreviewResponse.AutoDistributionEntry.builder()
+                    .billId(ob.getId())
+                    .billNumber(ob.getBillNumber())
+                    .pendingBefore(ob.getPendingAmount())
+                    .amountApplied(apply)
+                    .pendingAfter(ob.getPendingAmount().subtract(apply))
+                    .willBeFullyPaid(ob.getPendingAmount().subtract(apply)
+                            .compareTo(BigDecimal.ZERO) <= 0)
+                    .build());
+            remaining = remaining.subtract(apply);
+        }
+
+        return OverpaymentPreviewResponse.builder()
+                .sourceBillId(bill.getId())
+                .sourceBillNumber(bill.getBillNumber())
+                .sourceBillPending(pending)
+                .paymentAmount(amount)
+                .excessAmount(excess)
+                .otherPendingBills(summaries)
+                .autoDistribution(autoEntries)
+                .remainingAfterAuto(remaining) // > 0 means will block
+                .build();
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Record Payment — main transactional method
+    // ─────────────────────────────────────────────────────────────
 
     @Transactional
     public PaymentResponse recordPayment(
             RecordPaymentRequest req,
             String collectedByPhone) {
 
-        Customer customer = customerRepository
-                .findById(req.getCustomerId())
-                .orElseThrow(() ->
-                        new RuntimeException("Customer not found"));
+        Customer customer = customerRepository.findById(req.getCustomerId())
+                .orElseThrow(() -> new RuntimeException("Customer not found"));
 
-        User collector = userRepository
-                .findByPhone(collectedByPhone)
-                .orElseThrow(() ->
-                        new RuntimeException("User not found"));
+        User collector = userRepository.findByPhone(collectedByPhone)
+                .orElseThrow(() -> new RuntimeException("User not found"));
 
         Bill bill = null;
         if (req.getBillId() != null) {
-            bill = billRepository
-                    .findById(req.getBillId())
-                    .orElse(null);
+            bill = billRepository.findById(req.getBillId()).orElse(null);
         }
 
-        Payment payment = Payment.builder()
+        // ── Case A: No specific bill → legacy FIFO auto-allocation ──
+        if (bill == null) {
+            return recordGeneralPayment(req, customer, collector);
+        }
+
+        BigDecimal amount = req.getAmount();
+        BigDecimal pending = bill.getPendingAmount();
+
+        // ── Case B: Normal payment (amount ≤ pending) ──
+        if (amount.compareTo(pending) <= 0) {
+            return recordNormalPayment(req, customer, bill, collector, amount);
+        }
+
+        // ── Case C: Overpayment ──
+        // Require user to have confirmed a resolution
+        if (!req.isConfirmedByUser() || req.getAdjustmentType() == null) {
+            throw new RuntimeException(
+                    "Overpayment detected. Please choose an adjustment option and confirm.");
+        }
+
+        return switch (req.getAdjustmentType()) {
+            case MANUAL_ADJUST -> recordManualAdjust(req, customer, bill, collector, amount, pending);
+            case AUTO_ADJUST   -> recordAutoAdjust(req, customer, bill, collector, amount, pending);
+            default -> throw new RuntimeException("Invalid adjustment type for overpayment.");
+        };
+    }
+
+    // ── B: Normal payment ──
+    private PaymentResponse recordNormalPayment(
+            RecordPaymentRequest req, Customer customer,
+            Bill bill, User collector, BigDecimal amount) {
+
+        applyPaymentToBill(bill, amount);
+        recalculateCustomerPending(customer);
+
+        Payment saved = paymentRepository.save(Payment.builder()
                 .customer(customer)
                 .bill(bill)
-                .amount(req.getAmount())
+                .amount(amount)
+                .appliedAmount(amount)
+                .excessAmount(BigDecimal.ZERO)
+                .adjustmentType(AdjustmentType.NORMAL)
                 .paymentMode(req.getPaymentMode())
                 .notes(req.getNotes())
                 .collectedBy(collector)
-                .build();
+                .paidAt(LocalDateTime.now())
+                .build());
 
-        // Reduce customer pending balance
-        BigDecimal newPending = customer
-                .getTotalPending()
-                .subtract(req.getAmount());
-
-        customer.setTotalPending(
-                newPending.compareTo(BigDecimal.ZERO) < 0
-                        ? BigDecimal.ZERO : newPending);
-        customerRepository.save(customer);
-
-        // Update bill paid amount if linked
-        if (bill != null) {
-            bill.setPaidAmount(
-                    bill.getPaidAmount().add(req.getAmount()));
-            bill.setPendingAmount(
-                    bill.getGrandTotal()
-                            .subtract(bill.getPaidAmount()));
-            billRepository.save(bill);
-        }
-
-        Payment saved = paymentRepository.save(payment);
         return toResponse(saved);
     }
 
-    // ── Delete payment (ADMIN only) ──
-    // Reverses customer balance and linked bill amounts,
-    // then permanently removes the payment record.
+    // ── C1: Manual adjust ──
+    private PaymentResponse recordManualAdjust(
+            RecordPaymentRequest req, Customer customer,
+            Bill sourceBill, User collector,
+            BigDecimal amount, BigDecimal sourcePending) {
+
+        if (req.getTargetBillId() == null) {
+            throw new RuntimeException("Target bill must be selected for manual adjustment.");
+        }
+
+        Bill targetBill = billRepository.findById(req.getTargetBillId())
+                .orElseThrow(() -> new RuntimeException("Target bill not found"));
+
+        if (!targetBill.getCustomer().getId().equals(customer.getId())) {
+            throw new RuntimeException("Target bill does not belong to this customer.");
+        }
+
+        BigDecimal excess = amount.subtract(sourcePending);
+        BigDecimal applyToTarget = excess.min(targetBill.getPendingAmount());
+
+        // Apply to source bill (fully pays it)
+        applyPaymentToBill(sourceBill, sourcePending);
+        // Apply excess to target bill
+        applyPaymentToBill(targetBill, applyToTarget);
+
+        // Reduce customer pending by full payment amount
+        recalculateCustomerPending(customer);
+
+        LocalDateTime now = LocalDateTime.now();
+        String groupNote = String.format("Adjustment: ₹%.2f on %s + ₹%.2f on %s",
+                sourcePending, sourceBill.getBillNumber(),
+                applyToTarget, targetBill.getBillNumber());
+
+        // Save separate payment record for source bill
+        Payment sourceSaved = paymentRepository.save(Payment.builder()
+                .customer(customer)
+                .bill(sourceBill)
+                .amount(sourcePending)
+                .appliedAmount(sourcePending)
+                .excessAmount(BigDecimal.ZERO)
+                .adjustmentType(AdjustmentType.MANUAL_ADJUST)
+                .adjustmentNote(groupNote)
+                .paymentMode(req.getPaymentMode())
+                .notes(req.getNotes())
+                .collectedBy(collector)
+                .paidAt(now)
+                .build());
+
+        // Save separate payment record for target bill (the excess portion)
+        paymentRepository.save(Payment.builder()
+                .customer(customer)
+                .bill(targetBill)
+                .amount(applyToTarget)
+                .appliedAmount(applyToTarget)
+                .excessAmount(BigDecimal.ZERO)
+                .adjustmentType(AdjustmentType.MANUAL_ADJUST)
+                .adjustmentNote(groupNote)
+                .paymentMode(req.getPaymentMode())
+                .notes(req.getNotes())
+                .collectedBy(collector)
+                .paidAt(now)
+                .build());
+
+        return toResponse(sourceSaved);
+    }
+
+    // ── C2: Auto FIFO adjust ──
+    private PaymentResponse recordAutoAdjust(
+            RecordPaymentRequest req, Customer customer,
+            Bill sourceBill, User collector,
+            BigDecimal amount, BigDecimal sourcePending) {
+
+        BigDecimal excess = amount.subtract(sourcePending);
+
+        // Validate: check there are enough pending bills to absorb excess
+        List<Bill> otherBills = billRepository
+                .findPendingBillsForCustomerExcluding(customer.getId(), sourceBill.getId());
+
+        BigDecimal totalOtherPending = otherBills.stream()
+                .map(Bill::getPendingAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        if (totalOtherPending.compareTo(excess) < 0) {
+            throw new RuntimeException(String.format(
+                    "Excess amount ₹%.2f exceeds total other pending bills ₹%.2f. " +
+                    "No advance option available — please reduce payment amount.",
+                    excess, totalOtherPending));
+        }
+
+        // Apply to source bill
+        applyPaymentToBill(sourceBill, sourcePending);
+
+        // FIFO distribute excess — collect applied amounts per bill
+        BigDecimal remaining = excess;
+        List<String> adjustedBillNumbers = new ArrayList<>();
+        List<Map.Entry<Bill, BigDecimal>> allocations = new ArrayList<>();
+
+        for (Bill ob : otherBills) {
+            if (remaining.compareTo(BigDecimal.ZERO) <= 0) break;
+            BigDecimal apply = remaining.min(ob.getPendingAmount());
+            applyPaymentToBill(ob, apply);
+            adjustedBillNumbers.add(String.format("%s(₹%.2f)", ob.getBillNumber(), apply));
+            allocations.add(Map.entry(ob, apply));
+            remaining = remaining.subtract(apply);
+        }
+
+        // Reduce customer pending by full amount
+        recalculateCustomerPending(customer);
+
+        String groupNote = String.format(
+                "Auto-adjust: ₹%.2f on %s; excess ₹%.2f → %s",
+                sourcePending, sourceBill.getBillNumber(),
+                excess, String.join(", ", adjustedBillNumbers));
+
+        LocalDateTime now = LocalDateTime.now();
+
+        // Save payment record for source bill
+        Payment sourceSaved = paymentRepository.save(Payment.builder()
+                .customer(customer)
+                .bill(sourceBill)
+                .amount(sourcePending)
+                .appliedAmount(sourcePending)
+                .excessAmount(BigDecimal.ZERO)
+                .adjustmentType(AdjustmentType.AUTO_ADJUST)
+                .adjustmentNote(groupNote)
+                .paymentMode(req.getPaymentMode())
+                .notes(req.getNotes())
+                .collectedBy(collector)
+                .paidAt(now)
+                .build());
+
+        // Save separate payment record for EACH adjusted bill
+        for (Map.Entry<Bill, BigDecimal> entry : allocations) {
+            paymentRepository.save(Payment.builder()
+                    .customer(customer)
+                    .bill(entry.getKey())
+                    .amount(entry.getValue())
+                    .appliedAmount(entry.getValue())
+                    .excessAmount(BigDecimal.ZERO)
+                    .adjustmentType(AdjustmentType.AUTO_ADJUST)
+                    .adjustmentNote(groupNote)
+                    .paymentMode(req.getPaymentMode())
+                    .notes(req.getNotes())
+                    .collectedBy(collector)
+                    .paidAt(now)
+                    .build());
+        }
+
+        return toResponse(sourceSaved);
+    }
+
+    // ── A: General payment (no bill linked) — existing FIFO logic preserved ──
+    @Transactional
+    private PaymentResponse recordGeneralPayment(
+            RecordPaymentRequest req, Customer customer, User collector) {
+
+        List<Bill> pendingBills = billRepository.findByCustomerId(customer.getId())
+                .stream()
+                .filter(b -> (b.getStatus() == BillStatus.CONFIRMED || b.getStatus() == BillStatus.PARTIAL)
+                        && b.getPendingAmount().compareTo(BigDecimal.ZERO) > 0)
+                .sorted(java.util.Comparator.comparing(Bill::getCreatedAt))
+                .collect(Collectors.toList());
+
+        BigDecimal remaining = req.getAmount();
+        Payment lastSaved = null;
+
+
+
+        if (pendingBills.isEmpty()) {
+            lastSaved = paymentRepository.save(Payment.builder()
+                    .customer(customer).bill(null)
+                    .amount(req.getAmount())
+                    .appliedAmount(req.getAmount())
+                    .excessAmount(BigDecimal.ZERO)
+                    .adjustmentType(AdjustmentType.NORMAL)
+                    .paymentMode(req.getPaymentMode())
+                    .notes(req.getNotes()).collectedBy(collector)
+                    .paidAt(LocalDateTime.now()).build());
+        } else {
+            for (Bill pb : pendingBills) {
+                if (remaining.compareTo(BigDecimal.ZERO) <= 0) break;
+                BigDecimal alloc = remaining.min(pb.getPendingAmount());
+                applyPaymentToBill(pb, alloc);
+                lastSaved = paymentRepository.save(Payment.builder()
+                        .customer(customer).bill(pb)
+                        .amount(alloc).appliedAmount(alloc)
+                        .excessAmount(BigDecimal.ZERO)
+                        .adjustmentType(AdjustmentType.NORMAL)
+                        .paymentMode(req.getPaymentMode())
+                        .notes(req.getNotes()).collectedBy(collector)
+                        .paidAt(LocalDateTime.now()).build());
+                remaining = remaining.subtract(alloc);
+            }
+            if (remaining.compareTo(BigDecimal.ZERO) > 0) {
+                // Remaining after all bills cleared — general payment record
+                lastSaved = paymentRepository.save(Payment.builder()
+                        .customer(customer).bill(null)
+                        .amount(remaining).appliedAmount(remaining)
+                        .excessAmount(BigDecimal.ZERO)
+                        .adjustmentType(AdjustmentType.NORMAL)
+                        .paymentMode(req.getPaymentMode())
+                        .notes(req.getNotes()).collectedBy(collector)
+                        .paidAt(LocalDateTime.now()).build());
+            }
+        }
+        recalculateCustomerPending(customer);
+        return toResponse(lastSaved);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Delete Payment — reverses everything
+    // ─────────────────────────────────────────────────────────────
+
     @Transactional
     public void deletePayment(UUID paymentId) {
 
-        Payment payment = paymentRepository
-                .findById(paymentId)
-                .orElseThrow(() ->
-                        new EntityNotFoundException(
-                                "Payment not found: "
-                                        + paymentId));
+        Payment payment = paymentRepository.findById(paymentId)
+                .orElseThrow(() -> new EntityNotFoundException("Payment not found: " + paymentId));
 
-        // Restore customer pending balance
         Customer customer = payment.getCustomer();
-        customer.setTotalPending(
-                customer.getTotalPending()
-                        .add(payment.getAmount()));
-        customerRepository.save(customer);
+        AdjustmentType type = payment.getAdjustmentType() != null
+                ? payment.getAdjustmentType() : AdjustmentType.NORMAL;
 
-        // If linked to a bill, reverse bill paid/pending amounts
+        // Restore customer pending
+
+        // Reverse source bill
         Bill bill = payment.getBill();
         if (bill != null) {
-            BigDecimal newPaid = bill.getPaidAmount()
-                    .subtract(payment.getAmount());
-            bill.setPaidAmount(
-                    newPaid.compareTo(BigDecimal.ZERO) < 0
-                            ? BigDecimal.ZERO : newPaid);
-            bill.setPendingAmount(
-                    bill.getGrandTotal()
-                            .subtract(bill.getPaidAmount()));
+            BigDecimal appliedToSource = payment.getAppliedAmount() != null
+                    ? payment.getAppliedAmount() : payment.getAmount();
+            BigDecimal newPaid = bill.getPaidAmount().subtract(appliedToSource);
+            bill.setPaidAmount(newPaid.compareTo(BigDecimal.ZERO) < 0
+                    ? BigDecimal.ZERO : newPaid);
+            bill.setPendingAmount(bill.getGrandTotal().subtract(bill.getPaidAmount()));
+            bill.setStatus(deriveBillStatus(bill));
             billRepository.save(bill);
         }
 
+        // Reverse adjusted bill (MANUAL or AUTO)
+        if ((type == AdjustmentType.MANUAL_ADJUST || type == AdjustmentType.AUTO_ADJUST)
+                && payment.getAdjustedBillId() != null) {
+            billRepository.findById(payment.getAdjustedBillId()).ifPresent(adjBill -> {
+                BigDecimal excess = payment.getExcessAmount() != null
+                        ? payment.getExcessAmount() : BigDecimal.ZERO;
+                BigDecimal newPaid = adjBill.getPaidAmount().subtract(excess);
+                adjBill.setPaidAmount(newPaid.compareTo(BigDecimal.ZERO) < 0
+                        ? BigDecimal.ZERO : newPaid);
+                adjBill.setPendingAmount(adjBill.getGrandTotal().subtract(adjBill.getPaidAmount()));
+                adjBill.setStatus(deriveBillStatus(adjBill));
+                billRepository.save(adjBill);
+            });
+        }
+
         paymentRepository.delete(payment);
+        recalculateCustomerPending(customer);
     }
 
-    // ── Update payment details (ADMIN/MANAGER only) ──
+    // ─────────────────────────────────────────────────────────────
+    // Update payment details
+    // ─────────────────────────────────────────────────────────────
+
     @Transactional
     public PaymentResponse updatePayment(UUID id, String paymentMode, String notes) {
-        Payment payment = paymentRepository
-                .findById(id)
-                .orElseThrow(() ->
-                        new EntityNotFoundException(
-                                "Payment not found: " + id));
-
-        if (paymentMode != null) {
-            payment.setPaymentMode(paymentMode);
-        }
-        if (notes != null) {
-            payment.setNotes(notes);
-        }
-
+        Payment payment = paymentRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Payment not found: " + id));
+        if (paymentMode != null) payment.setPaymentMode(paymentMode);
+        if (notes != null) payment.setNotes(notes);
         return toResponse(paymentRepository.save(payment));
     }
 }

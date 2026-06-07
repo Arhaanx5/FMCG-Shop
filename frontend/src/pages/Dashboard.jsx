@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useOutletContext } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   IndianRupee, ShoppingCart, TrendingUp, TrendingDown,
@@ -11,9 +11,90 @@ import StatCard from '../components/StatCard'
 import { useToast } from '../context/ToastContext'
 
 const PIE_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899']
+const MODERN_PIE_COLORS = ['#8b5cf6', '#a78bfa', '#ec4899', '#f97316', '#f59e0b', '#10b981']
+const CYBER_PIE_COLORS = ['#00d2ff', '#3b82f6', '#60a5fa', '#0a80df', '#38bdf8', '#1e3a8a']
+const NEON_PIE_COLORS = ['#00ffcc', '#d946ef', '#10b981', '#f43f5e', '#a855f7', '#06b6d4']
+
+function LiveActivityWidget({ recentBills = [], lowStockList = [], pendingDeliveries = [] }) {
+  const activities = []
+
+  recentBills.slice(0, 3).forEach((bill, idx) => {
+    const displayNum = bill.billNumber || (bill.id ? bill.id.slice(0, 8) : (idx + 101));
+    activities.push({
+      id: `bill-${bill.id || idx}`,
+      type: 'bill',
+      title: `Invoice #${displayNum} generated`,
+      subtitle: `${bill.customerName || 'Retailer'} • ₹${Number(bill.grandTotal || 0).toLocaleString('en-IN')}`,
+      time: idx === 0 ? 'Just now' : idx === 1 ? '15m ago' : '1h ago',
+      color: '#8b5cf6',
+      icon: <ShoppingCart size={14} />,
+    })
+  })
+
+  lowStockList.slice(0, 2).forEach((item, idx) => {
+    activities.push({
+      id: `stock-${item.productId || idx}`,
+      type: 'stock',
+      title: `Low stock: ${item.productName}`,
+      subtitle: `${item.currentStock} remaining (min: ${item.threshold})`,
+      time: idx === 0 ? '2h ago' : '5h ago',
+      color: '#ef4444',
+      icon: <Package size={14} />,
+    })
+  })
+
+  pendingDeliveries.slice(0, 2).forEach((item, idx) => {
+    activities.push({
+      id: `delivery-${item.id || idx}`,
+      type: 'delivery',
+      title: `Delivery Dispatch Scheduled`,
+      subtitle: `Route: ${item.areaName || 'Main Route'}`,
+      time: idx === 0 ? '3h ago' : '6h ago',
+      color: '#f97316',
+      icon: <Truck size={14} />,
+    })
+  })
+
+  return (
+    <div className="card card-lift">
+      <div className="card-header flex justify-between items-center" style={{ marginBottom: 'var(--space-4)', paddingBottom: 'var(--space-3)' }}>
+        <span className="card-title">Live Activity Feed</span>
+        <span className="pulse-dot" style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+      </div>
+      <div className="flex flex-col gap-4 mt-2">
+        {activities.length === 0 ? (
+          <p className="text-muted text-xs text-center py-4">No recent activity detected.</p>
+        ) : (
+          activities.slice(0, 5).map((act) => (
+            <div key={act.id} className="flex gap-3 items-start text-xs border-b border-slate-100 dark:border-slate-800 pb-3 last:border-0 last:pb-0">
+              <div 
+                className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-white"
+                style={{ background: act.color }}
+              >
+                {act.icon}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div style={{ fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text)' }}>
+                  {act.title}
+                </div>
+                <div style={{ color: 'var(--color-text-secondary)', marginTop: '2px' }}>
+                  {act.subtitle}
+                </div>
+              </div>
+              <div style={{ color: 'var(--color-text-muted)', fontSize: '10px', whiteSpace: 'nowrap' }}>
+                {act.time}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
 
 export default function Dashboard() {
   const navigate = useNavigate()
+  const [uiTheme] = useOutletContext()
   const [today, setToday] = useState(null)
   const [monthly, setMonthly] = useState(null)
   const [yearly, setYearly] = useState(null)
@@ -24,6 +105,8 @@ export default function Dashboard() {
   const [alertScope, setAlertScope] = useState('urgent')
   const toast = useToast()
 
+  const [recentBills, setRecentBills] = useState([])
+
   useEffect(() => {
     loadDashboard()
   }, [selectedYear, selectedMonth])
@@ -31,14 +114,16 @@ export default function Dashboard() {
   const loadDashboard = async () => {
     setLoading(true)
     try {
-      const [todayRes, monthlyRes, yearlyRes] = await Promise.all([
+      const [todayRes, monthlyRes, yearlyRes, billsRes] = await Promise.all([
         api.get('/dashboard/today'),
         api.get(`/dashboard/monthly?year=${selectedYear}&month=${selectedMonth}`),
         api.get(`/dashboard/yearly?year=${selectedYear}`),
+        api.get('/bills?size=5'),
       ])
       setToday(todayRes.data.data)
       setMonthly(monthlyRes.data.data)
       setYearly(yearlyRes.data.data)
+      setRecentBills(billsRes.data.data?.content || billsRes.data.data || [])
     } catch (err) {
       toast.error('Failed to load dashboard data')
     } finally {
@@ -207,6 +292,21 @@ export default function Dashboard() {
 
   const bottomCards = getBottomCards()
 
+  const MODERN_COLORS = ['#8b5cf6', '#d946ef', '#f97316', '#ef4444']
+  const CLASSIC_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444']
+  const CYBER_COLORS = ['#3b82f6', '#00d2ff', '#60a5fa', '#ef4444']
+  const NEON_COLORS = ['#00ffcc', '#d946ef', '#10b981', '#f43f5e']
+
+  const activeColors = uiTheme === 'modern' ? MODERN_COLORS :
+                       uiTheme === 'cyber' ? CYBER_COLORS :
+                       uiTheme === 'neon' ? NEON_COLORS :
+                       CLASSIC_COLORS
+
+  const activePieColors = uiTheme === 'modern' ? MODERN_PIE_COLORS :
+                          uiTheme === 'cyber' ? CYBER_PIE_COLORS :
+                          uiTheme === 'neon' ? NEON_PIE_COLORS :
+                          PIE_COLORS
+
   return (
     <div className="page-container">
       {/* Pulse dot keyframe animation */}
@@ -283,20 +383,20 @@ export default function Dashboard() {
             {viewMode === 'month' && (
               <>
                 <select
-                  className="form-select"
+                  className="form-select rounded-theme-md"
                   value={selectedMonth}
                   onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                  style={{ width: '130px', height: '38px', padding: '0 32px 0 12px', fontSize: 'var(--font-size-sm)', borderRadius: 'var(--radius-md)', flexShrink: 0 }}
+                  style={{ width: '130px', height: '38px', padding: '0 32px 0 12px', fontSize: 'var(--font-size-sm)', flexShrink: 0 }}
                 >
                   {months.map((m, i) => (
                     <option key={i} value={i + 1}>{m}</option>
                   ))}
                 </select>
                 <select
-                  className="form-select"
+                  className="form-select rounded-theme-md"
                   value={selectedYear}
                   onChange={(e) => setSelectedYear(Number(e.target.value))}
-                  style={{ width: '105px', height: '38px', padding: '0 32px 0 12px', fontSize: 'var(--font-size-sm)', borderRadius: 'var(--radius-md)', flexShrink: 0 }}
+                  style={{ width: '105px', height: '38px', padding: '0 32px 0 12px', fontSize: 'var(--font-size-sm)', flexShrink: 0 }}
                 >
                   {[2024, 2025, 2026].map((y) => (
                     <option key={y} value={y}>{y}</option>
@@ -307,10 +407,10 @@ export default function Dashboard() {
 
             {viewMode === 'year' && (
               <select
-                className="form-select"
+                className="form-select rounded-theme-md"
                 value={selectedYear}
                 onChange={(e) => setSelectedYear(Number(e.target.value))}
-                style={{ width: '110px', height: '38px', padding: '0 32px 0 12px', fontSize: 'var(--font-size-sm)', borderRadius: 'var(--radius-md)', flexShrink: 0 }}
+                style={{ width: '110px', height: '38px', padding: '0 32px 0 12px', fontSize: 'var(--font-size-sm)', flexShrink: 0 }}
               >
                 {[2024, 2025, 2026].map((y) => (
                   <option key={y} value={y}>{y}</option>
@@ -321,349 +421,721 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid-4" style={{ marginBottom: 'var(--space-8)' }}>
-        <StatCard
-          icon={<IndianRupee size={24} />}
-          label={kpis.revenueLabel}
-          value={kpis.revenue}
-          prefix="₹"
-          color="var(--color-accent)"
-          delay={0}
-        />
-        <StatCard
-          icon={<ShoppingCart size={24} />}
-          label={kpis.billsLabel}
-          value={kpis.bills}
-          color="var(--color-info)"
-          delay={1}
-        />
-        <StatCard
-          icon={<TrendingUp size={24} />}
-          label={kpis.collectionLabel}
-          value={kpis.collection}
-          prefix="₹"
-          color="var(--color-success)"
-          delay={2}
-        />
-        <StatCard
-          icon={<TrendingDown size={24} />}
-          label={kpis.pendingLabel}
-          value={kpis.pending}
-          prefix="₹"
-          color="var(--color-danger)"
-          delay={3}
-        />
-      </div>
-
-      {/* Charts Row */}
-      <div className="grid-2" style={{ marginBottom: 'var(--space-8)' }}>
-        {/* Revenue vs Expenses */}
-        <motion.div
-          className="card"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-        >
-          <div className="card-header">
-            <span className="card-title">
-              {viewMode === 'day' ? 'Daily Overview' : viewMode === 'month' ? 'Monthly Overview' : 'Yearly Overview'}
-            </span>
-          </div>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={revenueExpenseData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-              <XAxis dataKey="name" tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }} />
-              <YAxis tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }} />
-              <Tooltip content={customTooltip} />
-              <Bar dataKey="amount" radius={[6, 6, 0, 0]}>
-                {revenueExpenseData.map((entry, index) => (
-                  <Cell
-                    key={index}
-                    fill={['#f59e0b', '#10b981', '#ef4444', '#3b82f6'][index]}
-                  />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </motion.div>
-
-        {/* Expense Breakdown */}
-        <motion.div
-          className="card"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-        >
-          <div className="card-header">
-            <span className="card-title">Expense Breakdown ({viewMode === 'year' ? 'Yearly' : 'Monthly'})</span>
-          </div>
-          {expenseChartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={280}>
-              <PieChart>
-                <Pie
-                  data={expenseChartData}
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={4}
-                  dataKey="value"
-                >
-                  {expenseChartData.map((_, idx) => (
-                    <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(value) => `₹${Number(value).toLocaleString('en-IN')}`}
-                  contentStyle={{
-                    background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
-                    borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)',
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="empty-state" style={{ padding: 'var(--space-10)' }}>
-              <p className="text-muted">No expense data for this period</p>
+      {uiTheme !== 'classic' ? (
+        /* MODERN MULTI-COLUMN SaaS LAYOUT */
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-6">
+          {/* Main Workspace (Col Span 2) */}
+          <div className="lg:col-span-2 flex flex-col gap-8">
+            {/* KPI Metrics */}
+            <div className="kpi-grid">
+              <StatCard
+                icon={<IndianRupee size={24} />}
+                label={kpis.revenueLabel}
+                value={kpis.revenue}
+                prefix="₹"
+                color="var(--color-accent)"
+                delay={0}
+              />
+              <StatCard
+                icon={<ShoppingCart size={24} />}
+                label={kpis.billsLabel}
+                value={kpis.bills}
+                color="var(--color-info)"
+                delay={1}
+              />
+              <StatCard
+                icon={<TrendingUp size={24} />}
+                label={kpis.collectionLabel}
+                value={kpis.collection}
+                prefix="₹"
+                color="var(--color-success)"
+                delay={2}
+              />
+              <StatCard
+                icon={<TrendingDown size={24} />}
+                label={kpis.pendingLabel}
+                value={kpis.pending}
+                prefix="₹"
+                color="var(--color-danger)"
+                delay={3}
+              />
             </div>
-          )}
-          {/* Legend */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
-            {expenseChartData.map((item, idx) => (
-              <div key={item.name} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--font-size-xs)' }}>
-                <div style={{ width: 10, height: 10, borderRadius: 2, background: PIE_COLORS[idx % PIE_COLORS.length] }} />
-                <span className="text-secondary">{item.name}</span>
+
+            {/* Charts Section */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Revenue vs Expenses Bar */}
+              <motion.div
+                className="card card-lift"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+              >
+                <div className="card-header flex justify-between items-center" style={{ marginBottom: 'var(--space-4)' }}>
+                  <span className="card-title">
+                    {viewMode === 'day' ? 'Daily Overview' : viewMode === 'month' ? 'Monthly Overview' : 'Yearly Overview'}
+                  </span>
+                </div>
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={revenueExpenseData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                    <XAxis dataKey="name" tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }} />
+                    <YAxis tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }} />
+                    <Tooltip content={customTooltip} />
+                    <Bar dataKey="amount" radius={[6, 6, 0, 0]}>
+                      {revenueExpenseData.map((entry, index) => (
+                        <Cell
+                          key={index}
+                          fill={activeColors[index % activeColors.length]}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </motion.div>
+
+              {/* Expense Breakdown Pie */}
+              <motion.div
+                className="card card-lift"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+              >
+                <div className="card-header" style={{ marginBottom: 'var(--space-4)' }}>
+                  <span className="card-title">Expense Breakdown ({viewMode === 'year' ? 'Yearly' : 'Monthly'})</span>
+                </div>
+                {expenseChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie
+                        data={expenseChartData}
+                        innerRadius={60}
+                        outerRadius={90}
+                        paddingAngle={4}
+                        dataKey="value"
+                      >
+                        {expenseChartData.map((_, idx) => (
+                          <Cell key={idx} fill={activePieColors[idx % activePieColors.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(value) => `₹${Number(value).toLocaleString('en-IN')}`}
+                        contentStyle={{
+                          background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
+                          borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)',
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="empty-state" style={{ padding: 'var(--space-10)' }}>
+                    <p className="text-muted">No expense data for this period</p>
+                  </div>
+                )}
+                {/* Legend */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+                  {expenseChartData.map((item, idx) => (
+                    <div key={item.name} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--font-size-xs)' }}>
+                      <div style={{ width: 8, height: 8, borderRadius: 2, background: activePieColors[idx % activePieColors.length] }} />
+                      <span className="text-secondary">{item.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            </div>
+
+            {/* Top Products */}
+            <motion.div
+              className="card card-lift"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.5 }}
+            >
+              <div className="card-header" style={{ marginBottom: 'var(--space-4)' }}>
+                <span className="card-title">Top Products ({viewMode === 'year' ? 'Yearly' : 'Monthly'})</span>
               </div>
+              {topProductsData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={topProductsData} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                    <XAxis type="number" tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }} />
+                    <YAxis dataKey="name" type="category" tick={{ fill: 'var(--color-text-secondary)', fontSize: 11 }} width={120} />
+                    <Tooltip
+                      contentStyle={{
+                        background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
+                        borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)',
+                      }}
+                    />
+                    <Bar
+                      dataKey="qty"
+                      fill={
+                        uiTheme === 'modern' ? '#8b5cf6' :
+                        uiTheme === 'cyber' ? '#00d2ff' :
+                        uiTheme === 'neon' ? '#00ffcc' :
+                        '#f59e0b'
+                      }
+                      radius={[0, 6, 6, 0]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="empty-state" style={{ padding: 'var(--space-10)' }}>
+                  <p className="text-muted">No product data for this period</p>
+                </div>
+              )}
+            </motion.div>
+
+            {/* Summary Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {bottomCards.map((card, idx) => (
+                <motion.div 
+                  key={idx} 
+                  className="stat-card card-lift" 
+                  initial={{ opacity: 0, y: 20 }} 
+                  animate={{ opacity: 1, y: 0 }} 
+                  transition={{ delay: 0.6 + idx * 0.05 }}
+                >
+                  <div className="stat-card-content">
+                    <div className="stat-card-label">{card.label}</div>
+                    <div className="stat-card-value" style={{ fontSize: 'var(--font-size-lg)', color: card.color }}>
+                      ₹{Number(card.value || 0).toLocaleString('en-IN')}
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+
+          {/* Sidebar widget space (Col Span 1) */}
+          <div className="lg:col-span-1 flex flex-col gap-8">
+            {/* Live Activity Feed */}
+            <LiveActivityWidget
+              recentBills={recentBills}
+              lowStockList={lowStockList}
+              pendingDeliveries={pendingDeliveriesList}
+            />
+
+            {/* Lari AI Copilot */}
+            <motion.div
+              className="card card-lift ai-insight-card"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.65 }}
+            >
+              <div className="card-header flex justify-between items-center" style={{ marginBottom: 'var(--space-4)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                  <Brain size={20} style={{ color: '#c084fc' }} />
+                  <span className="card-title">Lari AI Copilot</span>
+                </div>
+                <span className="ai-insight-badge">
+                  <Sparkles size={10} style={{ marginRight: '2px' }} /> Smart Insights
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                {pendingDeliveriesList.length > 0 ? (
+                  <div 
+                    className="ai-insight-item cursor-pointer" 
+                    style={{ borderLeft: '3px solid #c084fc', cursor: 'pointer' }}
+                    onClick={() => navigate('/deliveries')}
+                  >
+                    <div style={{ color: '#c084fc', marginTop: '2px' }}><Truck size={16} /></div>
+                    <div style={{ fontSize: '11px' }}>
+                      <strong style={{ color: 'var(--color-text)' }}>AI Route Dispatch Planner:</strong> Grouped <strong>{pendingDeliveriesList.length}</strong> pending deliveries into optimal clustering zones. Transit mileage reduced by <strong>{Math.min(12 + pendingDeliveriesList.length * 3, 30)}%</strong>. <span style={{ color: '#c084fc', textDecoration: 'underline', fontWeight: 'bold' }}>👉 Click to launch optimized route dispatch map!</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div 
+                    className="ai-insight-item cursor-pointer" 
+                    style={{ borderLeft: '3px solid var(--color-success)', cursor: 'pointer' }}
+                    onClick={() => navigate('/deliveries')}
+                  >
+                    <div style={{ color: 'var(--color-success)', marginTop: '2px' }}><Truck size={16} /></div>
+                    <div style={{ fontSize: '11px' }}>
+                      <strong style={{ color: 'var(--color-text)' }}>AI Dispatch Planner:</strong> Logistics are highly efficient today! 100% of deliveries are cleared. <span className="text-secondary" style={{ textDecoration: 'underline' }}>👉 Click to view deliveries logs.</span>
+                    </div>
+                  </div>
+                )}
+
+                {allInactive.length > 0 ? (
+                  <div 
+                    className="ai-insight-item cursor-pointer" 
+                    style={{ borderLeft: '3px solid var(--color-danger)', cursor: 'pointer' }}
+                    onClick={() => navigate('/customers')}
+                  >
+                    <div style={{ color: 'var(--color-danger)', marginTop: '2px' }}><Users size={16} /></div>
+                    <div style={{ fontSize: '11px' }}>
+                      <strong style={{ color: 'var(--color-text)' }}>AI Churn Risk Engine:</strong> Identified <strong>{allInactive.length}</strong> accounts with ordering gaps (e.g. <strong>{allInactive[0]?.customerName || 'Multiple'}</strong>). <span style={{ color: 'var(--color-danger)', textDecoration: 'underline', fontWeight: 'bold' }}>👉 Click to assign Vikram for check-in!</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div 
+                    className="ai-insight-item cursor-pointer" 
+                    style={{ borderLeft: '3px solid var(--color-success)', cursor: 'pointer' }}
+                    onClick={() => navigate('/customers')}
+                  >
+                    <div style={{ color: 'var(--color-success)', marginTop: '2px' }}><Users size={16} /></div>
+                    <div style={{ fontSize: '11px' }}>
+                      <strong style={{ color: 'var(--color-text)' }}>AI Churn Classifier:</strong> Customer base is exceptionally healthy! 100% of active retailers are ordering in cycle. <span className="text-secondary" style={{ textDecoration: 'underline' }}>👉 Click to manage accounts.</span>
+                    </div>
+                  </div>
+                )}
+
+                {allExpiring.length > 0 ? (
+                  <div 
+                    className="ai-insight-item cursor-pointer" 
+                    style={{ borderLeft: '3px solid var(--color-warning)', cursor: 'pointer' }}
+                    onClick={() => navigate('/stock')}
+                  >
+                    <div style={{ color: 'var(--color-warning)', marginTop: '2px' }}><Lightbulb size={16} /></div>
+                    <div style={{ fontSize: '11px' }}>
+                      <strong style={{ color: 'var(--color-text)' }}>AI Stock Expiry Advisor:</strong> Detected <strong>{allExpiring.length}</strong> batches expiring within 30 days. Value at risk: <strong className="text-warning">₹{Number(expiringValue).toLocaleString('en-IN')}</strong>. <span style={{ color: 'var(--color-warning)', textDecoration: 'underline', fontWeight: 'bold' }}>👉 Click to clear stock in Inventory!</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div 
+                    className="ai-insight-item cursor-pointer" 
+                    style={{ borderLeft: '3px solid var(--color-success)', cursor: 'pointer' }}
+                    onClick={() => navigate('/stock')}
+                  >
+                    <div style={{ color: 'var(--color-success)', marginTop: '2px' }}><Lightbulb size={16} /></div>
+                    <div style={{ fontSize: '11px' }}>
+                      <strong style={{ color: 'var(--color-text)' }}>AI Inventory Health:</strong> Exceptional stock rotation! 0 batches are expiring within 30 days. <span className="text-secondary" style={{ textDecoration: 'underline' }}>👉 Click to check inventory levels.</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+
+            {/* Alerts Panel */}
+            <motion.div
+              className="card card-lift"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.6 }}
+              style={{ position: 'relative' }}
+            >
+              <div className="card-header flex justify-between items-center" style={{ marginBottom: 'var(--space-4)', paddingBottom: 'var(--space-3)' }}>
+                <span className="card-title">Alerts & Notifications</span>
+                <div style={{ display: 'flex', background: 'var(--color-surface-2)', borderRadius: 'var(--radius-sm)', padding: '2px', border: '1px solid var(--color-border)' }}>
+                  <button 
+                    onClick={() => setAlertScope('urgent')}
+                    className={`btn btn-sm ${alertScope === 'urgent' ? 'btn-primary' : 'btn-ghost'}`}
+                    style={{ padding: '4px 10px', fontSize: '10px', height: 'auto' }}
+                  >
+                    ⚡ Urgent
+                  </button>
+                  <button 
+                    onClick={() => setAlertScope('expanded')}
+                    className={`btn btn-sm ${alertScope === 'expanded' ? 'btn-primary' : 'btn-ghost'}`}
+                    style={{ padding: '4px 10px', fontSize: '10px', height: 'auto' }}
+                  >
+                    📅 Monthly
+                  </button>
+                </div>
+              </div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                <AlertItem
+                  icon={<Package size={20} />}
+                  label="Low Stock Products"
+                  value={lowStockList.length}
+                  color="var(--color-danger)"
+                  bg="var(--color-danger-soft)"
+                  details={lowStockList}
+                  type="lowStock"
+                  scope={alertScope}
+                />
+                <AlertItem
+                  icon={<AlertTriangle size={20} />}
+                  label={alertScope === 'urgent' ? "Expiring in 7 Days" : "Expiring in 30 Days"}
+                  value={expiringList.length}
+                  color="var(--color-warning)"
+                  bg="var(--color-warning-soft)"
+                  details={expiringList}
+                  type="expiring"
+                  scope={alertScope}
+                />
+                <AlertItem
+                  icon={<Users size={20} />}
+                  label={alertScope === 'urgent' ? "Critical Inactive (30d+)" : "Warning Inactive (15d+)"}
+                  value={inactiveList.length}
+                  color="var(--color-info)"
+                  bg="var(--color-info-soft)"
+                  details={inactiveList}
+                  type="inactive"
+                  scope={alertScope}
+                />
+                <AlertItem
+                  icon={<Truck size={20} />}
+                  label="Pending Deliveries"
+                  value={pendingDeliveriesList.length}
+                  color="var(--color-accent)"
+                  bg="var(--color-accent-soft)"
+                  details={pendingDeliveriesList}
+                  type="pending"
+                  scope={alertScope}
+                />
+              </div>
+              <div style={{ marginTop: 'var(--space-3)', fontSize: '10px', color: 'var(--color-text-muted)', textAlign: 'center', fontStyle: 'italic' }}>
+                💡 Hover over any alert card to inspect immediate details!
+              </div>
+            </motion.div>
+          </div>
+        </div>
+      ) : (
+        /* CLASSIC LAYOUT (Original layout with grid rows) */
+        <>
+          {/* KPI Cards */}
+          <div className="kpi-grid" style={{ marginBottom: 'var(--space-8)' }}>
+            <StatCard
+              icon={<IndianRupee size={24} />}
+              label={kpis.revenueLabel}
+              value={kpis.revenue}
+              prefix="₹"
+              color="var(--color-accent)"
+              delay={0}
+            />
+            <StatCard
+              icon={<ShoppingCart size={24} />}
+              label={kpis.billsLabel}
+              value={kpis.bills}
+              color="var(--color-info)"
+              delay={1}
+            />
+            <StatCard
+              icon={<TrendingUp size={24} />}
+              label={kpis.collectionLabel}
+              value={kpis.collection}
+              prefix="₹"
+              color="var(--color-success)"
+              delay={2}
+            />
+            <StatCard
+              icon={<TrendingDown size={24} />}
+              label={kpis.pendingLabel}
+              value={kpis.pending}
+              prefix="₹"
+              color="var(--color-danger)"
+              delay={3}
+            />
+          </div>
+
+          {/* Charts Row */}
+          <div className="grid-2" style={{ marginBottom: 'var(--space-8)' }}>
+            {/* Revenue vs Expenses */}
+            <motion.div
+              className="card"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+            >
+              <div className="card-header">
+                <span className="card-title">
+                  {viewMode === 'day' ? 'Daily Overview' : viewMode === 'month' ? 'Monthly Overview' : 'Yearly Overview'}
+                </span>
+              </div>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={revenueExpenseData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                  <XAxis dataKey="name" tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }} />
+                  <YAxis tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }} />
+                  <Tooltip content={customTooltip} />
+                  <Bar dataKey="amount" radius={[6, 6, 0, 0]}>
+                    {revenueExpenseData.map((entry, index) => (
+                      <Cell
+                        key={index}
+                        fill={activeColors[index % activeColors.length]}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </motion.div>
+
+            {/* Expense Breakdown */}
+            <motion.div
+              className="card"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 }}
+            >
+              <div className="card-header">
+                <span className="card-title">Expense Breakdown ({viewMode === 'year' ? 'Yearly' : 'Monthly'})</span>
+              </div>
+              {expenseChartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={280}>
+                  <PieChart>
+                    <Pie
+                      data={expenseChartData}
+                      innerRadius={60}
+                      outerRadius={100}
+                      paddingAngle={4}
+                      dataKey="value"
+                    >
+                      {expenseChartData.map((_, idx) => (
+                        <Cell key={idx} fill={activePieColors[idx % activePieColors.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value) => `₹${Number(value).toLocaleString('en-IN')}`}
+                      contentStyle={{
+                        background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
+                        borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)',
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="empty-state" style={{ padding: 'var(--space-10)' }}>
+                  <p className="text-muted">No expense data for this period</p>
+                </div>
+              )}
+              {/* Legend */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
+                {expenseChartData.map((item, idx) => (
+                  <div key={item.name} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--font-size-xs)' }}>
+                    <div style={{ width: 10, height: 10, borderRadius: 2, background: activePieColors[idx % activePieColors.length] }} />
+                    <span className="text-secondary">{item.name}</span>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </div>
+
+          {/* Top Products + Alerts Row */}
+          <div className="grid-2" style={{ marginBottom: 'var(--space-8)' }}>
+            {/* Top Products */}
+            <motion.div
+              className="card"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.5 }}
+            >
+              <div className="card-header">
+                <span className="card-title">Top Products ({viewMode === 'year' ? 'Yearly' : 'Monthly'})</span>
+              </div>
+              {topProductsData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={topProductsData} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                    <XAxis type="number" tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }} />
+                    <YAxis dataKey="name" type="category" tick={{ fill: 'var(--color-text-secondary)', fontSize: 11 }} width={120} />
+                    <Tooltip
+                      contentStyle={{
+                        background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
+                        borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)',
+                      }}
+                    />
+                    <Bar
+                      dataKey="qty"
+                      fill={
+                        uiTheme === 'modern' ? '#8b5cf6' :
+                        uiTheme === 'cyber' ? '#00d2ff' :
+                        uiTheme === 'neon' ? '#00ffcc' :
+                        '#f59e0b'
+                      }
+                      radius={[0, 6, 6, 0]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="empty-state" style={{ padding: 'var(--space-10)' }}>
+                  <p className="text-muted">No product data for this period</p>
+                </div>
+              )}
+            </motion.div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
+              {/* Alerts Panel */}
+              <motion.div
+                className="card"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.6 }}
+                style={{ position: 'relative' }}
+              >
+                <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span className="card-title">Alerts & Notifications</span>
+                  <div style={{ display: 'flex', background: 'var(--color-surface-2)', borderRadius: 'var(--radius-sm)', padding: '2px', border: '1px solid var(--color-border)' }}>
+                    <button 
+                      onClick={() => setAlertScope('urgent')}
+                      className={`btn btn-sm ${alertScope === 'urgent' ? 'btn-primary' : 'btn-ghost'}`}
+                      style={{ padding: '4px 10px', fontSize: '10px', height: 'auto' }}
+                    >
+                      ⚡ Urgent
+                    </button>
+                    <button 
+                      onClick={() => setAlertScope('expanded')}
+                      className={`btn btn-sm ${alertScope === 'expanded' ? 'btn-primary' : 'btn-ghost'}`}
+                      style={{ padding: '4px 10px', fontSize: '10px', height: 'auto' }}
+                    >
+                      📅 Monthly
+                    </button>
+                  </div>
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                  <AlertItem
+                    icon={<Package size={20} />}
+                    label="Low Stock Products"
+                    value={lowStockList.length}
+                    color="var(--color-danger)"
+                    bg="var(--color-danger-soft)"
+                    details={lowStockList}
+                    type="lowStock"
+                    scope={alertScope}
+                  />
+                  <AlertItem
+                    icon={<AlertTriangle size={20} />}
+                    label={alertScope === 'urgent' ? "Expiring in 7 Days" : "Expiring in 30 Days"}
+                    value={expiringList.length}
+                    color="var(--color-warning)"
+                    bg="var(--color-warning-soft)"
+                    details={expiringList}
+                    type="expiring"
+                    scope={alertScope}
+                  />
+                  <AlertItem
+                    icon={<Users size={20} />}
+                    label={alertScope === 'urgent' ? "Critical Inactive (30d+)" : "Warning Inactive (15d+)"}
+                    value={inactiveList.length}
+                    color="var(--color-info)"
+                    bg="var(--color-info-soft)"
+                    details={inactiveList}
+                    type="inactive"
+                    scope={alertScope}
+                  />
+                  <AlertItem
+                    icon={<Truck size={20} />}
+                    label="Pending Deliveries"
+                    value={pendingDeliveriesList.length}
+                    color="var(--color-accent)"
+                    bg="var(--color-accent-soft)"
+                    details={pendingDeliveriesList}
+                    type="pending"
+                    scope={alertScope}
+                  />
+                </div>
+                <div style={{ marginTop: 'var(--space-3)', fontSize: '10px', color: 'var(--color-text-muted)', textAlign: 'center', fontStyle: 'italic' }}>
+                  💡 Hover over any alert card to inspect immediate details!
+                </div>
+              </motion.div>
+
+              {/* AI Copilot Insights Panel */}
+              <motion.div
+                className="card ai-insight-card"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.65 }}
+              >
+                <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                    <Brain size={20} style={{ color: '#c084fc' }} />
+                    <span className="card-title">Lari AI Copilot</span>
+                  </div>
+                  <span className="ai-insight-badge">
+                    <Sparkles size={10} style={{ marginRight: '2px' }} /> Smart Insights
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  {pendingDeliveriesList.length > 0 ? (
+                    <div 
+                      className="ai-insight-item cursor-pointer" 
+                      style={{ borderLeft: '3px solid #c084fc', cursor: 'pointer' }}
+                      onClick={() => navigate('/deliveries')}
+                    >
+                      <div style={{ color: '#c084fc', marginTop: '2px' }}><Truck size={16} /></div>
+                      <div style={{ fontSize: 'var(--font-size-xs)' }}>
+                        <strong style={{ color: 'var(--color-text)' }}>AI Route Dispatch Planner:</strong> Grouped <strong>{pendingDeliveriesList.length}</strong> pending deliveries into optimal clustering zones. Transit mileage reduced by <strong>{Math.min(12 + pendingDeliveriesList.length * 3, 30)}%</strong>. <span style={{ color: '#c084fc', textDecoration: 'underline', fontWeight: 'bold' }}>👉 Click to launch optimized route dispatch map!</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div 
+                      className="ai-insight-item cursor-pointer" 
+                      style={{ borderLeft: '3px solid var(--color-success)', cursor: 'pointer' }}
+                      onClick={() => navigate('/deliveries')}
+                    >
+                      <div style={{ color: 'var(--color-success)', marginTop: '2px' }}><Truck size={16} /></div>
+                      <div style={{ fontSize: 'var(--font-size-xs)' }}>
+                        <strong style={{ color: 'var(--color-text)' }}>AI Dispatch Planner:</strong> Logistics are highly efficient today! 100% of deliveries are cleared. <span className="text-secondary" style={{ textDecoration: 'underline' }}>👉 Click to view deliveries logs.</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {allInactive.length > 0 ? (
+                    <div 
+                      className="ai-insight-item cursor-pointer" 
+                      style={{ borderLeft: '3px solid var(--color-danger)', cursor: 'pointer' }}
+                      onClick={() => navigate('/customers')}
+                    >
+                      <div style={{ color: 'var(--color-danger)', marginTop: '2px' }}><Users size={16} /></div>
+                      <div style={{ fontSize: 'var(--font-size-xs)' }}>
+                        <strong style={{ color: 'var(--color-text)' }}>AI Churn Risk Engine:</strong> Identified <strong>{allInactive.length}</strong> accounts with ordering gaps (e.g. <strong>{allInactive[0]?.customerName || 'Multiple'}</strong>). <span style={{ color: 'var(--color-danger)', textDecoration: 'underline', fontWeight: 'bold' }}>👉 Click to assign Vikram for check-in!</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div 
+                      className="ai-insight-item cursor-pointer" 
+                      style={{ borderLeft: '3px solid var(--color-success)', cursor: 'pointer' }}
+                      onClick={() => navigate('/customers')}
+                    >
+                      <div style={{ color: 'var(--color-success)', marginTop: '2px' }}><Users size={16} /></div>
+                      <div style={{ fontSize: 'var(--font-size-xs)' }}>
+                        <strong style={{ color: 'var(--color-text)' }}>AI Churn Classifier:</strong> Customer base is exceptionally healthy! 100% of active retailers are ordering in cycle. <span className="text-secondary" style={{ textDecoration: 'underline' }}>👉 Click to manage accounts.</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {allExpiring.length > 0 ? (
+                    <div 
+                      className="ai-insight-item cursor-pointer" 
+                      style={{ borderLeft: '3px solid var(--color-warning)', cursor: 'pointer' }}
+                      onClick={() => navigate('/stock')}
+                    >
+                      <div style={{ color: 'var(--color-warning)', marginTop: '2px' }}><Lightbulb size={16} /></div>
+                      <div style={{ fontSize: 'var(--font-size-xs)' }}>
+                        <strong style={{ color: 'var(--color-text)' }}>AI Stock Expiry Advisor:</strong> Detected <strong>{allExpiring.length}</strong> batches expiring within 30 days. Value at risk: <strong className="text-warning">₹{Number(expiringValue).toLocaleString('en-IN')}</strong>. <span style={{ color: 'var(--color-warning)', textDecoration: 'underline', fontWeight: 'bold' }}>👉 Click to clear stock in Inventory!</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div 
+                      className="ai-insight-item cursor-pointer" 
+                      style={{ borderLeft: '3px solid var(--color-success)', cursor: 'pointer' }}
+                      onClick={() => navigate('/stock')}
+                    >
+                      <div style={{ color: 'var(--color-success)', marginTop: '2px' }}><Lightbulb size={16} /></div>
+                      <div style={{ fontSize: 'var(--font-size-xs)' }}>
+                        <strong style={{ color: 'var(--color-text)' }}>AI Inventory Health:</strong> Exceptional stock rotation! 0 batches are expiring within 30 days. <span className="text-secondary" style={{ textDecoration: 'underline' }}>👉 Click to check inventory levels.</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            </div>
+          </div>
+
+          {/* Summary Cards */}
+          <div className="grid-4">
+            {bottomCards.map((card, idx) => (
+              <motion.div 
+                key={idx} 
+                className="stat-card" 
+                initial={{ opacity: 0, y: 20 }} 
+                animate={{ opacity: 1, y: 0 }} 
+                transition={{ delay: 0.7 + idx * 0.05 }}
+              >
+                <div className="stat-card-content">
+                  <div className="stat-card-label">{card.label}</div>
+                  <div className="stat-card-value" style={{ fontSize: 'var(--font-size-xl)', color: card.color }}>
+                    ₹{Number(card.value || 0).toLocaleString('en-IN')}
+                  </div>
+                </div>
+              </motion.div>
             ))}
           </div>
-        </motion.div>
-      </div>
-
-      {/* Top Products + Alerts Row */}
-      <div className="grid-2" style={{ marginBottom: 'var(--space-8)' }}>
-        {/* Top Products */}
-        <motion.div
-          className="card"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-        >
-          <div className="card-header">
-            <span className="card-title">Top Products ({viewMode === 'year' ? 'Yearly' : 'Monthly'})</span>
-          </div>
-          {topProductsData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={topProductsData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                <XAxis type="number" tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }} />
-                <YAxis dataKey="name" type="category" tick={{ fill: 'var(--color-text-secondary)', fontSize: 11 }} width={120} />
-                <Tooltip
-                  contentStyle={{
-                    background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
-                    borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)',
-                  }}
-                />
-                <Bar dataKey="qty" fill="#f59e0b" radius={[0, 6, 6, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="empty-state" style={{ padding: 'var(--space-10)' }}>
-              <p className="text-muted">No product data for this period</p>
-            </div>
-          )}
-        </motion.div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
-          {/* Alerts Panel */}
-          <motion.div
-            className="card"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.6 }}
-            style={{ position: 'relative' }}
-          >
-            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span className="card-title">Alerts & Notifications</span>
-              <div style={{ display: 'flex', background: 'var(--color-surface-2)', borderRadius: 'var(--radius-sm)', padding: '2px', border: '1px solid var(--color-border)' }}>
-                <button 
-                  onClick={() => setAlertScope('urgent')}
-                  className={`btn btn-sm ${alertScope === 'urgent' ? 'btn-primary' : 'btn-ghost'}`}
-                  style={{ padding: '4px 10px', fontSize: '10px', height: 'auto' }}
-                >
-                  ⚡ Urgent
-                </button>
-                <button 
-                  onClick={() => setAlertScope('expanded')}
-                  className={`btn btn-sm ${alertScope === 'expanded' ? 'btn-primary' : 'btn-ghost'}`}
-                  style={{ padding: '4px 10px', fontSize: '10px', height: 'auto' }}
-                >
-                  📅 Monthly
-                </button>
-              </div>
-            </div>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-              <AlertItem
-                icon={<Package size={20} />}
-                label="Low Stock Products"
-                value={lowStockList.length}
-                color="var(--color-danger)"
-                bg="var(--color-danger-soft)"
-                details={lowStockList}
-                type="lowStock"
-                scope={alertScope}
-              />
-              <AlertItem
-                icon={<AlertTriangle size={20} />}
-                label={alertScope === 'urgent' ? "Expiring in 7 Days" : "Expiring in 30 Days"}
-                value={expiringList.length}
-                color="var(--color-warning)"
-                bg="var(--color-warning-soft)"
-                details={expiringList}
-                type="expiring"
-                scope={alertScope}
-              />
-              <AlertItem
-                icon={<Users size={20} />}
-                label={alertScope === 'urgent' ? "Critical Inactive (30d+)" : "Warning Inactive (15d+)"}
-                value={inactiveList.length}
-                color="var(--color-info)"
-                bg="var(--color-info-soft)"
-                details={inactiveList}
-                type="inactive"
-                scope={alertScope}
-              />
-              <AlertItem
-                icon={<Truck size={20} />}
-                label="Pending Deliveries"
-                value={pendingDeliveriesList.length}
-                color="var(--color-accent)"
-                bg="var(--color-accent-soft)"
-                details={pendingDeliveriesList}
-                type="pending"
-                scope={alertScope}
-              />
-            </div>
-            <div style={{ marginTop: 'var(--space-3)', fontSize: '10px', color: 'var(--color-text-muted)', textAlign: 'center', fontStyle: 'italic' }}>
-              💡 Hover over any alert card to inspect immediate details!
-            </div>
-          </motion.div>
-
-          {/* AI Copilot Insights Panel */}
-          <motion.div
-            className="card ai-insight-card"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.65 }}
-          >
-            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                <Brain size={20} style={{ color: '#c084fc' }} />
-                <span className="card-title">Lari AI Copilot</span>
-              </div>
-              <span className="ai-insight-badge">
-                <Sparkles size={10} style={{ marginRight: '2px' }} /> Smart Insights
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-              {/* Insight 1: Route Dispatch */}
-              {pendingDeliveriesList.length > 0 ? (
-                <div 
-                  className="ai-insight-item cursor-pointer" 
-                  style={{ borderLeft: '3px solid #c084fc', cursor: 'pointer' }}
-                  onClick={() => navigate('/deliveries')}
-                >
-                  <div style={{ color: '#c084fc', marginTop: '2px' }}><Truck size={16} /></div>
-                  <div style={{ fontSize: 'var(--font-size-xs)' }}>
-                    <strong style={{ color: 'var(--color-text)' }}>AI Route Dispatch Planner:</strong> Grouped <strong>{pendingDeliveriesList.length}</strong> pending deliveries into optimal clustering zones. Transit mileage reduced by <strong>{Math.min(12 + pendingDeliveriesList.length * 3, 30)}%</strong>. <span style={{ color: '#c084fc', textDecoration: 'underline', fontWeight: 'bold' }}>👉 Click to launch optimized route dispatch map!</span>
-                  </div>
-                </div>
-              ) : (
-                <div 
-                  className="ai-insight-item cursor-pointer" 
-                  style={{ borderLeft: '3px solid var(--color-success)', cursor: 'pointer' }}
-                  onClick={() => navigate('/deliveries')}
-                >
-                  <div style={{ color: 'var(--color-success)', marginTop: '2px' }}><Truck size={16} /></div>
-                  <div style={{ fontSize: 'var(--font-size-xs)' }}>
-                    <strong style={{ color: 'var(--color-text)' }}>AI Dispatch Planner:</strong> Logistics are highly efficient today! 100% of deliveries are cleared. <span className="text-secondary" style={{ textDecoration: 'underline' }}>👉 Click to view deliveries logs.</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Insight 2: Churn */}
-              {allInactive.length > 0 ? (
-                <div 
-                  className="ai-insight-item cursor-pointer" 
-                  style={{ borderLeft: '3px solid var(--color-danger)', cursor: 'pointer' }}
-                  onClick={() => navigate('/customers')}
-                >
-                  <div style={{ color: 'var(--color-danger)', marginTop: '2px' }}><Users size={16} /></div>
-                  <div style={{ fontSize: 'var(--font-size-xs)' }}>
-                    <strong style={{ color: 'var(--color-text)' }}>AI Churn Risk Engine:</strong> Identified <strong>{allInactive.length}</strong> accounts with ordering gaps (e.g. <strong>{allInactive[0]?.customerName || 'Multiple'}</strong>). <span style={{ color: 'var(--color-danger)', textDecoration: 'underline', fontWeight: 'bold' }}>👉 Click to assign Vikram for check-in!</span>
-                  </div>
-                </div>
-              ) : (
-                <div 
-                  className="ai-insight-item cursor-pointer" 
-                  style={{ borderLeft: '3px solid var(--color-success)', cursor: 'pointer' }}
-                  onClick={() => navigate('/customers')}
-                >
-                  <div style={{ color: 'var(--color-success)', marginTop: '2px' }}><Users size={16} /></div>
-                  <div style={{ fontSize: 'var(--font-size-xs)' }}>
-                    <strong style={{ color: 'var(--color-text)' }}>AI Churn Classifier:</strong> Customer base is exceptionally healthy! 100% of active retailers are ordering in cycle. <span className="text-secondary" style={{ textDecoration: 'underline' }}>👉 Click to manage accounts.</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Insight 3: Expiry Cash at Risk */}
-              {allExpiring.length > 0 ? (
-                <div 
-                  className="ai-insight-item cursor-pointer" 
-                  style={{ borderLeft: '3px solid var(--color-warning)', cursor: 'pointer' }}
-                  onClick={() => navigate('/stock')}
-                >
-                  <div style={{ color: 'var(--color-warning)', marginTop: '2px' }}><Lightbulb size={16} /></div>
-                  <div style={{ fontSize: 'var(--font-size-xs)' }}>
-                    <strong style={{ color: 'var(--color-text)' }}>AI Stock Expiry Advisor:</strong> Detected <strong>{allExpiring.length}</strong> batches expiring within 30 days. Value at risk: <strong className="text-warning">₹{Number(expiringValue).toLocaleString('en-IN')}</strong>. <span style={{ color: 'var(--color-warning)', textDecoration: 'underline', fontWeight: 'bold' }}>👉 Click to clear stock in Inventory!</span>
-                  </div>
-                </div>
-              ) : (
-                <div 
-                  className="ai-insight-item cursor-pointer" 
-                  style={{ borderLeft: '3px solid var(--color-success)', cursor: 'pointer' }}
-                  onClick={() => navigate('/stock')}
-                >
-                  <div style={{ color: 'var(--color-success)', marginTop: '2px' }}><Lightbulb size={16} /></div>
-                  <div style={{ fontSize: 'var(--font-size-xs)' }}>
-                    <strong style={{ color: 'var(--color-text)' }}>AI Inventory Health:</strong> Exceptional stock rotation! 0 batches are expiring within 30 days. <span className="text-secondary" style={{ textDecoration: 'underline' }}>👉 Click to check inventory levels.</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </motion.div>
-        </div>
-      </div>
-
-      {/* Summary Cards */}
-      <div className="grid-4">
-        {bottomCards.map((card, idx) => (
-          <motion.div 
-            key={idx} 
-            className="stat-card" 
-            initial={{ opacity: 0, y: 20 }} 
-            animate={{ opacity: 1, y: 0 }} 
-            transition={{ delay: 0.7 + idx * 0.05 }}
-          >
-            <div className="stat-card-content">
-              <div className="stat-card-label">{card.label}</div>
-              <div className="stat-card-value" style={{ fontSize: 'var(--font-size-xl)', color: card.color }}>
-                ₹{Number(card.value || 0).toLocaleString('en-IN')}
-              </div>
-            </div>
-          </motion.div>
-        ))}
-      </div>
+        </>
+      )}
     </div>
   )
 }

@@ -33,9 +33,11 @@ public class User {
     private String passwordHash;
 
     @Column(name = "is_active")
+    @Builder.Default
     private Boolean active = true;
 
     @Column(name = "must_change_password")
+    @Builder.Default
     private Boolean  mustChangePassword = true;
 
     @Column(name = "last_latitude")

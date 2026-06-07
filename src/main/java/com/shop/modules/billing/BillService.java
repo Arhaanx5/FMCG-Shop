@@ -16,6 +16,7 @@ import com.shop.modules.stock.StockRepository;
 import com.shop.modules.stock.StockService;
 import com.shop.modules.user.User;
 import com.shop.modules.user.UserRepository;
+import com.shop.modules.khata.PaymentRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -41,6 +42,7 @@ public class BillService {
     private final CustomerService customerService;
     private final ProductService productService;
     private final com.shop.modules.stock.StockBatchRepository stockBatchRepository;
+    private final PaymentRepository paymentRepository;
 
     // ── Convert entity to response DTO ──
     private BillResponse toResponse(Bill bill) {
@@ -118,6 +120,7 @@ public class BillService {
                 .createdBy(bill.getCreatedBy() != null
                         ? bill.getCreatedBy().getName()
                         : null)
+                .customerId(bill.getCustomer().getId())
                 .customerName(
                         bill.getCustomer().getName())
                 .customerShopName(
@@ -140,6 +143,30 @@ public class BillService {
                 .totalItems(itemResponses.size())
                 .totalQuantity(totalQuantity)
                 .build();
+    }
+
+    private void recalculateCustomerPending(Customer customer) {
+        BigDecimal totalGeneralPayments = paymentRepository.findByCustomerIdOrderByPaidAtDesc(customer.getId())
+                .stream()
+                .filter(p -> p.getBill() == null)
+                .map(p -> p.getAppliedAmount() != null ? p.getAppliedAmount() : p.getAmount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal unpaidOpeningBalance = customer.getOpeningBalance() != null
+                ? customer.getOpeningBalance().subtract(totalGeneralPayments)
+                : BigDecimal.ZERO;
+        if (unpaidOpeningBalance.compareTo(BigDecimal.ZERO) < 0) {
+            unpaidOpeningBalance = BigDecimal.ZERO;
+        }
+
+        BigDecimal totalBillPending = billRepository.findByCustomerId(customer.getId())
+                .stream()
+                .filter(b -> b.getStatus() != BillStatus.CANCELLED)
+                .map(Bill::getPendingAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        customer.setTotalPending(unpaidOpeningBalance.add(totalBillPending));
+        customerRepository.save(customer);
     }
 
     // ── Get all bills ──
@@ -291,9 +318,10 @@ public class BillService {
                 linkedBatch = stockService.getBatchById(itemReq.getBatchId());
             } else {
                 List<StockBatch> activeBatches = stockService.getBatchesByProduct(product.getId());
-                if (!activeBatches.isEmpty()) {
-                    linkedBatch = activeBatches.get(0);
-                }
+                linkedBatch = activeBatches.stream()
+                        .filter(b -> b.getSecondaryRemaining() > 0)
+                        .findFirst()
+                        .orElse(!activeBatches.isEmpty() ? activeBatches.get(0) : null);
             }
 
             BillItem item = BillItem.builder()
@@ -395,6 +423,16 @@ public class BillService {
             }
         }
 
+        if (targetStatus != BillStatus.DRAFT && targetStatus != BillStatus.CANCELLED) {
+            if (bill.getPendingAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                bill.setStatus(BillStatus.PAID);
+            } else if (bill.getPaidAmount().compareTo(BigDecimal.ZERO) > 0) {
+                bill.setStatus(BillStatus.PARTIAL);
+            } else {
+                bill.setStatus(BillStatus.CONFIRMED);
+            }
+        }
+
         // Validate credit limit
         if (!isDraft && (req.getPaymentMode() == PaymentMode.UDHAR || req.getPaymentMode() == PaymentMode.PARTIAL)) {
             BigDecimal projectedPending = customer.getTotalPending().add(bill.getPendingAmount());
@@ -409,17 +447,16 @@ public class BillService {
         }
 
         if (!isDraft) {
-            // Update customer pending + last order
-            customer.setTotalPending(
-                    customer.getTotalPending()
-                            .add(bill.getPendingAmount()));
             customer.setLastOrderAt(
                     LocalDateTime.now());
             customerRepository.save(customer);
         }
 
-        return toResponse(
-                billRepository.save(bill));
+        Bill savedBill = billRepository.save(bill);
+        if (!isDraft) {
+            recalculateCustomerPending(customer);
+        }
+        return toResponse(savedBill);
     }
 
     // ── Check stock availability ──
@@ -428,13 +465,7 @@ public class BillService {
             CreateBillRequest.BillItemRequest itemReq,
             boolean isDraft) {
 
-        Stock stock = stockRepository
-                .findByProductId(product.getId())
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "No stock found for: "
-                                        + product.getName()
-                                        + " — receive stock first"));
+        Stock stock = stockService.getOrCreateStock(product.getId());
 
         String unitType =
                 itemReq.getUnitType().name();
@@ -463,17 +494,8 @@ public class BillService {
                 ? totalQtyRequested * product.getSecondaryPerPrimary()
                 : totalQtyRequested;
 
-        StockBatch batch = null;
         if (itemReq.getBatchId() != null) {
-            batch = stockService.getBatchById(itemReq.getBatchId());
-        } else {
-            List<StockBatch> activeBatches = stockService.getBatchesByProduct(product.getId());
-            if (!activeBatches.isEmpty()) {
-                batch = activeBatches.get(0);
-            }
-        }
-
-        if (batch != null) {
+            StockBatch batch = stockService.getBatchById(itemReq.getBatchId());
             int reserved = batch.getSecondarySoftReserved() != null ? batch.getSecondarySoftReserved() : 0;
             int available = isDraft ? (batch.getSecondaryRemaining() - reserved) : batch.getSecondaryRemaining();
             if (available < totalSecondaryRequested) {
@@ -483,7 +505,24 @@ public class BillService {
                         + " | Requested: " + totalSecondaryRequested);
             }
         } else {
-            throw new RuntimeException("No active stock batch found for: " + product.getName());
+            List<StockBatch> activeBatches = stockService.getBatchesByProduct(product.getId());
+            if (activeBatches.isEmpty()) {
+                throw new RuntimeException("No active stock batch found for: " + product.getName());
+            }
+            int totalAvailable = 0;
+            for (StockBatch b : activeBatches) {
+                int reserved = b.getSecondarySoftReserved() != null ? b.getSecondarySoftReserved() : 0;
+                int avail = isDraft ? (b.getSecondaryRemaining() - reserved) : b.getSecondaryRemaining();
+                if (avail > 0) {
+                    totalAvailable += avail;
+                }
+            }
+            if (totalAvailable < totalSecondaryRequested) {
+                throw new RuntimeException("Insufficient " + (isDraft ? "virtual " : "") + "stock"
+                        + " for: " + product.getName()
+                        + " | Available: " + totalAvailable
+                        + " | Requested: " + totalSecondaryRequested);
+            }
         }
     }
 
@@ -602,21 +641,8 @@ public class BillService {
 
         bill.setStatus(BillStatus.CANCELLED);
 
-        // Reduce customer pending
-        if (bill.getPendingAmount()
-                .compareTo(BigDecimal.ZERO) > 0) {
-            Customer customer = bill.getCustomer();
-            BigDecimal newPending =
-                    customer.getTotalPending()
-                            .subtract(bill.getPendingAmount());
-            customer.setTotalPending(
-                    newPending.compareTo(
-                            BigDecimal.ZERO) < 0
-                            ? BigDecimal.ZERO : newPending);
-            customerRepository.save(customer);
-        }
-
         billRepository.save(bill);
+        recalculateCustomerPending(bill.getCustomer());
     }
 
     // ── Return Items ──
@@ -720,22 +746,15 @@ public class BillService {
 
         bill.setGrandTotal(bill.getGrandTotal().subtract(totalRefundAmount));
 
-        // Reduce customer pending debt
-        if (pendingReduction.compareTo(BigDecimal.ZERO) > 0) {
-            Customer customer = bill.getCustomer();
-            BigDecimal newCustomerPending = customer.getTotalPending().subtract(pendingReduction);
-            customer.setTotalPending(newCustomerPending.compareTo(BigDecimal.ZERO) < 0 
-                    ? BigDecimal.ZERO : newCustomerPending);
-            customerRepository.save(customer);
-        }
-
         // Update bill status
         boolean allReturned = bill.getItems().isEmpty();
         if (allReturned) {
             bill.setStatus(BillStatus.CANCELLED);
         }
 
-        return toResponse(billRepository.save(bill));
+        Bill savedBill = billRepository.save(bill);
+        recalculateCustomerPending(savedBill.getCustomer());
+        return toResponse(savedBill);
     }
 
     // ── Delete bill (ADMIN only) ──
@@ -759,23 +778,100 @@ public class BillService {
     }
 
     // ── Update bill details (ADMIN/MANAGER only) ──
-    // Allows updating safe fields like paymentMode and notes.
-    @Transactional
-    public BillResponse updateBillDetails(UUID id, PaymentMode paymentMode, String notes) {
+    @Transactional(rollbackFor = RuntimeException.class)
+    public BillResponse updateBillDetails(UUID id, PaymentMode paymentMode, String notes, BillStatus status, BigDecimal paidAmount) {
         Bill bill = billRepository.findById(id)
-                .orElseThrow(() ->
-                        new EntityNotFoundException(
-                                "Bill not found: " + id));
+                .orElseThrow(() -> new EntityNotFoundException("Bill not found: " + id));
 
-        if (paymentMode != null) {
-            bill.setPaymentMode(paymentMode);
+        Customer customer = bill.getCustomer();
+
+        // 1. Handle Status Change
+        if (status != null && status != bill.getStatus()) {
+            if (status == BillStatus.CANCELLED) {
+                cancelBill(id);
+                bill = billRepository.findById(id).orElseThrow();
+            } else if (status == BillStatus.CONFIRMED && bill.getStatus() == BillStatus.CANCELLED) {
+                restoreBill(id);
+                bill = billRepository.findById(id).orElseThrow();
+            } else if (status == BillStatus.CONFIRMED && bill.getStatus() == BillStatus.DRAFT) {
+                confirmBill(id);
+                bill = billRepository.findById(id).orElseThrow();
+            }
         }
+
+        // 2. Handle Payment Mode & Paid Amount changes (only if bill is not CANCELLED)
+        if (bill.getStatus() != BillStatus.CANCELLED) {
+            BigDecimal oldPending = bill.getPendingAmount();
+            BigDecimal newPending = oldPending;
+
+            if (paymentMode != null) {
+                bill.setPaymentMode(paymentMode);
+            }
+
+            if (bill.getPaymentMode() == PaymentMode.UDHAR) {
+                bill.setPaidAmount(BigDecimal.ZERO);
+                bill.setPendingAmount(bill.getGrandTotal());
+                newPending = bill.getGrandTotal();
+            } else if (bill.getPaymentMode() == PaymentMode.PARTIAL) {
+                BigDecimal paid = paidAmount != null ? paidAmount : bill.getPaidAmount();
+                if (paid.compareTo(bill.getGrandTotal()) > 0) {
+                    throw new RuntimeException("Paid amount cannot exceed grand total of " + bill.getGrandTotal());
+                }
+                bill.setPaidAmount(paid);
+                bill.setPendingAmount(bill.getGrandTotal().subtract(paid));
+                newPending = bill.getGrandTotal().subtract(paid);
+            } else {
+                // CASH or UPI
+                bill.setPaidAmount(bill.getGrandTotal());
+                bill.setPendingAmount(BigDecimal.ZERO);
+                newPending = BigDecimal.ZERO;
+            }
+
+            // Update customer pending balance based on change in pending amount
+            if (newPending.compareTo(oldPending) != 0) {
+                BigDecimal diff = newPending.subtract(oldPending);
+
+                // If credit increases, check limits & NPA
+                if (diff.compareTo(BigDecimal.ZERO) > 0) {
+                    if (customer.getIsNpa() != null && customer.getIsNpa()) {
+                        throw new RuntimeException("Credit sales are blocked for NPA customer: " 
+                                + customer.getName() + " — CASH mode only");
+                    }
+
+                    BigDecimal projectedPending = customer.getTotalPending().add(diff);
+                    BigDecimal limit = customerService.calculateEffectiveCreditLimit(customer);
+                    if (projectedPending.compareTo(limit) > 0) {
+                        throw new RuntimeException("Credit limit exceeded for customer: " + customer.getName()
+                            + " | Credit Limit: ₹" + limit
+                            + " | Current Pending: ₹" + customer.getTotalPending()
+                            + " | Additional Credit: ₹" + diff
+                            + " | Projected Pending: ₹" + projectedPending);
+                    }
+                }
+            }
+
+            // Derive and update status
+            if (bill.getStatus() != BillStatus.CANCELLED && bill.getStatus() != BillStatus.DRAFT) {
+                if (bill.getPendingAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                    bill.setStatus(BillStatus.PAID);
+                } else if (bill.getPaidAmount().compareTo(BigDecimal.ZERO) > 0) {
+                    bill.setStatus(BillStatus.PARTIAL);
+                } else {
+                    bill.setStatus(BillStatus.CONFIRMED);
+                }
+            }
+        }
+
+        // 3. Handle Notes
         if (notes != null) {
             bill.setNotes(notes);
         }
 
-        return toResponse(billRepository.save(bill));
+        Bill savedBill = billRepository.save(bill);
+        recalculateCustomerPending(customer);
+        return toResponse(savedBill);
     }
+
 
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW, rollbackFor = RuntimeException.class)
     public BillResponse confirmBill(UUID billId) {
@@ -845,17 +941,99 @@ public class BillService {
         }
 
         // Update customer pending + last order
-        customer.setTotalPending(customer.getTotalPending().add(bill.getPendingAmount()));
         customer.setLastOrderAt(LocalDateTime.now());
         customerRepository.save(customer);
 
-        // Update bill status
-        bill.setStatus(BillStatus.CONFIRMED);
+        // Update bill status dynamically
+        if (bill.getPendingAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            bill.setStatus(BillStatus.PAID);
+        } else if (bill.getPaidAmount().compareTo(BigDecimal.ZERO) > 0) {
+            bill.setStatus(BillStatus.PARTIAL);
+        } else {
+            bill.setStatus(BillStatus.CONFIRMED);
+        }
         bill.setUpdatedAt(LocalDateTime.now());
         Bill savedBill = billRepository.save(bill);
 
+        recalculateCustomerPending(customer);
         return toResponse(savedBill);
     }
+
+    @Transactional(rollbackFor = RuntimeException.class)
+    public BillResponse restoreBill(UUID id) {
+        Bill bill = billRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Bill not found: " + id));
+
+        if (bill.getStatus() != BillStatus.CANCELLED) {
+            throw new RuntimeException("Only CANCELLED bills can be restored. Current status: " + bill.getStatus());
+        }
+
+        Customer customer = bill.getCustomer();
+
+        // Validate NPA customer credit block
+        if (customer.getIsNpa() != null && customer.getIsNpa()) {
+            if (bill.getPaymentMode() == PaymentMode.UDHAR || bill.getPaymentMode() == PaymentMode.PARTIAL) {
+                throw new RuntimeException("Credit sales are blocked for NPA customer: " 
+                        + customer.getName() + " — CASH mode only");
+            }
+        }
+
+        // Validate credit limit
+        if (bill.getPaymentMode() == PaymentMode.UDHAR || bill.getPaymentMode() == PaymentMode.PARTIAL) {
+            BigDecimal projectedPending = customer.getTotalPending().add(bill.getPendingAmount());
+            BigDecimal limit = customerService.calculateEffectiveCreditLimit(customer);
+            if (projectedPending.compareTo(limit) > 0) {
+                throw new RuntimeException("Credit limit exceeded for customer: " + customer.getName()
+                    + " | Credit Limit: ₹" + limit
+                    + " | Current Pending: ₹" + customer.getTotalPending()
+                    + " | Restoring Bill Pending: ₹" + bill.getPendingAmount()
+                    + " | Projected Pending: ₹" + projectedPending);
+            }
+        }
+
+        // Validate and deduct stock from inventory and batches
+        for (BillItem item : bill.getItems()) {
+            Product product = item.getProduct();
+            StockBatch batch = item.getBatch();
+
+            int qty = item.getQuantity() + item.getFreeQuantity();
+            boolean isPrimary = item.getUnitType().name().equalsIgnoreCase(product.getPrimaryUnit());
+            int secondaryQty = isPrimary ? qty * product.getSecondaryPerPrimary() : qty;
+
+            if (batch == null) {
+                throw new RuntimeException("Sourced stock batch missing for product: " + product.getName());
+            }
+
+            if (batch.getSecondaryRemaining() < secondaryQty) {
+                throw new RuntimeException("Insufficient physical stock in batch " + batch.getBatchNumber()
+                        + " for product: " + product.getName()
+                        + " | Available: " + batch.getSecondaryRemaining()
+                        + " | Required: " + secondaryQty);
+            }
+
+            // Deduct stock
+            if (isPrimary) {
+                stockService.deductByPrimary(product.getId(), qty, batch.getId());
+            } else {
+                stockService.deductBySecondary(product.getId(), qty, batch.getId());
+            }
+        }
+
+        // Update bill status dynamically
+        if (bill.getPendingAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            bill.setStatus(BillStatus.PAID);
+        } else if (bill.getPaidAmount().compareTo(BigDecimal.ZERO) > 0) {
+            bill.setStatus(BillStatus.PARTIAL);
+        } else {
+            bill.setStatus(BillStatus.CONFIRMED);
+        }
+        bill.setUpdatedAt(LocalDateTime.now());
+        
+        Bill savedBill = billRepository.save(bill);
+        recalculateCustomerPending(customer);
+        return toResponse(savedBill);
+    }
+
 
     @Transactional(rollbackFor = RuntimeException.class)
     public List<BulkConfirmResult> bulkConfirmBills(List<UUID> billIds) {

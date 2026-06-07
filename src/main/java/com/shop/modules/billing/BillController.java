@@ -22,7 +22,7 @@ public class BillController {
     private final BillService billService;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','SALESMAN','DELIVERY_BOY')")
     public ResponseEntity<ApiResponse<List<BillResponse>>>
     getAll() {
         return ResponseEntity.ok(
@@ -31,7 +31,7 @@ public class BillController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','SALESMAN','DELIVERY_BOY')")
     public ResponseEntity<ApiResponse<BillResponse>>
     getById(@PathVariable UUID id) {
         return ResponseEntity.ok(
@@ -40,7 +40,7 @@ public class BillController {
     }
 
     @GetMapping("/pending")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','SALESMAN','DELIVERY_BOY')")
     public ResponseEntity<ApiResponse<List<BillResponse>>>
     getPending() {
         return ResponseEntity.ok(
@@ -49,7 +49,7 @@ public class BillController {
     }
 
     @GetMapping("/customer/{customerId}")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','SALESMAN','DELIVERY_BOY')")
     public ResponseEntity<ApiResponse<List<BillResponse>>>
     getCustomerHistory(
             @PathVariable UUID customerId) {
@@ -59,19 +59,20 @@ public class BillController {
                                 customerId)));
     }
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','SALESMAN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','SALESMAN','DELIVERY_BOY')")
     public ResponseEntity<ApiResponse<BillResponse>>
     create(@Valid @RequestBody CreateBillRequest req,
            Authentication auth) {
         try {
-            boolean isSalesman = auth.getAuthorities().stream()
-                    .anyMatch(a -> a.getAuthority().equals("ROLE_SALESMAN") || a.getAuthority().equals("SALESMAN"));
-            if (isSalesman && req.getStatus() != BillStatus.DRAFT) {
+            boolean isRestricted = auth.getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_SALESMAN") || a.getAuthority().equals("SALESMAN")
+                                || a.getAuthority().equals("ROLE_DELIVERY_BOY") || a.getAuthority().equals("DELIVERY_BOY"));
+            if (isRestricted && req.getStatus() != BillStatus.DRAFT) {
                 return ResponseEntity
                         .status(HttpStatus.FORBIDDEN)
                         .body(ApiResponse.<BillResponse>builder()
                                 .success(false)
-                                .message("Salesmen are restricted to booking DRAFT orders only.")
+                                .message("Salesmen and delivery boys are restricted to booking DRAFT orders only.")
                                 .data(null)
                                 .timestamp(java.time.LocalDateTime.now())
                                 .build());
@@ -137,7 +138,9 @@ public class BillController {
                         billService.updateBillDetails(
                                 id,
                                 req.getPaymentMode(),
-                                req.getNotes())));
+                                req.getNotes(),
+                                req.getStatus(),
+                                req.getPaidAmount())));
     }
 
     @PutMapping("/{id}/confirm")
@@ -149,6 +152,17 @@ public class BillController {
                         "Bill confirmed and stock depleted",
                         billService.confirmBill(id)));
     }
+
+    @PutMapping("/{id}/restore")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<BillResponse>>
+    restoreBill(@PathVariable UUID id) {
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Bill restored successfully",
+                        billService.restoreBill(id)));
+    }
+
 
     @PostMapping("/bulk-confirm")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
@@ -164,5 +178,7 @@ public class BillController {
     public static class UpdateBillRequest {
         private PaymentMode paymentMode;
         private String notes;
+        private BillStatus status;
+        private java.math.BigDecimal paidAmount;
     }
 }
