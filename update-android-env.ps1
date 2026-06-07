@@ -48,4 +48,14 @@ if (Test-Path $gradlePath) {
       | Set-Content $gradlePath
 }
 
+# 4. Update Android native assets capacitor.config.json copy
+$androidConfigPath = "frontend/android/app/src/main/assets/capacitor.config.json"
+if (Test-Path $androidConfigPath) {
+    (Get-Content $androidConfigPath -Raw) `
+      -replace '"appId":\s*"[^"]*"', "`"appId`": `"$appId`"" `
+      -replace '"appName":\s*"[^"]*"', "`"appName`": `"$appName`"" `
+      -replace '"url":\s*"[^"]*"', "`"url`": `"$url`"" `
+      | Set-Content $androidConfigPath
+}
+
 Write-Host "Android environment configuration completed successfully!"
