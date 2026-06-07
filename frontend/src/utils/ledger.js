@@ -1,3 +1,4 @@
+// UAT and PROD environment test comment
 export const getCustomerLedger = (customer, allBills, allPayments) => {
   const custPayments = allPayments.filter(p => p.customerId === customer.id)
   const custBills = allBills.filter(b => b.customerId === customer.id)
