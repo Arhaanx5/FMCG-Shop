@@ -1,14 +1,17 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   IndianRupee, ShoppingCart, TrendingUp, TrendingDown,
   AlertTriangle, Package, Users, Truck, Sparkles, Brain, Lightbulb
 } from 'lucide-react'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import api from '../services/api'
 import StatCard from '../components/StatCard'
 import { useToast } from '../context/ToastContext'
+
+const RevenueOverviewChart = lazy(() => import('../components/RevenueOverviewChart'))
+const ExpenseBreakdownChart = lazy(() => import('../components/ExpenseBreakdownChart'))
+const TopProductsChart = lazy(() => import('../components/TopProductsChart'))
 
 const PIE_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899']
 const MODERN_PIE_COLORS = ['#8b5cf6', '#a78bfa', '#ec4899', '#f97316', '#f59e0b', '#10b981']
@@ -114,16 +117,12 @@ export default function Dashboard() {
   const loadDashboard = async () => {
     setLoading(true)
     try {
-      const [todayRes, monthlyRes, yearlyRes, billsRes] = await Promise.all([
-        api.get('/dashboard/today'),
-        api.get(`/dashboard/monthly?year=${selectedYear}&month=${selectedMonth}`),
-        api.get(`/dashboard/yearly?year=${selectedYear}`),
-        api.get('/bills?size=5'),
-      ])
-      setToday(todayRes.data.data)
-      setMonthly(monthlyRes.data.data)
-      setYearly(yearlyRes.data.data)
-      setRecentBills(billsRes.data.data?.content || billsRes.data.data || [])
+      const res = await api.get(`/dashboard/summary?year=${selectedYear}&month=${selectedMonth}`)
+      const { today: todayData, monthly: monthlyData, yearly: yearlyData, recentBills: billsData } = res.data.data || {}
+      setToday(todayData)
+      setMonthly(monthlyData)
+      setYearly(yearlyData)
+      setRecentBills(billsData || [])
     } catch (err) {
       toast.error('Failed to load dashboard data')
     } finally {
@@ -204,24 +203,6 @@ export default function Dashboard() {
 
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-  const customTooltip = ({ active, payload, label }) => {
-    if (active && payload && payload.length) {
-      return (
-        <div style={{
-          background: 'var(--color-surface-2)', padding: 'var(--space-3) var(--space-4)',
-          borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)',
-          fontSize: 'var(--font-size-sm)',
-        }}>
-          <p style={{ color: 'var(--color-text)', fontWeight: 'var(--font-weight-semibold)' }}>{label}</p>
-          {payload.map((p, i) => (
-            <p key={i} style={{ color: p.color }}>₹{Number(p.value).toLocaleString('en-IN')}</p>
-          ))}
-        </div>
-      )
-    }
-    return null
-  }
-
   const getKpiValues = () => {
     switch (viewMode) {
       case 'year':
@@ -232,6 +213,7 @@ export default function Dashboard() {
           billsLabel: "Yearly Bills",
           collection: Number(yearly?.totalCollected || 0),
           collectionLabel: "Yearly Collection",
+          collectionDesc: `Cash: ₹${Number(yearly?.totalCollectedCash || 0).toLocaleString('en-IN')} | UPI: ₹${Number(yearly?.totalCollectedUpi || 0).toLocaleString('en-IN')} | Udhar Recovery: ₹${Number(yearly?.totalCollectedUdhar || 0).toLocaleString('en-IN')}`,
           pending: Number(today?.todayPending || 0),
           pendingLabel: "Total Pending (Udhaar)",
         }
@@ -243,6 +225,7 @@ export default function Dashboard() {
           billsLabel: "Monthly Bills",
           collection: Number(monthly?.totalCollected || 0),
           collectionLabel: "Monthly Collection",
+          collectionDesc: `Cash: ₹${Number(monthly?.totalCollectedCash || 0).toLocaleString('en-IN')} | UPI: ₹${Number(monthly?.totalCollectedUpi || 0).toLocaleString('en-IN')} | Udhar Recovery: ₹${Number(monthly?.totalCollectedUdhar || 0).toLocaleString('en-IN')}`,
           pending: Number(today?.todayPending || 0),
           pendingLabel: "Total Pending (Udhaar)",
         }
@@ -255,6 +238,7 @@ export default function Dashboard() {
           billsLabel: "Today's Bills",
           collection: Number(today?.todayCollected || 0),
           collectionLabel: "Today's Collection",
+          collectionDesc: `Cash: ₹${Number(today?.todayCollectedCash || 0).toLocaleString('en-IN')} | UPI: ₹${Number(today?.todayCollectedUpi || 0).toLocaleString('en-IN')} | Udhar Recovery: ₹${Number(today?.todayCollectedUdhar || 0).toLocaleString('en-IN')}`,
           pending: Number(today?.todayPending || 0),
           pendingLabel: "Total Pending (Udhaar)",
         }
@@ -271,6 +255,9 @@ export default function Dashboard() {
           { label: "Year Expenses", value: Number(yearly?.totalExpenses || 0), color: 'var(--color-danger)' },
           { label: "Net Profit", value: Number(yearly?.netProfit || 0), color: Number(yearly?.netProfit || 0) >= 0 ? 'var(--color-success)' : 'var(--color-danger)' },
           { label: "Damage Loss", value: Number(yearly?.totalDamageLoss || 0), color: 'var(--color-warning)' },
+          { label: "Year's Cash", value: Number(yearly?.totalCollectedCash || 0), color: 'var(--color-success)' },
+          { label: "Year's UPI", value: Number(yearly?.totalCollectedUpi || 0), color: 'var(--color-info)' },
+          { label: "Year's Udhar Recovery", value: Number(yearly?.totalCollectedUdhar || 0), color: 'var(--color-warning)' },
         ]
       case 'month':
         return [
@@ -278,6 +265,9 @@ export default function Dashboard() {
           { label: "Month Expenses", value: Number(monthly?.totalExpenses || 0), color: 'var(--color-danger)' },
           { label: "Net Profit", value: Number(monthly?.netProfit || 0), color: Number(monthly?.netProfit || 0) >= 0 ? 'var(--color-success)' : 'var(--color-danger)' },
           { label: "Damage Loss", value: Number(monthly?.totalDamageLoss || 0), color: 'var(--color-warning)' },
+          { label: "Month's Cash", value: Number(monthly?.totalCollectedCash || 0), color: 'var(--color-success)' },
+          { label: "Month's UPI", value: Number(monthly?.totalCollectedUpi || 0), color: 'var(--color-info)' },
+          { label: "Month's Udhar Recovery", value: Number(monthly?.totalCollectedUdhar || 0), color: 'var(--color-warning)' },
         ]
       case 'day':
       default:
@@ -286,6 +276,9 @@ export default function Dashboard() {
           { label: "Month Revenue (YTD)", value: Number(today?.monthRevenue || 0), color: 'var(--color-text)' },
           { label: "Month Expenses", value: Number(today?.monthExpenses || 0), color: 'var(--color-danger)' },
           { label: "Month Net Profit", value: Number(today?.monthNetProfit || 0), color: Number(today?.monthNetProfit || 0) >= 0 ? 'var(--color-success)' : 'var(--color-danger)' },
+          { label: "Today's Cash", value: Number(today?.todayCollectedCash || 0), color: 'var(--color-success)' },
+          { label: "Today's UPI", value: Number(today?.todayCollectedUpi || 0), color: 'var(--color-info)' },
+          { label: "Today's Udhar Recovery", value: Number(today?.todayCollectedUdhar || 0), color: 'var(--color-warning)' },
         ]
     }
   }
@@ -450,6 +443,7 @@ export default function Dashboard() {
                 prefix="₹"
                 color="var(--color-success)"
                 delay={2}
+                description={kpis.collectionDesc}
               />
               <StatCard
                 icon={<TrendingDown size={24} />}
@@ -475,22 +469,9 @@ export default function Dashboard() {
                     {viewMode === 'day' ? 'Daily Overview' : viewMode === 'month' ? 'Monthly Overview' : 'Yearly Overview'}
                   </span>
                 </div>
-                <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={revenueExpenseData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                    <XAxis dataKey="name" tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }} />
-                    <YAxis tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }} />
-                    <Tooltip content={customTooltip} />
-                    <Bar dataKey="amount" radius={[6, 6, 0, 0]}>
-                      {revenueExpenseData.map((entry, index) => (
-                        <Cell
-                          key={index}
-                          fill={activeColors[index % activeColors.length]}
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+                <Suspense fallback={<div className="flex items-center justify-center" style={{ height: 280 }}><div className="spinner" /></div>}>
+                  <RevenueOverviewChart revenueExpenseData={revenueExpenseData} activeColors={activeColors} />
+                </Suspense>
               </motion.div>
 
               {/* Expense Breakdown Pie */}
@@ -503,34 +484,9 @@ export default function Dashboard() {
                 <div className="card-header" style={{ marginBottom: 'var(--space-4)' }}>
                   <span className="card-title">Expense Breakdown ({viewMode === 'year' ? 'Yearly' : 'Monthly'})</span>
                 </div>
-                {expenseChartData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={250}>
-                    <PieChart>
-                      <Pie
-                        data={expenseChartData}
-                        innerRadius={60}
-                        outerRadius={90}
-                        paddingAngle={4}
-                        dataKey="value"
-                      >
-                        {expenseChartData.map((_, idx) => (
-                          <Cell key={idx} fill={activePieColors[idx % activePieColors.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        formatter={(value) => `₹${Number(value).toLocaleString('en-IN')}`}
-                        contentStyle={{
-                          background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
-                          borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)',
-                        }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="empty-state" style={{ padding: 'var(--space-10)' }}>
-                    <p className="text-muted">No expense data for this period</p>
-                  </div>
-                )}
+                <Suspense fallback={<div className="flex items-center justify-center" style={{ height: 250 }}><div className="spinner" /></div>}>
+                  <ExpenseBreakdownChart expenseChartData={expenseChartData} activePieColors={activePieColors} />
+                </Suspense>
                 {/* Legend */}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
                   {expenseChartData.map((item, idx) => (
@@ -553,35 +509,9 @@ export default function Dashboard() {
               <div className="card-header" style={{ marginBottom: 'var(--space-4)' }}>
                 <span className="card-title">Top Products ({viewMode === 'year' ? 'Yearly' : 'Monthly'})</span>
               </div>
-              {topProductsData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={topProductsData} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                    <XAxis type="number" tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }} />
-                    <YAxis dataKey="name" type="category" tick={{ fill: 'var(--color-text-secondary)', fontSize: 11 }} width={120} />
-                    <Tooltip
-                      contentStyle={{
-                        background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
-                        borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)',
-                      }}
-                    />
-                    <Bar
-                      dataKey="qty"
-                      fill={
-                        uiTheme === 'modern' ? '#8b5cf6' :
-                        uiTheme === 'cyber' ? '#00d2ff' :
-                        uiTheme === 'neon' ? '#00ffcc' :
-                        '#f59e0b'
-                      }
-                      radius={[0, 6, 6, 0]}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="empty-state" style={{ padding: 'var(--space-10)' }}>
-                  <p className="text-muted">No product data for this period</p>
-                </div>
-              )}
+              <Suspense fallback={<div className="flex items-center justify-center" style={{ height: 280 }}><div className="spinner" /></div>}>
+                <TopProductsChart topProductsData={topProductsData} uiTheme={uiTheme} />
+              </Suspense>
             </motion.div>
 
             {/* Summary Cards */}
@@ -809,6 +739,7 @@ export default function Dashboard() {
               prefix="₹"
               color="var(--color-success)"
               delay={2}
+              description={kpis.collectionDesc}
             />
             <StatCard
               icon={<TrendingDown size={24} />}

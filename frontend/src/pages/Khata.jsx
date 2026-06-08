@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import Pagination from '../components/Pagination'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, IndianRupee, Edit2, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
 import api from '../services/api'
@@ -140,6 +141,52 @@ export default function Khata() {
   // Overpayment modal state
   const [overpaymentPreview, setOverpaymentPreview] = useState(null)
   const [pendingPaymentForm, setPendingPaymentForm] = useState(null)
+
+  const [ledgerPage, setLedgerPage] = useState(0)
+  const LEDGER_PAGE_SIZE = 15
+
+  const paymentsByCustomer = useMemo(() => {
+    const map = {}
+    payments.forEach(p => {
+      if (p.customerId) {
+        if (!map[p.customerId]) map[p.customerId] = []
+        map[p.customerId].push(p)
+      }
+    })
+    return map
+  }, [payments])
+
+  const pendingBillsByCustomer = useMemo(() => {
+    const map = {}
+    pendingBills.forEach(b => {
+      if (b.customerId) {
+        if (!map[b.customerId]) map[b.customerId] = []
+        map[b.customerId].push(b)
+      }
+    })
+    return map
+  }, [pendingBills])
+
+  const sortedCustomers = useMemo(() => {
+    return [...customers].sort((a, b) => a.name.localeCompare(b.name))
+  }, [customers])
+
+  const filteredCustomers = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim()
+    if (!query) return sortedCustomers
+    return sortedCustomers.filter(c => {
+      return (
+        c.name?.toLowerCase().includes(query) ||
+        c.shopName?.toLowerCase().includes(query) ||
+        c.phone?.toLowerCase().includes(query) ||
+        c.customerCode?.toLowerCase().includes(query)
+      )
+    })
+  }, [sortedCustomers, searchQuery])
+
+  const paginatedLedgerCustomers = useMemo(() => {
+    return filteredCustomers.slice(ledgerPage * LEDGER_PAGE_SIZE, (ledgerPage + 1) * LEDGER_PAGE_SIZE)
+  }, [filteredCustomers, ledgerPage])
 
   useEffect(() => { loadAll(true) }, [])
 
@@ -529,18 +576,6 @@ Please clear your outstanding balance as soon as possible. Thank you for doing b
   }
 
   const renderCustomerLedgersSection = () => {
-    const sortedCustomers = [...customers].sort((a, b) => a.name.localeCompare(b.name))
-    const filteredCustomers = sortedCustomers.filter(c => {
-      const query = searchQuery.toLowerCase().trim()
-      if (!query) return true
-      return (
-        c.name?.toLowerCase().includes(query) ||
-        c.shopName?.toLowerCase().includes(query) ||
-        c.phone?.toLowerCase().includes(query) ||
-        c.customerCode?.toLowerCase().includes(query)
-      )
-    })
-
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
         <div style={{ marginBottom: 'var(--space-2)' }}>
@@ -548,7 +583,10 @@ Please clear your outstanding balance as soon as possible. Thank you for doing b
             className="form-input"
             placeholder="Search customer by name, shop name, phone..."
             value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
+            onChange={e => {
+              setSearchQuery(e.target.value)
+              setLedgerPage(0)
+            }}
             style={{ maxWidth: '360px', height: '38px' }}
           />
         </div>
@@ -557,177 +595,186 @@ Please clear your outstanding balance as soon as possible. Thank you for doing b
           {filteredCustomers.length === 0 ? (
             <div className="table-empty card">No customers found</div>
           ) : (
-            filteredCustomers.map(customer => {
-              const isExpanded = !!expandedCustomers[customer.id]
-              const custPayments = payments.filter(p => p.customerId === customer.id)
-              const outstanding = Number(customer.totalPending || 0)
-              const totalPaid = custPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0)
-              const totalUdhar = totalPaid + outstanding
+            <>
+              {paginatedLedgerCustomers.map(customer => {
+                const isExpanded = !!expandedCustomers[customer.id]
+                const custPayments = paymentsByCustomer[customer.id] || []
+                const outstanding = Number(customer.totalPending || 0)
+                const totalPaid = custPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0)
+                const totalUdhar = totalPaid + outstanding
 
-              return (
-                <div key={customer.id} id={`customer-card-${customer.id}`} className="card" style={{ padding: '0', overflow: 'hidden' }}>
-                  {/* Accordion Header */}
-                  <div 
-                    style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'space-between', 
-                      padding: 'var(--space-4) var(--space-6)',
-                      cursor: 'pointer',
-                      background: 'var(--color-surface)',
-                      flexWrap: 'wrap',
-                      gap: 'var(--space-4)'
-                    }}
-                    onClick={() => toggleExpandCustomer(customer.id)}
-                  >
-                    {/* Left: Customer Info */}
-                    <div style={{ flex: '1 1 220px', minWidth: '200px' }}>
-                      <h3 className="font-semibold text-base" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                        {customer.name}
-                        {customer.customerCode && <span className="text-xs text-muted">({customer.customerCode})</span>}
-                      </h3>
-                      {customer.shopName && <div className="text-xs text-muted" style={{ marginTop: '2px' }}>{customer.shopName}</div>}
-                      <div className="text-xs text-muted" style={{ marginTop: '4px', display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-                        <span>{customer.phone || '—'}</span>
-                        {customer.areaName && (
-                          <>
-                            <span>•</span>
-                            <span className="badge badge-neutral" style={{ fontSize: '10px', padding: '1px 6px' }}>{customer.areaName}</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Middle: 3 Metric Blocks */}
-                    <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', flex: '2 1 auto' }}>
-                      {/* Block 1: Total Udhar */}
-                      <div style={{ 
-                        padding: 'var(--space-2) var(--space-4)', 
-                        background: 'var(--color-bg-secondary)', 
-                        border: '1px solid var(--color-border)', 
-                        minWidth: '120px',
-                        textAlign: 'center',
-                        flex: '1 1 0'
-                      }}>
-                        <div className="text-xs text-muted" style={{ marginBottom: '2px' }}>Total Udhar (Taken)</div>
-                        <div className="font-bold text-sm">₹{totalUdhar.toLocaleString('en-IN')}</div>
-                      </div>
-
-                      {/* Block 2: Total Paid */}
-                      <div style={{ 
-                        padding: 'var(--space-2) var(--space-4)', 
-                        background: 'var(--color-success-soft)', 
-                        border: '1px solid rgba(16, 185, 129, 0.2)', 
-                        minWidth: '120px',
-                        textAlign: 'center',
-                        flex: '1 1 0'
-                      }}>
-                        <div className="text-xs text-success" style={{ marginBottom: '2px' }}>Total Paid (Bhugtan)</div>
-                        <div className="font-bold text-sm text-success">₹{totalPaid.toLocaleString('en-IN')}</div>
-                      </div>
-
-                      {/* Block 3: Outstanding */}
-                      <div style={{ 
-                        padding: 'var(--space-2) var(--space-4)', 
-                        background: outstanding > 0 ? 'var(--color-danger-soft)' : 'var(--color-success-soft)', 
-                        border: outstanding > 0 ? '1px solid rgba(239, 68, 68, 0.2)' : '1px solid rgba(16, 185, 129, 0.2)', 
-                        minWidth: '120px',
-                        textAlign: 'center',
-                        flex: '1 1 0'
-                      }}>
-                        <div className={`text-xs ${outstanding > 0 ? 'text-danger' : 'text-success'}`} style={{ marginBottom: '2px' }}>Udhar Left (O/S)</div>
-                        <div className={`font-bold text-sm ${outstanding > 0 ? 'text-danger' : 'text-success'}`}>₹{outstanding.toLocaleString('en-IN')}</div>
-                      </div>
-                    </div>
-
-                    {/* Right: Actions */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }} onClick={(e) => e.stopPropagation()}>
-                      <button 
-                        className="btn btn-ghost btn-icon btn-sm" 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleWhatsAppShare(customer, totalUdhar, totalPaid, outstanding);
-                        }} 
-                        title="Share Balance on WhatsApp"
-                        style={{ color: '#25D366' }}
-                      >
-                        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                          <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.457L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.42 9.864-9.858.002-2.634-1.013-5.11-2.861-6.961C16.63 1.936 14.156.92 11.53.921c-5.445 0-9.871 4.42-9.875 9.86-.001 1.716.452 3.39 1.312 4.869l-1.02 3.733 3.825-.996zM18.067 14.7c-.33-.165-1.956-.967-2.285-1.086-.329-.12-.57-.179-.81.18-.24.359-.93 1.168-1.138 1.407-.21.239-.419.27-.75.105-.329-.165-1.39-.512-2.648-1.633-.978-.872-1.637-1.95-1.83-2.28-.192-.33-.02-.509.145-.673.149-.148.33-.389.495-.584.165-.195.22-.329.33-.548.11-.219.055-.41-.027-.575-.083-.165-.81-1.952-1.11-2.674-.29-.701-.586-.607-.81-.617-.21-.01-.45-.011-.69-.011-.24 0-.63.09-.96.449-.33.359-1.258 1.229-1.258 2.996 0 1.767 1.287 3.473 1.467 3.712.18.24 2.534 3.869 6.138 5.426.857.371 1.526.593 2.05.759.86.273 1.643.235 2.261.143.689-.103 1.956-.8 2.235-1.573.279-.773.279-1.436.195-1.573-.083-.137-.31-.219-.64-.384z"/>
-                        </svg>
-                      </button>
-                      <button 
-                        className="btn btn-secondary btn-sm" 
-                        onClick={() => {
-                          setForm({ ...emptyForm, customerId: customer.id })
-                          setShowModal(true)
-                        }}
-                      >
-                        <Plus size={14} /> Record Payment
-                      </button>
-                      <button 
-                        className="btn btn-ghost btn-icon btn-sm"
-                        onClick={() => toggleExpandCustomer(customer.id)}
-                        style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}
-                      >
-                        <ChevronDown size={18} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Expanded Ledger Panel */}
-                  <AnimatePresence>
-                    {isExpanded && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.2 }}
-                        style={{ borderTop: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)' }}
-                      >
-                        <div style={{ padding: 'var(--space-4) var(--space-6)' }}>
-                          {customerPaymentsLoading[customer.id] ? (
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-6) 0', gap: 'var(--space-2)' }}>
-                              <div className="spinner" style={{ width: '20px', height: '20px', borderTopColor: 'var(--color-accent)' }}></div>
-                              <span className="text-muted text-xs">Loading customer transactions...</span>
-                            </div>
-                          ) : (
+                return (
+                  <div key={customer.id} id={`customer-card-${customer.id}`} className="card" style={{ padding: '0', overflow: 'hidden' }}>
+                    {/* Accordion Header */}
+                    <div 
+                      style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'space-between', 
+                        padding: 'var(--space-4) var(--space-6)',
+                        cursor: 'pointer',
+                        background: 'var(--color-surface)',
+                        flexWrap: 'wrap',
+                        gap: 'var(--space-4)'
+                      }}
+                      onClick={() => toggleExpandCustomer(customer.id)}
+                    >
+                      {/* Left: Customer Info */}
+                      <div style={{ flex: '1 1 220px', minWidth: '200px' }}>
+                        <h3 className="font-semibold text-base" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                          {customer.name}
+                          {customer.customerCode && <span className="text-xs text-muted">({customer.customerCode})</span>}
+                        </h3>
+                        {customer.shopName && <div className="text-xs text-muted" style={{ marginTop: '2px' }}>{customer.shopName}</div>}
+                        <div className="text-xs text-muted" style={{ marginTop: '4px', display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+                          <span>{customer.phone || '—'}</span>
+                          {customer.areaName && (
                             <>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
-                                <div className="flex gap-2">
-                                  <button 
-                                    type="button"
-                                    className={`btn btn-sm ${customerPanelTab[customer.id] === 'ledger' ? 'btn-primary' : 'btn-secondary'}`}
-                                    onClick={() => setCustomerPanelTab(prev => ({ ...prev, [customer.id]: 'ledger' }))}
-                                  >
-                                    Ledger Statement
-                                  </button>
-                                  <button 
-                                    type="button"
-                                    className={`btn btn-sm ${(!customerPanelTab[customer.id] || customerPanelTab[customer.id] === 'udhar') ? 'btn-primary' : 'btn-secondary'}`}
-                                    onClick={() => setCustomerPanelTab(prev => ({ ...prev, [customer.id]: 'udhar' }))}
-                                  >
-                                    Bill-wise Udhar History
-                                  </button>
-                                </div>
-                                <h4 className="font-semibold text-sm text-slate-700 dark:text-slate-300">
-                                  {(customerPanelTab[customer.id] === 'ledger') ? 'Customer Account Ledger Statement' : 'Customer Bill-wise Udhar Records'}
-                                </h4>
-                              </div>
-                              
-                              {(customerPanelTab[customer.id] === 'ledger') ? (
-                                renderCustomerLedgerTable(customer)
-                              ) : (
-                                renderCustomerUdharTable(customer)
-                              )}
+                              <span>•</span>
+                              <span className="badge badge-neutral" style={{ fontSize: '10px', padding: '1px 6px' }}>{customer.areaName}</span>
                             </>
                           )}
                         </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              )
-            })
+                      </div>
+
+                      {/* Middle: 3 Metric Blocks */}
+                      <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', flex: '2 1 auto' }}>
+                        {/* Block 1: Total Udhar */}
+                        <div style={{ 
+                          padding: 'var(--space-2) var(--space-4)', 
+                          background: 'var(--color-bg-secondary)', 
+                          border: '1px solid var(--color-border)', 
+                          minWidth: '120px',
+                          textAlign: 'center',
+                          flex: '1 1 0'
+                        }}>
+                          <div className="text-xs text-muted" style={{ marginBottom: '2px' }}>Total Udhar (Taken)</div>
+                          <div className="font-bold text-sm">₹{totalUdhar.toLocaleString('en-IN')}</div>
+                        </div>
+
+                        {/* Block 2: Total Paid */}
+                        <div style={{ 
+                          padding: 'var(--space-2) var(--space-4)', 
+                          background: 'var(--color-success-soft)', 
+                          border: '1px solid rgba(16, 185, 129, 0.2)', 
+                          minWidth: '120px',
+                          textAlign: 'center',
+                          flex: '1 1 0'
+                        }}>
+                          <div className="text-xs text-success" style={{ marginBottom: '2px' }}>Total Paid (Bhugtan)</div>
+                          <div className="font-bold text-sm text-success">₹{totalPaid.toLocaleString('en-IN')}</div>
+                        </div>
+
+                        {/* Block 3: Outstanding */}
+                        <div style={{ 
+                          padding: 'var(--space-2) var(--space-4)', 
+                          background: outstanding > 0 ? 'var(--color-danger-soft)' : 'var(--color-success-soft)', 
+                          border: outstanding > 0 ? '1px solid rgba(239, 68, 68, 0.2)' : '1px solid rgba(16, 185, 129, 0.2)', 
+                          minWidth: '120px',
+                          textAlign: 'center',
+                          flex: '1 1 0'
+                        }}>
+                          <div className={`text-xs ${outstanding > 0 ? 'text-danger' : 'text-success'}`} style={{ marginBottom: '2px' }}>Udhar Left (O/S)</div>
+                          <div className={`font-bold text-sm ${outstanding > 0 ? 'text-danger' : 'text-success'}`}>₹{outstanding.toLocaleString('en-IN')}</div>
+                        </div>
+                      </div>
+
+                      {/* Right: Actions */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }} onClick={(e) => e.stopPropagation()}>
+                        <button 
+                          className="btn btn-ghost btn-icon btn-sm" 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleWhatsAppShare(customer, totalUdhar, totalPaid, outstanding);
+                          }} 
+                          title="Share Balance on WhatsApp"
+                          style={{ color: '#25D366' }}
+                        >
+                          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                            <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.457L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.42 9.864-9.858.002-2.634-1.013-5.11-2.861-6.961C16.63 1.936 14.156.92 11.53.921c-5.445 0-9.871 4.42-9.875 9.86-.001 1.716.452 3.39 1.312 4.869l-1.02 3.733 3.825-.996zM18.067 14.7c-.33-.165-1.956-.967-2.285-1.086-.329-.12-.57-.179-.81.18-.24.359-.93 1.168-1.138 1.407-.21.239-.419.27-.75.105-.329-.165-1.39-.512-2.648-1.633-.978-.872-1.637-1.95-1.83-2.28-.192-.33-.02-.509.145-.673.149-.148.33-.389.495-.584.165-.195.22-.329.33-.548.11-.219.055-.41-.027-.575-.083-.165-.81-1.952-1.11-2.674-.29-.701-.586-.607-.81-.617-.21-.01-.45-.011-.69-.011-.24 0-.63.09-.96.449-.33.359-1.258 1.229-1.258 2.996 0 1.767 1.287 3.473 1.467 3.712.18.24 2.534 3.869 6.138 5.426.857.371 1.526.593 2.05.759.86.273 1.643.235 2.261.143.689-.103 1.956-.8 2.235-1.573.279-.773.279-1.436.195-1.573-.083-.137-.31-.219-.64-.384z"/>
+                          </svg>
+                        </button>
+                        <button 
+                          className="btn btn-secondary btn-sm" 
+                          onClick={() => {
+                            setForm({ ...emptyForm, customerId: customer.id })
+                            setShowModal(true)
+                          }}
+                        >
+                          <Plus size={14} /> Record Payment
+                        </button>
+                        <button 
+                          className="btn btn-ghost btn-icon btn-sm"
+                          onClick={() => toggleExpandCustomer(customer.id)}
+                          style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}
+                        >
+                          <ChevronDown size={18} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Expanded Ledger Panel */}
+                    <AnimatePresence>
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2 }}
+                          style={{ borderTop: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)' }}
+                        >
+                          <div style={{ padding: 'var(--space-4) var(--space-6)' }}>
+                            {customerPaymentsLoading[customer.id] ? (
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-6) 0', gap: 'var(--space-2)' }}>
+                                <div className="spinner" style={{ width: '20px', height: '20px', borderTopColor: 'var(--color-accent)' }}></div>
+                                <span className="text-muted text-xs">Loading customer transactions...</span>
+                              </div>
+                            ) : (
+                              <>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                                  <div className="flex gap-2">
+                                    <button 
+                                      type="button"
+                                      className={`btn btn-sm ${customerPanelTab[customer.id] === 'ledger' ? 'btn-primary' : 'btn-secondary'}`}
+                                      onClick={() => setCustomerPanelTab(prev => ({ ...prev, [customer.id]: 'ledger' }))}
+                                    >
+                                      Ledger Statement
+                                    </button>
+                                    <button 
+                                      type="button"
+                                      className={`btn btn-sm ${(!customerPanelTab[customer.id] || customerPanelTab[customer.id] === 'udhar') ? 'btn-primary' : 'btn-secondary'}`}
+                                      onClick={() => setCustomerPanelTab(prev => ({ ...prev, [customer.id]: 'udhar' }))}
+                                    >
+                                      Bill-wise Udhar History
+                                    </button>
+                                  </div>
+                                  <h4 className="font-semibold text-sm text-slate-700 dark:text-slate-300">
+                                    {(customerPanelTab[customer.id] === 'ledger') ? 'Customer Account Ledger Statement' : 'Customer Bill-wise Udhar Records'}
+                                  </h4>
+                                </div>
+                                
+                                {(customerPanelTab[customer.id] === 'ledger') ? (
+                                  renderCustomerLedgerTable(customer)
+                                ) : (
+                                  renderCustomerUdharTable(customer)
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )
+              })}
+              <Pagination
+                page={ledgerPage}
+                totalPages={Math.ceil(filteredCustomers.length / LEDGER_PAGE_SIZE)}
+                totalElements={filteredCustomers.length}
+                pageSize={LEDGER_PAGE_SIZE}
+                onPageChange={(p) => setLedgerPage(p)}
+              />
+            </>
           )}
         </div>
       </div>
@@ -863,69 +910,85 @@ Please clear your outstanding balance as soon as possible. Thank you for doing b
     } finally { setUpdating(false) }
   }
 
-  const todayTotal = todayPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0)
-  const totalCollections = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0)
-  const totalUdhar = customers.reduce((sum, c) => sum + Number(c.totalPending || 0), 0)
+  const todayTotal = useMemo(() => todayPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0), [todayPayments])
+  const totalCollections = useMemo(() => payments.reduce((sum, p) => sum + Number(p.amount || 0), 0), [payments])
+  const totalUdhar = useMemo(() => customers.reduce((sum, c) => sum + Number(c.totalPending || 0), 0), [customers])
 
   // Generate virtual opening bills for customers who have opening balances
-  const virtualOpeningBills = customers.map(customer => {
-    const openingBalance = Number(customer.openingBalance || 0);
-    if (openingBalance <= 0) return null;
+  const virtualOpeningBills = useMemo(() => {
+    return customers.map(customer => {
+      const openingBalance = Number(customer.openingBalance || 0);
+      if (openingBalance <= 0) return null;
 
-    const custBills = pendingBills.filter(b => b.customerId === customer.id);
-    const pendingBillsTotal = custBills.reduce((sum, b) => sum + Number(b.pendingAmount || 0), 0);
-    const totalPending = Number(customer.totalPending || 0);
-    const unpaidOpeningBalance = Math.max(0, totalPending - pendingBillsTotal);
+      const custBills = pendingBillsByCustomer[customer.id] || [];
+      const pendingBillsTotal = custBills.reduce((sum, b) => sum + Number(b.pendingAmount || 0), 0);
+      const totalPending = Number(customer.totalPending || 0);
+      const unpaidOpeningBalance = Math.max(0, totalPending - pendingBillsTotal);
 
-    const pendingAmt = Math.min(openingBalance, unpaidOpeningBalance);
-    const paidAmt = openingBalance - pendingAmt;
-    const isPaid = (pendingAmt <= 0);
+      const pendingAmt = Math.min(openingBalance, unpaidOpeningBalance);
+      const paidAmt = openingBalance - pendingAmt;
+      const isPaid = (pendingAmt <= 0);
 
-    return {
-      id: `opening-${customer.id}`,
-      billNumber: 'Opening Balance',
-      customerName: customer.name,
-      customerPhone: customer.phone,
-      grandTotal: openingBalance,
-      paidAmount: paidAmt,
-      pendingAmount: pendingAmt,
-      paymentMode: 'CREDIT',
-      status: isPaid ? 'PAID' : 'CONFIRMED',
-      createdAt: customer.createdAt || null
-    };
-  }).filter(Boolean);
+      return {
+        id: `opening-${customer.id}`,
+        billNumber: 'Opening Balance',
+        customerName: customer.name,
+        customerPhone: customer.phone,
+        grandTotal: openingBalance,
+        paidAmount: paidAmt,
+        pendingAmount: pendingAmt,
+        paymentMode: 'CREDIT',
+        status: isPaid ? 'PAID' : 'CONFIRMED',
+        createdAt: customer.createdAt || null
+      };
+    }).filter(Boolean);
+  }, [customers, pendingBillsByCustomer]);
 
   // Filter active virtual opening bills (unpaid only) for Outstanding tab
-  const activeVirtualOpeningBills = virtualOpeningBills.filter(b => b.pendingAmount > 0);
+  const activeVirtualOpeningBills = useMemo(() => {
+    return virtualOpeningBills.filter(b => b.pendingAmount > 0);
+  }, [virtualOpeningBills]);
 
-  const allUdharEntries = [...activeVirtualOpeningBills, ...pendingBills].map(b => {
-    if (b.id.startsWith?.('opening-')) {
+  const allUdharEntries = useMemo(() => {
+    const paymentsByBill = {}
+    payments.forEach(p => {
+      if (p.billId) {
+        if (!paymentsByBill[p.billId]) paymentsByBill[p.billId] = []
+        paymentsByBill[p.billId].push(p)
+      }
+    })
+
+    return [...activeVirtualOpeningBills, ...pendingBills].map(b => {
+      if (b.id.startsWith?.('opening-')) {
+        return {
+          ...b,
+          initialUdhar: b.grandTotal,
+          paidAfterwards: b.paidAmount,
+        };
+      }
+      const billPayments = paymentsByBill[b.id] || [];
+      const sumPaidAfterwards = billPayments.reduce((sum, p) => sum + Number(p.appliedAmount || p.amount || 0), 0);
+      const downPayment = Math.max(0, Number(b.paidAmount || 0) - sumPaidAfterwards);
+      const initialUdhar = Number(b.grandTotal || 0) - downPayment;
       return {
         ...b,
-        initialUdhar: b.grandTotal,
-        paidAfterwards: b.paidAmount,
+        initialUdhar,
+        paidAfterwards: sumPaidAfterwards,
       };
-    }
-    const billPayments = payments.filter(p => p.billId === b.id);
-    const sumPaidAfterwards = billPayments.reduce((sum, p) => sum + Number(p.appliedAmount || p.amount || 0), 0);
-    const downPayment = Math.max(0, Number(b.paidAmount || 0) - sumPaidAfterwards);
-    const initialUdhar = Number(b.grandTotal || 0) - downPayment;
-    return {
-      ...b,
-      initialUdhar,
-      paidAfterwards: sumPaidAfterwards,
-    };
-  }).sort((a, b) => {
-    const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-    const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-    return dateB - dateA;
-  });
+    }).sort((a, b) => {
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return dateB - dateA;
+    });
+  }, [activeVirtualOpeningBills, pendingBills, payments]);
 
-  const displayList = activeTab === 'today'
-    ? todayPayments
-    : activeTab === 'all'
-      ? payments
-      : allUdharEntries;
+  const displayList = useMemo(() => {
+    return activeTab === 'today'
+      ? todayPayments
+      : activeTab === 'all'
+        ? payments
+        : allUdharEntries;
+  }, [activeTab, todayPayments, payments, allUdharEntries]);
 
   const updateField = (key, val) => setForm(f => ({ ...f, [key]: val }))
 

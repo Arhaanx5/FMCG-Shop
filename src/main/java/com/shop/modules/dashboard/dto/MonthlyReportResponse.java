@@ -15,6 +15,9 @@ public class MonthlyReportResponse {
     // Revenue
     private BigDecimal totalRevenue;
     private BigDecimal totalCollected;
+    private BigDecimal totalCollectedCash;
+    private BigDecimal totalCollectedUpi;
+    private BigDecimal totalCollectedUdhar;
     private BigDecimal totalPending;
     private Long totalBills;
 

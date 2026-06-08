@@ -13,6 +13,9 @@ public class DashboardResponse {
 
     private BigDecimal todayRevenue;
     private BigDecimal todayCollected;
+    private BigDecimal todayCollectedCash;
+    private BigDecimal todayCollectedUpi;
+    private BigDecimal todayCollectedUdhar;
     private BigDecimal todayPending;
     private Long todayBills;
     private BigDecimal monthRevenue;

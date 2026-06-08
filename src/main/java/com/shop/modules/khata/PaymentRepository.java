@@ -25,6 +25,9 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
             @Param("start") LocalDateTime start,
             @Param("end") LocalDateTime end);
 
+    @Query("SELECT p FROM Payment p WHERE p.bill.id IN :billIds")
+    List<Payment> findByBillIdIn(@Param("billIds") List<UUID> billIds);
+
     List<Payment> findAllByOrderByPaidAtDesc();
 
     @Query("SELECT p FROM Payment p WHERE " +

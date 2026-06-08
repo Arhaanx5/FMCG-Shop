@@ -177,6 +177,13 @@ public class BillService {
                 .collect(Collectors.toList());
     }
 
+    public List<BillResponse> getRecentBills(int limit) {
+        return billRepository.findTop5ByOrderByCreatedAtDesc()
+                .stream()
+                .map(this::toResponse)
+                .collect(Collectors.toList());
+    }
+
     // ── Get bill by id ──
     public BillResponse getBillById(UUID id) {
         return toResponse(

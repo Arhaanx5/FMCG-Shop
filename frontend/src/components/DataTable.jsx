@@ -226,11 +226,8 @@ export default function DataTable({
               </tr>
             ) : (
               paginatedData.map((row, idx) => (
-                <motion.tr
+                <tr
                   key={row.id || idx}
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.15, delay: Math.min(idx * 0.02, 0.2) }}
                   onClick={() => onRowClick?.(row)}
                   className={`group border-b border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors duration-150 ${
                     onRowClick ? 'cursor-pointer' : ''
@@ -259,7 +256,7 @@ export default function DataTable({
                       <RowSpeedDial actions={actions(row)} />
                     </td>
                   )}
-                </motion.tr>
+                </tr>
               ))
             )}
           </tbody>

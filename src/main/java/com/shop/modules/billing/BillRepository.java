@@ -33,6 +33,10 @@ public interface BillRepository extends JpaRepository<Bill, UUID> {
 
     List<Bill> findByCreatedByIdAndStatus(UUID salesmanId, BillStatus status);
 
+    List<Bill> findByCreatedByIdAndStatusIn(UUID salesmanId, List<BillStatus> statuses);
+
+    List<Bill> findTop5ByOrderByCreatedAtDesc();
+
     @Query("SELECT COALESCE(SUM(b.paidAmount), 0) FROM Bill b WHERE b.customer.id = :customerId AND b.status IN ('CONFIRMED', 'PARTIAL', 'PAID')")
     java.math.BigDecimal sumPaidAmountByCustomerId(@Param("customerId") UUID customerId);
 

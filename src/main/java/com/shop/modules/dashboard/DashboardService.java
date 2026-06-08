@@ -4,9 +4,12 @@ import com.shop.modules.billing.Bill;
 import com.shop.modules.billing.BillItem;
 import com.shop.modules.billing.BillRepository;
 import com.shop.modules.billing.BillStatus;
+import com.shop.modules.billing.BillService;
+import com.shop.modules.billing.dto.BillResponse;
 import com.shop.modules.customer.CustomerRepository;
 import com.shop.modules.dashboard.dto.DashboardResponse;
 import com.shop.modules.dashboard.dto.MonthlyReportResponse;
+import com.shop.modules.dashboard.dto.DashboardSummaryResponse;
 import com.shop.modules.delivery.DeliveryRepository;
 import com.shop.modules.delivery.DeliveryStatus;
 import com.shop.modules.expense.Expense;
@@ -26,12 +29,15 @@ import com.shop.modules.dashboard.dto.SalesmanPerformanceResponse;
 import com.shop.modules.damage.DamageLogRepository;
 import java.util.ArrayList;
 import lombok.RequiredArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
 import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -49,6 +55,16 @@ public class DashboardService {
     private final AreaRepository areaRepository;
     private final PaymentRepository paymentRepository;
     private final DamageLogRepository damageLogRepository;
+    private final BillService billService;
+
+    @Builder
+    @Data
+    private static class CollectionBreakdown {
+        private BigDecimal totalCollected;
+        private BigDecimal collectedCash;
+        private BigDecimal collectedUpi;
+        private BigDecimal collectedUdhar;
+    }
 
     public DashboardResponse getTodaySummary() {
 
@@ -57,19 +73,18 @@ public class DashboardService {
                 LocalDate.now().atStartOfDay();
         LocalDateTime end = start.plusDays(1);
 
-        // Today bills (only CONFIRMED ones are included in sales metrics)
+        // Today bills (CONFIRMED, PARTIAL, and PAID are included in sales metrics)
         List<Bill> todayBills =
                 billRepository.findBillsBetween(start, end).stream()
-                        .filter(b -> b.getStatus() == BillStatus.CONFIRMED)
+                        .filter(b -> b.getStatus() == BillStatus.CONFIRMED || b.getStatus() == BillStatus.PARTIAL || b.getStatus() == BillStatus.PAID)
                         .collect(Collectors.toList());
 
         BigDecimal todayRevenue = todayBills.stream()
                 .map(b -> b.getGrandTotal() != null ? b.getGrandTotal() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal todayCollected = todayBills.stream()
-                .map(b -> b.getPaidAmount() != null ? b.getPaidAmount() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        CollectionBreakdown todayCol = calculateCollectionBreakdown(todayBills, start, end);
+        BigDecimal todayCollected = todayCol.getTotalCollected();
 
         BigDecimal todayPending = customerRepository.getTotalPendingBalance();
         if (todayPending == null) {
@@ -83,7 +98,7 @@ public class DashboardService {
 
         List<Bill> monthBills =
                 billRepository.findBillsBetween(monthStart, end).stream()
-                        .filter(b -> b.getStatus() == BillStatus.CONFIRMED)
+                        .filter(b -> b.getStatus() == BillStatus.CONFIRMED || b.getStatus() == BillStatus.PARTIAL || b.getStatus() == BillStatus.PAID)
                         .collect(Collectors.toList());
 
         BigDecimal monthRevenue = monthBills.stream()
@@ -197,6 +212,9 @@ public class DashboardService {
         return DashboardResponse.builder()
                 .todayRevenue(todayRevenue)
                 .todayCollected(todayCollected)
+                .todayCollectedCash(todayCol.getCollectedCash())
+                .todayCollectedUpi(todayCol.getCollectedUpi())
+                .todayCollectedUdhar(todayCol.getCollectedUdhar())
                 .todayPending(todayPending)
                 .todayBills((long) todayBills.size())
                 .monthRevenue(monthRevenue)
@@ -222,16 +240,15 @@ public class DashboardService {
 
         List<Bill> bills =
                 billRepository.findBillsBetween(start, end).stream()
-                        .filter(b -> b.getStatus() == BillStatus.CONFIRMED)
+                        .filter(b -> b.getStatus() == BillStatus.CONFIRMED || b.getStatus() == BillStatus.PARTIAL || b.getStatus() == BillStatus.PAID)
                         .collect(Collectors.toList());
 
         BigDecimal totalRevenue = bills.stream()
                 .map(b -> b.getGrandTotal() != null ? b.getGrandTotal() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal totalCollected = bills.stream()
-                .map(b -> b.getPaidAmount() != null ? b.getPaidAmount() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        CollectionBreakdown monthCol = calculateCollectionBreakdown(bills, start, end);
+        BigDecimal totalCollected = monthCol.getTotalCollected();
 
         BigDecimal totalPending = bills.stream()
                 .map(b -> b.getPendingAmount() != null ? b.getPendingAmount() : BigDecimal.ZERO)
@@ -302,6 +319,9 @@ public class DashboardService {
                 .month(month)
                 .totalRevenue(totalRevenue)
                 .totalCollected(totalCollected)
+                .totalCollectedCash(monthCol.getCollectedCash())
+                .totalCollectedUpi(monthCol.getCollectedUpi())
+                .totalCollectedUdhar(monthCol.getCollectedUdhar())
                 .totalPending(totalPending)
                 .totalBills((long) bills.size())
                 .totalExpenses(totalExpenses)
@@ -317,16 +337,15 @@ public class DashboardService {
         LocalDateTime end = start.plusYears(1);
 
         List<Bill> bills = billRepository.findBillsBetween(start, end).stream()
-                .filter(b -> b.getStatus() == BillStatus.CONFIRMED)
+                .filter(b -> b.getStatus() == BillStatus.CONFIRMED || b.getStatus() == BillStatus.PARTIAL || b.getStatus() == BillStatus.PAID)
                 .collect(Collectors.toList());
 
         BigDecimal totalRevenue = bills.stream()
                 .map(b -> b.getGrandTotal() != null ? b.getGrandTotal() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal totalCollected = bills.stream()
-                .map(b -> b.getPaidAmount() != null ? b.getPaidAmount() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        CollectionBreakdown yearCol = calculateCollectionBreakdown(bills, start, end);
+        BigDecimal totalCollected = yearCol.getTotalCollected();
 
         BigDecimal totalPending = bills.stream()
                 .map(b -> b.getPendingAmount() != null ? b.getPendingAmount() : BigDecimal.ZERO)
@@ -391,6 +410,9 @@ public class DashboardService {
                 .month(12)
                 .totalRevenue(totalRevenue)
                 .totalCollected(totalCollected)
+                .totalCollectedCash(yearCol.getCollectedCash())
+                .totalCollectedUpi(yearCol.getCollectedUpi())
+                .totalCollectedUdhar(yearCol.getCollectedUdhar())
                 .totalPending(totalPending)
                 .totalBills((long) bills.size())
                 .totalExpenses(totalExpenses)
@@ -409,17 +431,42 @@ public class DashboardService {
             List<Area> areas = areaRepository.findBySalesmanId(sm.getId());
             List<String> areaNames = areas.stream().map(Area::getName).collect(Collectors.toList());
 
-            // GrandTotal of CONFIRMED bills created by this salesman
-            List<Bill> bills = billRepository.findByCreatedByIdAndStatus(sm.getId(), BillStatus.CONFIRMED);
+            // GrandTotal of CONFIRMED, PARTIAL, and PAID bills created by this salesman
+            List<Bill> bills = billRepository.findByCreatedByIdAndStatusIn(
+                    sm.getId(),
+                    List.of(BillStatus.CONFIRMED, BillStatus.PARTIAL, BillStatus.PAID)
+            );
             BigDecimal totalRevenue = bills.stream()
                     .map(b -> b.getGrandTotal() != null ? b.getGrandTotal() : BigDecimal.ZERO)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-            // Payments collected by this salesman
+            // Payments collected by this salesman (Khata payments)
             List<Payment> collections = paymentRepository.findByCollectedById(sm.getId());
-            BigDecimal totalCollected = collections.stream()
+            BigDecimal khataCollected = collections.stream()
                     .map(p -> p.getAmount() != null ? p.getAmount() : BigDecimal.ZERO)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            // Immediate payments collected by this salesman on bills they created
+            BigDecimal immediateCollected = BigDecimal.ZERO;
+            Map<UUID, BigDecimal> appliedAmountsMap = new java.util.HashMap<>();
+            if (!bills.isEmpty()) {
+                List<UUID> billIds = bills.stream().map(Bill::getId).collect(Collectors.toList());
+                List<Payment> appliedPayments = paymentRepository.findByBillIdIn(billIds);
+                for (Payment p : appliedPayments) {
+                    if (p.getBill() != null) {
+                        UUID bId = p.getBill().getId();
+                        BigDecimal amt = p.getAppliedAmount() != null ? p.getAppliedAmount() : BigDecimal.ZERO;
+                        appliedAmountsMap.put(bId, appliedAmountsMap.getOrDefault(bId, BigDecimal.ZERO).add(amt));
+                    }
+                }
+            }
+            for (Bill bill : bills) {
+                BigDecimal billPaidAmount = bill.getPaidAmount() != null ? bill.getPaidAmount() : BigDecimal.ZERO;
+                BigDecimal applied = appliedAmountsMap.getOrDefault(bill.getId(), BigDecimal.ZERO);
+                immediateCollected = immediateCollected.add(billPaidAmount.subtract(applied));
+            }
+
+            BigDecimal totalCollected = khataCollected.add(immediateCollected);
 
             // Active route credit (outstanding pending debt in assigned areas)
             BigDecimal routeCredit = BigDecimal.ZERO;
@@ -450,5 +497,77 @@ public class DashboardService {
         }
 
         return report;
+    }
+
+    public DashboardSummaryResponse getDashboardSummary(int year, int month) {
+        DashboardResponse today = getTodaySummary();
+        MonthlyReportResponse monthly = getMonthlyReport(year, month);
+        MonthlyReportResponse yearly = getYearlyReport(year);
+        List<BillResponse> recentBills = billService.getRecentBills(5);
+
+        return DashboardSummaryResponse.builder()
+                .today(today)
+                .monthly(monthly)
+                .yearly(yearly)
+                .recentBills(recentBills)
+                .build();
+    }
+
+    private CollectionBreakdown calculateCollectionBreakdown(List<Bill> bills, LocalDateTime start, LocalDateTime end) {
+        List<Payment> periodPayments = paymentRepository.findBetween(start, end);
+
+        BigDecimal collectedUdhar = periodPayments.stream()
+                .map(p -> p.getAmount() != null ? p.getAmount() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal khataCash = periodPayments.stream()
+                .filter(p -> "CASH".equalsIgnoreCase(p.getPaymentMode()))
+                .map(p -> p.getAmount() != null ? p.getAmount() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal khataUpi = periodPayments.stream()
+                .filter(p -> "UPI".equalsIgnoreCase(p.getPaymentMode()))
+                .map(p -> p.getAmount() != null ? p.getAmount() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal immediateCash = BigDecimal.ZERO;
+        BigDecimal immediateUpi = BigDecimal.ZERO;
+
+        Map<UUID, BigDecimal> appliedAmountsMap = new java.util.HashMap<>();
+        if (!bills.isEmpty()) {
+            List<UUID> billIds = bills.stream().map(Bill::getId).collect(Collectors.toList());
+            List<Payment> appliedPayments = paymentRepository.findByBillIdIn(billIds);
+            for (Payment p : appliedPayments) {
+                if (p.getBill() != null) {
+                    UUID bId = p.getBill().getId();
+                    BigDecimal amt = p.getAppliedAmount() != null ? p.getAppliedAmount() : BigDecimal.ZERO;
+                    appliedAmountsMap.put(bId, appliedAmountsMap.getOrDefault(bId, BigDecimal.ZERO).add(amt));
+                }
+            }
+        }
+
+        for (Bill bill : bills) {
+            BigDecimal billPaidAmount = bill.getPaidAmount() != null ? bill.getPaidAmount() : BigDecimal.ZERO;
+            BigDecimal applied = appliedAmountsMap.getOrDefault(bill.getId(), BigDecimal.ZERO);
+            BigDecimal netImmediate = billPaidAmount.subtract(applied);
+            if (netImmediate.compareTo(BigDecimal.ZERO) > 0) {
+                if (bill.getPaymentMode() != null && "UPI".equalsIgnoreCase(bill.getPaymentMode().name())) {
+                    immediateUpi = immediateUpi.add(netImmediate);
+                } else {
+                    immediateCash = immediateCash.add(netImmediate);
+                }
+            }
+        }
+
+        BigDecimal collectedCash = khataCash.add(immediateCash);
+        BigDecimal collectedUpi = khataUpi.add(immediateUpi);
+        BigDecimal totalCollected = collectedCash.add(collectedUpi);
+
+        return CollectionBreakdown.builder()
+                .totalCollected(totalCollected)
+                .collectedCash(collectedCash)
+                .collectedUpi(collectedUpi)
+                .collectedUdhar(collectedUdhar)
+                .build();
     }
 }

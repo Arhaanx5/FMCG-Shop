@@ -4,6 +4,7 @@ import com.shop.common.ApiResponse;
 import com.shop.modules.dashboard.dto.DashboardResponse;
 import com.shop.modules.dashboard.dto.MonthlyReportResponse;
 import com.shop.modules.dashboard.dto.SalesmanPerformanceResponse;
+import com.shop.modules.dashboard.dto.DashboardSummaryResponse;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -16,6 +17,15 @@ import org.springframework.web.bind.annotation.*;
 public class DashboardController {
 
     private final DashboardService dashboardService;
+
+    @GetMapping("/summary")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<DashboardSummaryResponse>>
+    getSummary(@RequestParam int year, @RequestParam int month) {
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        dashboardService.getDashboardSummary(year, month)));
+    }
 
     @GetMapping("/today")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")

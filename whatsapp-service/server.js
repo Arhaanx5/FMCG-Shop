@@ -3,8 +3,27 @@ import pkg from 'whatsapp-web.js';
 import qrcode from 'qrcode';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
+import util from 'util';
 
 dotenv.config();
+
+// Redirect console logs to file
+const logFilePath = path.join(process.cwd(), 'service.log');
+const logFile = fs.createWriteStream(logFilePath, { flags: 'a' });
+const logStdout = process.stdout;
+const logStderr = process.stderr;
+
+console.log = function () {
+    const formatted = `[${new Date().toISOString()}] ` + util.format.apply(null, arguments) + '\n';
+    logFile.write(formatted);
+    logStdout.write(formatted);
+};
+console.error = function () {
+    const formatted = `[${new Date().toISOString()}] [ERROR] ` + util.format.apply(null, arguments) + '\n';
+    logFile.write(formatted);
+    logStderr.write(formatted);
+};
 
 const { Client, LocalAuth, MessageMedia } = pkg;
 const app = express();
@@ -15,6 +34,7 @@ app.use(express.json({ limit: '10mb' }));
 // Session and QR states
 let clientStatus = 'INITIALIZING'; // INITIALIZING, CONNECTED, DISCONNECTED
 let currentQr = null;
+let isInitializing = false;
 
 const client = new Client({
     authStrategy: new LocalAuth({
@@ -34,10 +54,28 @@ const client = new Client({
     }
 });
 
+async function safeInitialize() {
+    if (isInitializing || clientStatus === 'CONNECTED') {
+        console.log(`[WA] Skip initialization (isInitializing=${isInitializing}, status=${clientStatus})`);
+        return;
+    }
+    console.log('[WA] Triggering client.initialize()...');
+    isInitializing = true;
+    clientStatus = 'INITIALIZING';
+    try {
+        await client.initialize();
+    } catch (err) {
+        console.error('[WA] Initialization failed:', err);
+        clientStatus = 'DISCONNECTED';
+        isInitializing = false;
+    }
+}
+
 // Client Lifecycle Handlers
 client.on('qr', async (qr) => {
     console.log('New WhatsApp QR code received');
     clientStatus = 'DISCONNECTED';
+    isInitializing = false;
     try {
         currentQr = await qrcode.toDataURL(qr);
     } catch (err) {
@@ -49,6 +87,7 @@ client.on('ready', () => {
     console.log('WhatsApp Web Client is READY');
     clientStatus = 'CONNECTED';
     currentQr = null;
+    isInitializing = false;
 });
 
 client.on('authenticated', () => {
@@ -59,21 +98,22 @@ client.on('auth_failure', (msg) => {
     console.error('Authentication failure:', msg);
     clientStatus = 'DISCONNECTED';
     currentQr = null;
+    isInitializing = false;
 });
 
 client.on('disconnected', (reason) => {
     console.log('WhatsApp Client was disconnected:', reason);
     clientStatus = 'DISCONNECTED';
     currentQr = null;
+    isInitializing = false;
     // Reinitialize to get a fresh QR code
-    client.initialize().catch(err => console.error('Error reinitializing:', err));
+    setTimeout(() => {
+        safeInitialize();
+    }, 2000);
 });
 
 // Initialize client
-client.initialize().catch(err => {
-    console.error('Initialization error during boot:', err);
-    clientStatus = 'DISCONNECTED';
-});
+safeInitialize();
 
 // REST Endpoints
 app.get('/status', (req, res) => {
@@ -83,6 +123,10 @@ app.get('/status', (req, res) => {
 app.get('/qr', (req, res) => {
     if (clientStatus === 'CONNECTED') {
         return res.json({ qr: null, message: 'Already connected' });
+    }
+    if (clientStatus === 'DISCONNECTED' && !currentQr && !isInitializing) {
+        console.log('[WA] GET /qr: Client is disconnected and no QR found. Auto-reinitializing...');
+        safeInitialize();
     }
     res.json({ qr: currentQr });
 });
@@ -159,11 +203,25 @@ app.post('/send-media', async (req, res) => {
 
 app.post('/logout', async (req, res) => {
     try {
-        if (clientStatus === 'CONNECTED') {
-            await client.logout();
+        console.log('[WA] Logout requested. Clearing session...');
+        if (clientStatus === 'CONNECTED' || client.pupBrowser) {
+            try {
+                await client.logout();
+            } catch (logoutErr) {
+                console.warn('[WA] client.logout() failed, destroying client instance:', logoutErr);
+                await client.destroy();
+            }
         }
         clientStatus = 'DISCONNECTED';
         currentQr = null;
+        isInitializing = false;
+
+        // Auto-reinitialize after a brief delay so a fresh QR code is immediately available
+        setTimeout(() => {
+            console.log('[WA] Reinitializing client after logout...');
+            safeInitialize();
+        }, 1500);
+
         res.json({ success: true, message: 'Successfully logged out and session cleared' });
     } catch (err) {
         console.error('Logout error:', err);

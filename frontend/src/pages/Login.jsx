@@ -5,7 +5,7 @@ import { Phone, Lock, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import Modal from '../components/Modal'
-import lariLogo from '../assets/lari-traders-logo.png'
+import lariLogo from '../assets/lari-traders-logo.webp'
 
 export default function Login() {
   const [phone, setPhone] = useState('')

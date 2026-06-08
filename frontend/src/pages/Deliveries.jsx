@@ -1,13 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, MapPin, Truck, Package, CheckCircle, Clock, Eye } from 'lucide-react'
 import api from '../services/api'
 import DataTable from '../components/DataTable'
 import Modal from '../components/Modal'
-import DeliveryMap from '../components/DeliveryMap'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
+
+const DeliveryMap = lazy(() => import('../components/DeliveryMap'))
 
 const STATUS_BADGES = {
   PENDING: 'badge-warning',
@@ -401,7 +402,19 @@ export default function Deliveries() {
                 <p style={{ color: 'var(--color-text-muted)' }}>Calculating optimal route...</p>
               </div>
             ) : (
-              <DeliveryMap routeData={routeData} onClose={() => setShowMapModal(false)} />
+              <Suspense fallback={
+                <div style={{
+                  position: 'fixed', inset: 0, zIndex: 1000,
+                  background: 'var(--color-bg)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexDirection: 'column', gap: '16px',
+                }}>
+                  <div className="spinner" />
+                  <p style={{ color: 'var(--color-text-muted)' }}>Loading Maps engine...</p>
+                </div>
+              }>
+                <DeliveryMap routeData={routeData} onClose={() => setShowMapModal(false)} />
+              </Suspense>
             )}
           </motion.div>
         )}

@@ -14,10 +14,28 @@
       } else {
         document.documentElement.classList.remove('dark');
       }
+
+      // Automatically reload the page on ChunkLoadError or lazy load script failure
+      window.addEventListener('error', function (e) {
+        const errorMsg = e.message || '';
+        const target = e.target || {};
+        const isScriptError = target.tagName === 'SCRIPT';
+        if (isScriptError || errorMsg.includes('ChunkLoadError') || errorMsg.includes('Loading chunk') || errorMsg.includes('dynamic import')) {
+          console.warn('Chunk load error detected, forcing reload...', e);
+          const lastReload = sessionStorage.getItem('last_chunk_reload');
+          const now = Date.now();
+          if (!lastReload || now - parseInt(lastReload, 10) > 10000) {
+            sessionStorage.setItem('last_chunk_reload', now.toString());
+            window.location.reload(true);
+          }
+        }
+      }, true);
     </script>
     <title>Lari Traders — Shop Management</title>
-    <script type="module" crossorigin src="/assets/index-6HFDlI2y.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-D5EhpxZ4.css">
+    <script type="module" crossorigin src="/assets/index-S1O1d350.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/vendor-DPviOFIk.js">
+    <link rel="modulepreload" crossorigin href="/assets/motion-BO6lhW00.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-D65dl54s.css">
   </head>
   <body>
     <div id="root"></div>

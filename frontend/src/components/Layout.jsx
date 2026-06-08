@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '../context/AuthContext'
 import api from '../services/api'
-import lariLogo from '../assets/lari-traders-logo.png'
+import lariLogo from '../assets/lari-traders-logo.webp'
 import {
   LayoutDashboard, Package, Users, ShoppingCart, Warehouse,
   BookOpen, Receipt, AlertTriangle, MapPin, UserCog,
@@ -49,6 +49,95 @@ export default function Layout() {
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+
+  // Pull to refresh states
+  const [startY, setStartY] = useState(0)
+  const [pullProgress, setPullProgress] = useState(0)
+  const [pullDirection, setPullDirection] = useState(null) // 'down' or 'up'
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  const handleTouchStart = (e) => {
+    const scrollTop = window.scrollY || document.documentElement.scrollTop || 0
+    const scrollHeight = document.documentElement.scrollHeight || 0
+    const clientHeight = window.innerHeight || 0
+
+    const atTop = scrollTop <= 8
+    const atBottom = scrollTop + clientHeight >= scrollHeight - 8
+
+    if (atTop || atBottom) {
+      setStartY(e.touches[0].pageY)
+      setPullDirection(null)
+    } else {
+      setStartY(0)
+      setPullDirection(null)
+    }
+  }
+
+  const handleTouchMove = (e) => {
+    if (startY === 0 || isRefreshing) return
+    const currentY = e.touches[0].pageY
+    const diff = currentY - startY
+
+    // Determine direction on first significant movement
+    if (pullDirection === null) {
+      if (diff > 5) {
+        // Dragging down -> Verify we are allowed to pull down (must be at top)
+        const scrollTop = window.scrollY || document.documentElement.scrollTop || 0
+        if (scrollTop <= 8) {
+          setPullDirection('down')
+        } else {
+          setStartY(0)
+          return
+        }
+      } else if (diff < -5) {
+        // Dragging up -> Verify we are allowed to pull up (must be at bottom)
+        const scrollTop = window.scrollY || document.documentElement.scrollTop || 0
+        const scrollHeight = document.documentElement.scrollHeight || 0
+        const clientHeight = window.innerHeight || 0
+        if (scrollTop + clientHeight >= scrollHeight - 8) {
+          setPullDirection('up')
+        } else {
+          setStartY(0)
+          return
+        }
+      }
+      return
+    }
+
+    if (pullDirection === 'down') {
+      if (diff > 0) {
+        const progress = Math.min(diff / 150, 1)
+        setPullProgress(progress)
+        if (diff > 10 && e.cancelable) {
+          e.preventDefault()
+        }
+      } else {
+        setPullProgress(0)
+      }
+    } else if (pullDirection === 'up') {
+      if (diff < 0) {
+        const progress = Math.min(-diff / 150, 1)
+        setPullProgress(progress)
+        if (-diff > 10 && e.cancelable) {
+          e.preventDefault()
+        }
+      } else {
+        setPullProgress(0)
+      }
+    }
+  }
+
+  const handleTouchEnd = () => {
+    if (startY === 0 || isRefreshing) return
+    if (pullProgress >= 1) {
+      setIsRefreshing(true)
+      window.location.reload(true)
+    } else {
+      setPullProgress(0)
+      setPullDirection(null)
+    }
+    setStartY(0)
+  }
 
   useEffect(() => {
     const handleResize = () => {
@@ -355,12 +444,50 @@ export default function Layout() {
       {/* Main content */}
       <div 
         className="app-content flex-1 flex flex-col min-h-screen transition-all duration-300"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
         style={{
           marginLeft: isMobile ? 0 : (collapsed ? 72 : 260),
           minWidth: 0,
           overflowX: 'hidden',
         }}
       >
+        {/* Pull to Refresh Indicator */}
+        {pullProgress > 0 && (
+          <div 
+            style={{
+              position: 'fixed',
+              top: pullDirection === 'up' ? 'auto' : '80px',
+              bottom: pullDirection === 'up' ? '80px' : 'auto',
+              left: '50%',
+              transform: `translateX(-50%) translateY(${pullDirection === 'up' ? `-${pullProgress * 40}px` : `${pullProgress * 40}px`}) scale(${0.8 + pullProgress * 0.2})`,
+              opacity: pullProgress,
+              background: 'var(--color-surface)',
+              border: '1.5px solid var(--color-accent)',
+              borderRadius: '50%',
+              width: '40px',
+              height: '40px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: 'var(--shadow-lg)',
+              zIndex: 99999,
+              transition: pullProgress === 0 ? 'all 0.3s ease' : 'none'
+            }}
+          >
+            <div 
+              className="spinner" 
+              style={{
+                width: '20px',
+                height: '20px',
+                borderWidth: '2.5px',
+                transform: `rotate(${pullProgress * 360}deg)`,
+                animation: isRefreshing ? 'spin 0.8s linear infinite' : 'none'
+              }}
+            />
+          </div>
+        )}
         {/* Top bar */}
         <header className={`sticky top-0 h-16 ${
           uiTheme !== 'classic' ? 'glass-panel border-b' : 'bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700'

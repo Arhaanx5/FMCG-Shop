@@ -1,21 +1,25 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { lazy, Suspense, useEffect } from 'react'
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
+import { App as CapacitorApp } from '@capacitor/app'
 import { useAuth } from './context/AuthContext'
 import LoadingScreen from './components/LoadingScreen'
 import Layout from './components/Layout'
-import Login from './pages/Login'
-import Dashboard from './pages/Dashboard'
-import Products from './pages/Products'
-import Customers from './pages/Customers'
-import Billing from './pages/Billing'
-import Stock from './pages/Stock'
-import Khata from './pages/Khata'
-import Expenses from './pages/Expenses'
-import Damage from './pages/Damage'
-import Areas from './pages/Areas'
-import Users from './pages/Users'
-import Salesmen from './pages/Salesmen'
-import Deliveries from './pages/Deliveries'
-import WhatsAppSetup from './pages/WhatsAppSetup'
+
+const Login = lazy(() => import('./pages/Login'))
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const Products = lazy(() => import('./pages/Products'))
+const Customers = lazy(() => import('./pages/Customers'))
+const Billing = lazy(() => import('./pages/Billing'))
+const Stock = lazy(() => import('./pages/Stock'))
+const Khata = lazy(() => import('./pages/Khata'))
+const Expenses = lazy(() => import('./pages/Expenses'))
+const Damage = lazy(() => import('./pages/Damage'))
+const Areas = lazy(() => import('./pages/Areas'))
+const Users = lazy(() => import('./pages/Users'))
+const Salesmen = lazy(() => import('./pages/Salesmen'))
+const Deliveries = lazy(() => import('./pages/Deliveries'))
+const WhatsAppSetup = lazy(() => import('./pages/WhatsAppSetup'))
+
 
 function ProtectedRoute({ children, roles }) {
   const { isAuthenticated, user } = useAuth()
@@ -37,34 +41,61 @@ function DashboardRedirect() {
 
 export default function App() {
   const { loading } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  useEffect(() => {
+    let handler
+    try {
+      const backButtonListener = CapacitorApp.addListener('backButton', () => {
+        const path = location.pathname
+        if (path === '/' || path === '/login' || path === '/deliveries') {
+          CapacitorApp.exitApp()
+        } else {
+          navigate(-1)
+        }
+      })
+      handler = backButtonListener
+    } catch (e) {
+      console.warn('Capacitor App plugin not available in browser:', e)
+    }
+
+    return () => {
+      if (handler) {
+        handler.then(l => l.remove()).catch(err => console.error(err))
+      }
+    }
+  }, [location.pathname, navigate])
 
   if (loading) return <LoadingScreen />
 
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route
-        element={
-          <ProtectedRoute>
-            <Layout />
-          </ProtectedRoute>
-        }
-      >
-        <Route index element={<DashboardRedirect />} />
-        <Route path="billing" element={<ProtectedRoute roles={['ADMIN', 'MANAGER', 'SALESMAN', 'DELIVERY_BOY']}><Billing /></ProtectedRoute>} />
-        <Route path="products" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><Products /></ProtectedRoute>} />
-        <Route path="customers" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><Customers /></ProtectedRoute>} />
-        <Route path="whatsapp" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><WhatsAppSetup /></ProtectedRoute>} />
-        <Route path="salesmen" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><Salesmen /></ProtectedRoute>} />
-        <Route path="stock" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><Stock /></ProtectedRoute>} />
-        <Route path="khata" element={<ProtectedRoute roles={['ADMIN', 'MANAGER', 'DELIVERY_BOY', 'SALESMAN']}><Khata /></ProtectedRoute>} />
-        <Route path="expenses" element={<ProtectedRoute roles={['ADMIN']}><Expenses /></ProtectedRoute>} />
-        <Route path="damage" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><Damage /></ProtectedRoute>} />
-        <Route path="areas" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><Areas /></ProtectedRoute>} />
-        <Route path="deliveries" element={<ProtectedRoute roles={['ADMIN', 'MANAGER', 'DELIVERY_BOY', 'SALESMAN']}><Deliveries /></ProtectedRoute>} />
-        <Route path="users" element={<ProtectedRoute roles={['ADMIN']}><Users /></ProtectedRoute>} />
-      </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <Suspense fallback={<LoadingScreen />}>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route
+          element={
+            <ProtectedRoute>
+              <Layout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<DashboardRedirect />} />
+          <Route path="billing" element={<ProtectedRoute roles={['ADMIN', 'MANAGER', 'SALESMAN', 'DELIVERY_BOY']}><Billing /></ProtectedRoute>} />
+          <Route path="products" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><Products /></ProtectedRoute>} />
+          <Route path="customers" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><Customers /></ProtectedRoute>} />
+          <Route path="whatsapp" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><WhatsAppSetup /></ProtectedRoute>} />
+          <Route path="salesmen" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><Salesmen /></ProtectedRoute>} />
+          <Route path="stock" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><Stock /></ProtectedRoute>} />
+          <Route path="khata" element={<ProtectedRoute roles={['ADMIN', 'MANAGER', 'DELIVERY_BOY', 'SALESMAN']}><Khata /></ProtectedRoute>} />
+          <Route path="expenses" element={<ProtectedRoute roles={['ADMIN']}><Expenses /></ProtectedRoute>} />
+          <Route path="damage" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><Damage /></ProtectedRoute>} />
+          <Route path="areas" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><Areas /></ProtectedRoute>} />
+          <Route path="deliveries" element={<ProtectedRoute roles={['ADMIN', 'MANAGER', 'DELIVERY_BOY', 'SALESMAN']}><Deliveries /></ProtectedRoute>} />
+          <Route path="users" element={<ProtectedRoute roles={['ADMIN']}><Users /></ProtectedRoute>} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   )
 }
