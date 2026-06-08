@@ -1,14 +1,13 @@
-import { useState, useEffect, lazy, Suspense } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Plus, Trash2, IndianRupee } from 'lucide-react'
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import api from '../services/api'
 import DataTable from '../components/DataTable'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import StatCard from '../components/StatCard'
 import { useToast } from '../context/ToastContext'
-
-const ExpensesChart = lazy(() => import('../components/ExpensesChart'))
 
 const CATEGORIES = ['FUEL', 'SALARY', 'PACKAGING', 'RENT', 'ELECTRICITY', 'OTHER']
 const PIE_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899']
@@ -112,9 +111,16 @@ export default function Expenses() {
           <StatCard icon={<IndianRupee size={24} />} label="Categories" value={pieData.length} color="var(--color-accent)" delay={2} />
         </div>
         <motion.div className="card" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-          <Suspense fallback={<div className="flex items-center justify-center" style={{ height: 200 }}><div className="spinner" /></div>}>
-            <ExpensesChart pieData={pieData} PIE_COLORS={PIE_COLORS} />
-          </Suspense>
+          {pieData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <PieChart>
+                <Pie data={pieData} innerRadius={40} outerRadius={70} paddingAngle={3} dataKey="value">
+                  {pieData.map((_, idx) => <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />)}
+                </Pie>
+                <Tooltip formatter={(v) => `₹${Number(v).toLocaleString('en-IN')}`} contentStyle={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)' }} />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : <div className="empty-state" style={{ padding: 'var(--space-8)' }}><p className="text-muted text-sm">No data</p></div>}
         </motion.div>
       </div>
 

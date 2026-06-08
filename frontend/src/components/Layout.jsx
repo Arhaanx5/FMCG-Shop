@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '../context/AuthContext'
 import api from '../services/api'
-import lariLogo from '../assets/lari-traders-logo.webp'
+import lariLogo from '../assets/lari-traders-logo.png'
 import {
   LayoutDashboard, Package, Users, ShoppingCart, Warehouse,
   BookOpen, Receipt, AlertTriangle, MapPin, UserCog,
@@ -50,94 +50,79 @@ export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
-  // Pull to refresh states
-  const [startY, setStartY] = useState(0)
-  const [pullProgress, setPullProgress] = useState(0)
-  const [pullDirection, setPullDirection] = useState(null) // 'down' or 'up'
+  // Pull-to-refresh gesture tracking
+  const mainRef = useRef(null)
+  const startY = useRef(0)
+  const isPulling = useRef(false)
+  const pullDistance = useRef(0)
   const [isRefreshing, setIsRefreshing] = useState(false)
 
-  const handleTouchStart = (e) => {
-    const scrollTop = window.scrollY || document.documentElement.scrollTop || 0
-    const scrollHeight = document.documentElement.scrollHeight || 0
-    const clientHeight = window.innerHeight || 0
+  useEffect(() => {
+    if (location.pathname !== '/' || !isMobile) return
 
-    const atTop = scrollTop <= 8
-    const atBottom = scrollTop + clientHeight >= scrollHeight - 8
-
-    if (atTop || atBottom) {
-      setStartY(e.touches[0].pageY)
-      setPullDirection(null)
-    } else {
-      setStartY(0)
-      setPullDirection(null)
-    }
-  }
-
-  const handleTouchMove = (e) => {
-    if (startY === 0 || isRefreshing) return
-    const currentY = e.touches[0].pageY
-    const diff = currentY - startY
-
-    // Determine direction on first significant movement
-    if (pullDirection === null) {
-      if (diff > 5) {
-        // Dragging down -> Verify we are allowed to pull down (must be at top)
-        const scrollTop = window.scrollY || document.documentElement.scrollTop || 0
-        if (scrollTop <= 8) {
-          setPullDirection('down')
-        } else {
-          setStartY(0)
-          return
-        }
-      } else if (diff < -5) {
-        // Dragging up -> Verify we are allowed to pull up (must be at bottom)
-        const scrollTop = window.scrollY || document.documentElement.scrollTop || 0
-        const scrollHeight = document.documentElement.scrollHeight || 0
-        const clientHeight = window.innerHeight || 0
-        if (scrollTop + clientHeight >= scrollHeight - 8) {
-          setPullDirection('up')
-        } else {
-          setStartY(0)
-          return
-        }
+    const handleTouchStart = (e) => {
+      // Only pull down if at the very top of the page
+      if (window.scrollY === 0) {
+        startY.current = e.touches[0].pageY
+        isPulling.current = true
       }
-      return
     }
 
-    if (pullDirection === 'down') {
+    const handleTouchMove = (e) => {
+      if (!isPulling.current) return
+      const currentY = e.touches[0].pageY
+      const diff = currentY - startY.current
       if (diff > 0) {
-        const progress = Math.min(diff / 150, 1)
-        setPullProgress(progress)
-        if (diff > 10 && e.cancelable) {
+        // Apply resistance
+        const dist = Math.min(diff * 0.4, 80)
+        pullDistance.current = dist
+        if (mainRef.current) {
+          mainRef.current.style.transform = `translate3d(0, ${dist}px, 0)`
+          mainRef.current.style.transition = 'none'
+        }
+        if (diff > 10) {
           e.preventDefault()
         }
-      } else {
-        setPullProgress(0)
-      }
-    } else if (pullDirection === 'up') {
-      if (diff < 0) {
-        const progress = Math.min(-diff / 150, 1)
-        setPullProgress(progress)
-        if (-diff > 10 && e.cancelable) {
-          e.preventDefault()
-        }
-      } else {
-        setPullProgress(0)
       }
     }
-  }
 
-  const handleTouchEnd = () => {
-    if (startY === 0 || isRefreshing) return
-    if (pullProgress >= 1) {
-      setIsRefreshing(true)
-      window.location.reload(true)
-    } else {
-      setPullProgress(0)
-      setPullDirection(null)
+    const handleTouchEnd = () => {
+      if (!isPulling.current) return
+      isPulling.current = false
+      if (pullDistance.current >= 60) {
+        setIsRefreshing(true)
+        if (mainRef.current) {
+          mainRef.current.style.transform = `translate3d(0, 40px, 0)`
+          mainRef.current.style.transition = 'transform 0.2s ease'
+        }
+        // Perform reload/refresh
+        setTimeout(() => {
+          window.location.reload()
+        }, 800)
+      } else {
+        if (mainRef.current) {
+          mainRef.current.style.transform = `translate3d(0, 0, 0)`
+          mainRef.current.style.transition = 'transform 0.2s ease'
+        }
+      }
+      pullDistance.current = 0
     }
-    setStartY(0)
-  }
+
+    const mainEl = mainRef.current
+    if (mainEl) {
+      mainEl.addEventListener('touchstart', handleTouchStart, { passive: false })
+      mainEl.addEventListener('touchmove', handleTouchMove, { passive: false })
+      mainEl.addEventListener('touchend', handleTouchEnd)
+    }
+
+    return () => {
+      if (mainEl) {
+        mainEl.removeEventListener('touchstart', handleTouchStart)
+        mainEl.removeEventListener('touchmove', handleTouchMove)
+        mainEl.removeEventListener('touchend', handleTouchEnd)
+      }
+    }
+  }, [location.pathname, isMobile])
 
   useEffect(() => {
     const handleResize = () => {
@@ -444,50 +429,12 @@ export default function Layout() {
       {/* Main content */}
       <div 
         className="app-content flex-1 flex flex-col min-h-screen transition-all duration-300"
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
         style={{
           marginLeft: isMobile ? 0 : (collapsed ? 72 : 260),
           minWidth: 0,
           overflowX: 'hidden',
         }}
       >
-        {/* Pull to Refresh Indicator */}
-        {pullProgress > 0 && (
-          <div 
-            style={{
-              position: 'fixed',
-              top: pullDirection === 'up' ? 'auto' : '80px',
-              bottom: pullDirection === 'up' ? '80px' : 'auto',
-              left: '50%',
-              transform: `translateX(-50%) translateY(${pullDirection === 'up' ? `-${pullProgress * 40}px` : `${pullProgress * 40}px`}) scale(${0.8 + pullProgress * 0.2})`,
-              opacity: pullProgress,
-              background: 'var(--color-surface)',
-              border: '1.5px solid var(--color-accent)',
-              borderRadius: '50%',
-              width: '40px',
-              height: '40px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: 'var(--shadow-lg)',
-              zIndex: 99999,
-              transition: pullProgress === 0 ? 'all 0.3s ease' : 'none'
-            }}
-          >
-            <div 
-              className="spinner" 
-              style={{
-                width: '20px',
-                height: '20px',
-                borderWidth: '2.5px',
-                transform: `rotate(${pullProgress * 360}deg)`,
-                animation: isRefreshing ? 'spin 0.8s linear infinite' : 'none'
-              }}
-            />
-          </div>
-        )}
         {/* Top bar */}
         <header className={`sticky top-0 h-16 ${
           uiTheme !== 'classic' ? 'glass-panel border-b' : 'bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700'
@@ -526,7 +473,26 @@ export default function Layout() {
         </header>
 
         {/* Page content with animation */}
-        <main className="flex-1">
+        <main className="flex-1" ref={mainRef} style={{ position: 'relative' }}>
+          {isRefreshing && (
+            <div style={{
+              position: 'absolute',
+              top: '10px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'var(--color-surface-2)',
+              borderRadius: '50%',
+              padding: '6px',
+              boxShadow: 'var(--shadow-md)',
+              border: '1px solid var(--color-border)',
+              zIndex: 100
+            }}>
+              <div className="spinner spinner-sm" style={{ width: '18px', height: '18px' }} />
+            </div>
+          )}
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}

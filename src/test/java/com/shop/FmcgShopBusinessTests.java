@@ -64,6 +64,7 @@ public class FmcgShopBusinessTests {
     // Mocks injected into BillService and DamageService
     @Mock private CustomerService customerServiceMock;
     @Mock private ProductService productServiceMock;
+    @Mock private BillService billServiceMock;
 
     @InjectMocks private StockService stockService;
     @InjectMocks private BillService billService;
@@ -121,7 +122,8 @@ public class FmcgShopBusinessTests {
                 userRepository,
                 areaRepository,
                 paymentRepository,
-                damageLogRepository
+                damageLogRepository,
+                billServiceMock
         );
 
         this.routeOptimizationService = new RouteOptimizationService(deliveryRepository, userRepository);

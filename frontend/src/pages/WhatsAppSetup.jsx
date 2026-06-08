@@ -22,19 +22,9 @@ export default function WhatsAppSetup() {
 
   // Connection states
   const [status, setStatus] = useState('INITIALIZING')
-  const [qrCode, setQrCodeState] = useState(null)
-  const qrCodeRef = useRef(null)
-  const setQrCode = (val) => {
-    qrCodeRef.current = val
-    setQrCodeState(val)
-  }
-  const [qrLoading, setQrLoadingState] = useState(false)
-  const qrLoadingRef = useRef(false)
-  const setQrLoading = (val) => {
-    qrLoadingRef.current = val
-    setQrLoadingState(val)
-  }
+  const [qrCode, setQrCode] = useState(null)
   const [statusLoading, setStatusLoading] = useState(true)
+  const [qrLoading, setQrLoading] = useState(false)
 
   // Customer queue states
   const [customers, setCustomers] = useState([])
@@ -79,7 +69,7 @@ export default function WhatsAppSetup() {
           clearInterval(statusPollRef.current)
           statusPollRef.current = null
         }
-      } else if (currentStatus === 'DISCONNECTED' && !qrCodeRef.current && !qrLoadingRef.current) {
+      } else if (currentStatus === 'DISCONNECTED' && !qrCode && !qrLoading) {
         fetchQrCode()
       }
     } catch (err) {
@@ -88,7 +78,7 @@ export default function WhatsAppSetup() {
     } finally {
       if (isInitial) setStatusLoading(false)
     }
-  }, [])
+  }, [qrCode, qrLoading])
 
   // ─── 2. Fetch QR Code ─────────────────────────────────────────────────────
   const fetchQrCode = async () => {
@@ -145,7 +135,7 @@ export default function WhatsAppSetup() {
     return () => {
       if (statusPollRef.current) clearInterval(statusPollRef.current)
     }
-  }, [checkStatus, loadCustomers])
+  }, [])
 
   // ─── 6. Selection helpers ─────────────────────────────────────────────────
   const handleToggleSelectAll = () => {

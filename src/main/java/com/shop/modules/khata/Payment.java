@@ -13,7 +13,10 @@ import java.util.UUID;
 @Table(
     name = "payments",
     indexes = {
-        @Index(name = "idx_payment_collected_by_paid_at", columnList = "collected_by, paid_at DESC")
+        @Index(name = "idx_payment_collected_by_paid_at", columnList = "collected_by, paid_at DESC"),
+        @Index(name = "idx_payment_customer_paid_at", columnList = "customer_id, paid_at DESC"),
+        @Index(name = "idx_payment_bill_id", columnList = "bill_id"),
+        @Index(name = "idx_payment_paid_at", columnList = "paid_at DESC")
     }
 )
 @Data

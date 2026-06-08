@@ -28,9 +28,9 @@ import com.shop.modules.khata.Payment;
 import com.shop.modules.dashboard.dto.SalesmanPerformanceResponse;
 import com.shop.modules.damage.DamageLogRepository;
 import java.util.ArrayList;
-import lombok.RequiredArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -41,7 +41,6 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 public class DashboardService {
 
     private final BillRepository billRepository;
@@ -56,6 +55,33 @@ public class DashboardService {
     private final PaymentRepository paymentRepository;
     private final DamageLogRepository damageLogRepository;
     private final BillService billService;
+
+    @Autowired
+    public DashboardService(BillRepository billRepository,
+                           CustomerRepository customerRepository,
+                           ProductRepository productRepository,
+                           StockBatchRepository batchRepository,
+                           StockRepository stockRepository,
+                           DeliveryRepository deliveryRepository,
+                           ExpenseRepository expenseRepository,
+                           UserRepository userRepository,
+                           AreaRepository areaRepository,
+                           PaymentRepository paymentRepository,
+                           DamageLogRepository damageLogRepository,
+                           BillService billService) {
+        this.billRepository = billRepository;
+        this.customerRepository = customerRepository;
+        this.productRepository = productRepository;
+        this.batchRepository = batchRepository;
+        this.stockRepository = stockRepository;
+        this.deliveryRepository = deliveryRepository;
+        this.expenseRepository = expenseRepository;
+        this.userRepository = userRepository;
+        this.areaRepository = areaRepository;
+        this.paymentRepository = paymentRepository;
+        this.damageLogRepository = damageLogRepository;
+        this.billService = billService;
+    }
 
     @Builder
     @Data
@@ -74,8 +100,14 @@ public class DashboardService {
         LocalDateTime end = start.plusDays(1);
 
         // Today bills (CONFIRMED, PARTIAL, and PAID are included in sales metrics)
-        List<Bill> todayBills =
-                billRepository.findBillsBetween(start, end).stream()
+        List<Bill> allTodayBills = billRepository.findBillsBetween(start, end);
+        System.out.println("DEBUG TODAY BILLS INFO:");
+        System.out.println("Total today bills in DB: " + allTodayBills.size());
+        for (Bill b : allTodayBills) {
+            System.out.println("Bill: " + b.getBillNumber() + " | Status: " + b.getStatus() + " | PaymentMode: " + b.getPaymentMode() + " | Pending: " + b.getPendingAmount());
+        }
+
+        List<Bill> todayBills = allTodayBills.stream()
                         .filter(b -> b.getStatus() == BillStatus.CONFIRMED || b.getStatus() == BillStatus.PARTIAL || b.getStatus() == BillStatus.PAID)
                         .collect(Collectors.toList());
 
