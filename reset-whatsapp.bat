@@ -1,4 +1,14 @@
 @echo off
+:: Check for Admin permissions
+net session >nul 2>&1
+if %errorLevel%==0 goto admin_ok
+echo =========================================================
+echo ERROR: Please Right-Click and select "Run as Administrator"!
+echo =========================================================
+pause
+exit /b
+:admin_ok
+
 set PATH=%SystemRoot%\System32;%SystemRoot%;%SystemRoot%\System32\Wbem;%PATH%
 
 echo =========================================================
@@ -12,7 +22,10 @@ for /f "tokens=5" %%a in ('netstat -aon ^| findstr :3000 ^| findstr LISTENING') 
 )
 
 echo 1.5. Killing any locked Puppeteer Chrome processes...
-powershell -Command "Get-CimInstance Win32_Process -Filter \"Name = 'chrome.exe'\" | Where-Object { $_.CommandLine -like '*puppeteer*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+powershell -Command "Get-CimInstance Win32_Process -Filter \"Name = 'chrome.exe'\" | Where-Object { $_.CommandLine -like '*session_data*' -or $_.CommandLine -like '*whatsapp-service*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+
+:: Wait for processes to fully release file locks
+powershell -Command "Start-Sleep -Seconds 2"
 
 echo 2. Deleting cached session data (session_data)...
 if exist "%~dp0whatsapp-service\session_data" (

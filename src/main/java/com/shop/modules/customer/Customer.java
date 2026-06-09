@@ -9,7 +9,15 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "customers")
+@Table(
+    name = "customers",
+    indexes = {
+        @Index(name = "idx_customer_active",     columnList = "is_active"),
+        @Index(name = "idx_customer_area",       columnList = "area_id"),
+        @Index(name = "idx_customer_phone",      columnList = "phone"),
+        @Index(name = "idx_customer_last_order", columnList = "last_order_at DESC")
+    }
+)
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

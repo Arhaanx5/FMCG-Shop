@@ -1,5 +1,6 @@
 package com.shop.modules.billing;
 
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -11,8 +12,14 @@ import java.util.UUID;
 @Repository
 public interface BillRepository extends JpaRepository<Bill, UUID> {
 
+    @Override
+    @EntityGraph(attributePaths = {"customer", "createdBy", "items.product"})
+    List<Bill> findAll();
+
+    @EntityGraph(attributePaths = {"customer", "createdBy", "items.product"})
     List<Bill> findByCustomerIdOrderByCreatedAtDesc(UUID customerId);
 
+    @EntityGraph(attributePaths = {"customer", "createdBy", "items.product"})
     @Query("SELECT b FROM Bill b WHERE " +
            "b.pendingAmount > 0 AND (b.status = 'CONFIRMED' OR b.status = 'PARTIAL') " +
            "ORDER BY b.createdAt DESC")
@@ -23,18 +30,18 @@ public interface BillRepository extends JpaRepository<Bill, UUID> {
            "), 0) FROM Bill b WHERE b.billNumber LIKE 'BILL-%'")
     Integer findMaxBillSequence();
 
+    @EntityGraph(attributePaths = {"customer", "createdBy", "items.product"})
     @Query("SELECT b FROM Bill b WHERE " +
            "b.createdAt BETWEEN :start AND :end")
     List<Bill> findBillsBetween(
             @Param("start") LocalDateTime start,
             @Param("end") LocalDateTime end);
 
-    List<Bill> findByCustomerId(UUID customerId);
-
     List<Bill> findByCreatedByIdAndStatus(UUID salesmanId, BillStatus status);
 
     List<Bill> findByCreatedByIdAndStatusIn(UUID salesmanId, List<BillStatus> statuses);
 
+    @EntityGraph(attributePaths = {"customer", "createdBy", "items.product"})
     List<Bill> findTop5ByOrderByCreatedAtDesc();
 
     @Query("SELECT COALESCE(SUM(b.paidAmount), 0) FROM Bill b WHERE b.customer.id = :customerId AND b.status IN ('CONFIRMED', 'PARTIAL', 'PAID')")

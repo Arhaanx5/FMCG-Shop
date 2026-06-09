@@ -1,29 +1,19 @@
 @echo off
-:: Check for Admin permissions
-net session >nul 2>&1
-if %errorLevel%==0 goto admin_ok
-echo =========================================================
-echo ERROR: Please Right-Click and select "Run as Administrator"!
-echo =========================================================
-pause
-exit /b
-:admin_ok
+:: Check for Admin permissions bypassed
 
 :: Go to the project root directory
 cd /d "d:\intelliJ2025\fmcg-shop\fmcg-shop"
 
-:: Check which services are registered using PowerShell exit codes (100% reliable, zero parentheses)
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Get-Service fmcg-backend-uat, fmcg-backend-prod -ErrorAction Stop" >nul 2>&1
-set parallel_installed=%errorlevel%
-
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Get-Service fmcg-backend -ErrorAction Stop" >nul 2>&1
-set single_exists=%errorlevel%
-
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Get-Service fmcg-backend-uat -ErrorAction Stop" >nul 2>&1
+:: Check which services are registered using sc.exe (100% reliable, native, no PowerShell)
+set parallel_installed=1
+"%SystemRoot%\System32\sc.exe" query fmcg-backend-uat >nul 2>&1
 set uat_exists=%errorlevel%
-
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Get-Service fmcg-backend-prod -ErrorAction Stop" >nul 2>&1
+"%SystemRoot%\System32\sc.exe" query fmcg-backend-prod >nul 2>&1
 set prod_exists=%errorlevel%
+if %uat_exists%==0 if %prod_exists%==0 set parallel_installed=0
+
+"%SystemRoot%\System32\sc.exe" query fmcg-backend >nul 2>&1
+set single_exists=%errorlevel%
 
 :: If both parallel services exist, show menu
 if %parallel_installed%==0 goto menu
@@ -34,23 +24,30 @@ echo Starting Lari Traders Services...
 echo =========================================================
 
 if %single_exists%==0 echo 1. Starting Main Backend Service (fmcg-backend)...
-if %single_exists%==0 "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Start-Service fmcg-backend -ErrorAction SilentlyContinue"
+if %single_exists%==0 "%SystemRoot%\System32\net.exe" start fmcg-backend >nul 2>&1
 
 if %uat_exists%==0 echo 1. Starting UAT Backend Service (fmcg-backend-uat)...
-if %uat_exists%==0 "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Start-Service fmcg-backend-uat -ErrorAction SilentlyContinue"
+if %uat_exists%==0 "%SystemRoot%\System32\net.exe" start fmcg-backend-uat >nul 2>&1
 
 if %prod_exists%==0 echo 1. Starting PROD Backend Service (fmcg-backend-prod)...
-if %prod_exists%==0 "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Start-Service fmcg-backend-prod -ErrorAction SilentlyContinue"
+if %prod_exists%==0 "%SystemRoot%\System32\net.exe" start fmcg-backend-prod >nul 2>&1
 
-echo 2. Starting WhatsApp Helper Service (node server.js)...
-start "Lari Traders WhatsApp Service" /min cmd /c "cd /d d:\intelliJ2025\fmcg-shop\fmcg-shop\whatsapp-service && node server.js"
+echo 2. Checking WhatsApp Helper Service on port 3000...
+"%SystemRoot%\System32\netstat.exe" -ano | "%SystemRoot%\System32\findstr.exe" ":3000 " >nul 2>&1
+if %errorlevel%==0 goto wa_run_1
+echo Starting WhatsApp Helper Service (node server.js)...
+start "Lari Traders WhatsApp Service" /min "%SystemRoot%\System32\cmd.exe" /c "cd /d d:\intelliJ2025\fmcg-shop\fmcg-shop\whatsapp-service && node server.js"
+goto wa_done_1
+:wa_run_1
+echo WhatsApp Service already running on port 3000. Skipping launch.
+:wa_done_1
 
 echo 3. Starting Cloudflare Secure Tunnel (Cloudflared)...
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Start-Service Cloudflared -ErrorAction SilentlyContinue"
+"%SystemRoot%\System32\net.exe" start Cloudflared >nul 2>&1
 
 :: Wait 3 seconds for services to initialize
 echo Waiting 3 seconds for services to initialize...
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Start-Sleep -Seconds 3"
+"%SystemRoot%\System32\ping.exe" 127.0.0.1 -n 4 >nul
 
 echo =========================================================
 echo Current Services Status:
@@ -89,31 +86,69 @@ pause
 goto menu
 
 :start_uat_opt
-echo Starting UAT Backend, WhatsApp and Tunnel...
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Start-Service fmcg-backend-uat, Cloudflared -ErrorAction SilentlyContinue"
-start "Lari Traders WhatsApp Service" /min cmd /c "cd /d d:\intelliJ2025\fmcg-shop\fmcg-shop\whatsapp-service && node server.js"
-echo Waiting 3 seconds...
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Start-Sleep -Seconds 3"
+echo Starting UAT Environment...
+echo [1/4] Starting UAT Backend Service...
+"%SystemRoot%\System32\net.exe" start fmcg-backend-uat >nul 2>&1
+echo [2/4] Starting Cloudflared Service...
+"%SystemRoot%\System32\net.exe" start Cloudflared >nul 2>&1
+echo [3/4] Checking WhatsApp Service port 3000...
+"%SystemRoot%\System32\netstat.exe" -ano | "%SystemRoot%\System32\findstr.exe" ":3000 " >nul 2>&1
+if %errorlevel%==0 goto wa_run_uat
+echo [4/4] Starting WhatsApp Service (node server.js)...
+start "Lari Traders WhatsApp Service" /min "%SystemRoot%\System32\cmd.exe" /c "cd /d d:\intelliJ2025\fmcg-shop\fmcg-shop\whatsapp-service && node server.js"
+goto wa_done_uat
+:wa_run_uat
+echo [4/4] WhatsApp Service is already running. Skipping.
+:wa_done_uat
+echo Waiting 3 seconds for services to initialize...
+"%SystemRoot%\System32\ping.exe" 127.0.0.1 -n 4 >nul
+echo =========================================================
 "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Get-Service fmcg-backend-uat, fmcg-whatsapp, Cloudflared | Format-Table -Property Status, Name, DisplayName"
 pause
 exit /b
 
 :start_prod_opt
-echo Starting PROD Backend, WhatsApp and Tunnel...
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Start-Service fmcg-backend-prod, Cloudflared -ErrorAction SilentlyContinue"
-start "Lari Traders WhatsApp Service" /min cmd /c "cd /d d:\intelliJ2025\fmcg-shop\fmcg-shop\whatsapp-service && node server.js"
-echo Waiting 3 seconds...
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Start-Sleep -Seconds 3"
+echo Starting PROD Environment...
+echo [1/4] Starting PROD Backend Service...
+"%SystemRoot%\System32\net.exe" start fmcg-backend-prod >nul 2>&1
+echo [2/4] Starting Cloudflared Service...
+"%SystemRoot%\System32\net.exe" start Cloudflared >nul 2>&1
+echo [3/4] Checking WhatsApp Service port 3000...
+"%SystemRoot%\System32\netstat.exe" -ano | "%SystemRoot%\System32\findstr.exe" ":3000 " >nul 2>&1
+if %errorlevel%==0 goto wa_run_prod
+echo [4/4] Starting WhatsApp Service (node server.js)...
+start "Lari Traders WhatsApp Service" /min "%SystemRoot%\System32\cmd.exe" /c "cd /d d:\intelliJ2025\fmcg-shop\fmcg-shop\whatsapp-service && node server.js"
+goto wa_done_prod
+:wa_run_prod
+echo [4/4] WhatsApp Service is already running. Skipping.
+:wa_done_prod
+echo Waiting 3 seconds for services to initialize...
+"%SystemRoot%\System32\ping.exe" 127.0.0.1 -n 4 >nul
+echo =========================================================
 "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Get-Service fmcg-backend-prod, fmcg-whatsapp, Cloudflared | Format-Table -Property Status, Name, DisplayName"
 pause
 exit /b
 
 :start_all_opt
-echo Starting UAT, PROD, WhatsApp and Tunnel...
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Start-Service fmcg-backend-uat, fmcg-backend-prod, Cloudflared -ErrorAction SilentlyContinue"
-start "Lari Traders WhatsApp Service" /min cmd /c "cd /d d:\intelliJ2025\fmcg-shop\fmcg-shop\whatsapp-service && node server.js"
-echo Waiting 3 seconds...
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Start-Sleep -Seconds 3"
+echo Starting BOTH UAT and PROD Environments...
+echo [1/5] Starting UAT Backend Service...
+"%SystemRoot%\System32\net.exe" start fmcg-backend-uat >nul 2>&1
+echo [2/5] Starting PROD Backend Service...
+"%SystemRoot%\System32\net.exe" start fmcg-backend-prod >nul 2>&1
+echo [3/5] Starting Cloudflared Service...
+"%SystemRoot%\System32\net.exe" start Cloudflared >nul 2>&1
+echo [4/5] Checking WhatsApp Service port 3000...
+"%SystemRoot%\System32\netstat.exe" -ano | "%SystemRoot%\System32\findstr.exe" ":3000 " >nul 2>&1
+if %errorlevel%==0 goto wa_run_all
+echo [5/5] Starting WhatsApp Service (node server.js)...
+start "Lari Traders WhatsApp Service" /min "%SystemRoot%\System32\cmd.exe" /c "cd /d d:\intelliJ2025\fmcg-shop\fmcg-shop\whatsapp-service && node server.js"
+goto wa_done_all
+:wa_run_all
+echo [5/5] WhatsApp Service is already running. Skipping.
+:wa_done_all
+echo Waiting 3 seconds for services to initialize...
+"%SystemRoot%\System32\ping.exe" 127.0.0.1 -n 4 >nul
+echo =========================================================
 "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Get-Service fmcg-backend-uat, fmcg-backend-prod, fmcg-whatsapp, Cloudflared | Format-Table -Property Status, Name, DisplayName"
 pause
 exit /b

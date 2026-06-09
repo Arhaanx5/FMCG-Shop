@@ -21,7 +21,7 @@ if ($connections) {
 Write-Host "1.5. Killing any locked Puppeteer Chrome processes..." -ForegroundColor Yellow
 $chromeProcesses = Get-CimInstance Win32_Process -Filter "Name = 'chrome.exe'" -ErrorAction SilentlyContinue
 if ($chromeProcesses) {
-    $puppeteerChromes = $chromeProcesses | Where-Object { $_.CommandLine -like "*puppeteer*" }
+    $puppeteerChromes = $chromeProcesses | Where-Object { $_.CommandLine -like "*session_data*" -or $_.CommandLine -like "*whatsapp-service*" }
     if ($puppeteerChromes) {
         foreach ($proc in $puppeteerChromes) {
             Write-Host "Killing locked Chrome process $($proc.ProcessId)..." -ForegroundColor Gray
@@ -31,6 +31,9 @@ if ($chromeProcesses) {
         Write-Host "No locked Puppeteer Chrome processes found." -ForegroundColor Gray
     }
 }
+
+# Wait for processes to fully release file locks
+Start-Sleep -Seconds 2
 
 # 2. Delete cached session data
 Write-Host "2. Deleting cached session data (session_data)..." -ForegroundColor Yellow

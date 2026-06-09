@@ -92,6 +92,21 @@ public class CustomerController {
         );
     }
 
+    @PostMapping("/whatsapp/generate-pdf")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','SALESMAN','DELIVERY_BOY')")
+    public ResponseEntity<ApiResponse<java.util.Map<String, String>>> generateInvoicePdf(
+            @RequestBody GeneratePdfRequest req) {
+        if (req.getHtml() == null || req.getHtml().isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("HTML content is required"));
+        }
+        String pdfBase64 = whatsAppService.generateInvoicePdf(req.getHtml());
+        return ResponseEntity.ok(
+                ApiResponse.success("PDF generated successfully",
+                        java.util.Map.of("pdf", pdfBase64))
+        );
+    }
+
     @Data
     public static class WhatsAppMediaRequest {
         private String phone;
@@ -104,6 +119,11 @@ public class CustomerController {
     public static class WhatsAppTextRequest {
         private String phone;
         private String message;
+    }
+
+    @Data
+    public static class GeneratePdfRequest {
+        private String html;
     }
 
 

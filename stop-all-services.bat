@@ -52,7 +52,7 @@ echo 3. Stopping Cloudflare Secure Tunnel (Cloudflared)...
 echo =========================================================
 echo Cleaning up ports and orphaned processes...
 echo =========================================================
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Get-NetTCPConnection -LocalPort 3000, 8080, 8085, 8086 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; Get-Process -Name cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue"
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Get-NetTCPConnection -LocalPort 3000, 8080, 8085, 8086 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; Get-Process -Name cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Get-CimInstance Win32_Process -Filter \"Name = 'chrome.exe'\" | Where-Object { $_.CommandLine -like '*session_data*' -or $_.CommandLine -like '*whatsapp-service*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
 
 echo =========================================================
 echo SUCCESS: All services stopped and cleaned successfully!
@@ -90,21 +90,21 @@ goto menu
 
 :stop_uat_opt
 echo Stopping UAT Environment Services (Backend-UAT, WhatsApp, Tunnel)...
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Stop-Service fmcg-backend-uat, fmcg-whatsapp, Cloudflared -ErrorAction SilentlyContinue; Get-NetTCPConnection -LocalPort 8085, 3000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; Get-Process -Name cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue"
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Stop-Service fmcg-backend-uat, fmcg-whatsapp, Cloudflared -ErrorAction SilentlyContinue; Get-NetTCPConnection -LocalPort 8085, 3000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; Get-Process -Name cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Get-CimInstance Win32_Process -Filter \"Name = 'chrome.exe'\" | Where-Object { $_.CommandLine -like '*session_data*' -or $_.CommandLine -like '*whatsapp-service*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
 echo Done!
 pause
 exit /b
 
 :stop_prod_opt
 echo Stopping PROD Environment Services (Backend-PROD, WhatsApp, Tunnel)...
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Stop-Service fmcg-backend-prod, fmcg-whatsapp, Cloudflared -ErrorAction SilentlyContinue; Get-NetTCPConnection -LocalPort 8086, 3000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; Get-Process -Name cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue"
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Stop-Service fmcg-backend-prod, fmcg-whatsapp, Cloudflared -ErrorAction SilentlyContinue; Get-NetTCPConnection -LocalPort 8086, 3000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; Get-Process -Name cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Get-CimInstance Win32_Process -Filter \"Name = 'chrome.exe'\" | Where-Object { $_.CommandLine -like '*session_data*' -or $_.CommandLine -like '*whatsapp-service*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
 echo Done!
 pause
 exit /b
 
 :stop_all_opt
 echo Stopping ALL Environment Services (UAT, PROD, WhatsApp, Tunnel)...
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Stop-Service fmcg-backend-uat, fmcg-backend-prod, fmcg-whatsapp, Cloudflared -ErrorAction SilentlyContinue; Get-NetTCPConnection -LocalPort 3000, 8085, 8086 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; Get-Process -Name cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue"
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -Command "Stop-Service fmcg-backend-uat, fmcg-backend-prod, fmcg-whatsapp, Cloudflared -ErrorAction SilentlyContinue; Get-NetTCPConnection -LocalPort 3000, 8085, 8086 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; Get-Process -Name cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Get-CimInstance Win32_Process -Filter \"Name = 'chrome.exe'\" | Where-Object { $_.CommandLine -like '*session_data*' -or $_.CommandLine -like '*whatsapp-service*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
 echo Done!
 pause
 exit /b

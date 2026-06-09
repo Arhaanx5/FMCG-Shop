@@ -43,22 +43,42 @@ public class CustomerService {
 
     // Convert entity to DTO
     private CustomerResponse toResponse(Customer customer) {
+        return toResponse(customer, false);
+    }
+
+    private CustomerResponse toResponse(Customer customer, boolean includeFinancials) {
 
         boolean isInactive = customer.getLastOrderAt() != null
                 && customer.getLastOrderAt()
                 .isBefore(LocalDateTime.now().minusDays(30));
 
-        java.math.BigDecimal effectiveLimit = calculateEffectiveCreditLimit(customer);
         long daysActive = 0;
         if (customer.getCreatedAt() != null) {
             daysActive = java.time.temporal.ChronoUnit.DAYS.between(customer.getCreatedAt(), java.time.LocalDateTime.now());
         }
-        java.math.BigDecimal cumulativePaid = billRepository.sumPaidAmountByCustomerId(customer.getId());
-        if (cumulativePaid == null) {
-            cumulativePaid = java.math.BigDecimal.ZERO;
+
+        java.math.BigDecimal cumulativePaid = java.math.BigDecimal.ZERO;
+        java.math.BigDecimal effectiveLimit = customer.getCreditLimit() != null ? customer.getCreditLimit() : java.math.BigDecimal.ZERO;
+        boolean autoEligible = false;
+
+        if (includeFinancials) {
+            cumulativePaid = billRepository.sumPaidAmountByCustomerId(customer.getId());
+            if (cumulativePaid == null) {
+                cumulativePaid = java.math.BigDecimal.ZERO;
+            }
+            if (customer.getCreditLimit() != null) {
+                effectiveLimit = customer.getCreditLimit();
+            } else if (daysActive >= 30 && cumulativePaid.compareTo(new java.math.BigDecimal("25000.00")) >= 0) {
+                effectiveLimit = new java.math.BigDecimal("50000.00");
+                autoEligible = true;
+            }
+        } else {
+            if (customer.getCreditLimit() != null) {
+                effectiveLimit = customer.getCreditLimit();
+            }
         }
+
         boolean isManualOverride = customer.getCreditLimit() != null;
-        boolean autoEligible = daysActive >= 30 && cumulativePaid.compareTo(new java.math.BigDecimal("25000.00")) >= 0;
 
         return CustomerResponse.builder()
                 .id(customer.getId())
@@ -110,7 +130,7 @@ public class CustomerService {
     }
 
     public CustomerResponse getCustomerByIdentifier(String identifier) {
-        return toResponse(findCustomerByIdentifier(identifier));
+        return toResponse(findCustomerByIdentifier(identifier), true);
     }
 
     private String generateCustomerCode() {
@@ -121,20 +141,20 @@ public class CustomerService {
     public List<CustomerResponse> getAllCustomers() {
         return customerRepository.findByActiveTrue()
                 .stream()
-                .map(this::toResponse)
+                .map(c -> toResponse(c, false))
                 .collect(Collectors.toList());
     }
 
     public org.springframework.data.domain.Page<CustomerResponse> getAllCustomers(org.springframework.data.domain.Pageable pageable) {
         return customerRepository.findByActiveTrue(pageable)
-                .map(this::toResponse);
+                .map(c -> toResponse(c, false));
     }
 
     public CustomerResponse getCustomerById(UUID id) {
         return toResponse(customerRepository.findById(id)
                 .orElseThrow(() ->
                         new RuntimeException(
-                                "Customer not found: " + id)));
+                                "Customer not found: " + id)), true);
     }
 
     public List<CustomerResponse> searchCustomers(
@@ -147,7 +167,7 @@ public class CustomerService {
                 .findByNameContainingIgnoreCaseAndActiveTrue(
                         name.trim())
                 .stream()
-                .map(this::toResponse)
+                .map(c -> toResponse(c, false))
                 .collect(Collectors.toList());
     }
 
@@ -158,7 +178,7 @@ public class CustomerService {
         }
         return customerRepository
                 .findByNameContainingIgnoreCaseAndActiveTrue(name.trim(), pageable)
-                .map(this::toResponse);
+                .map(c -> toResponse(c, false));
     }
 
     public List<CustomerResponse> getInactiveCustomers() {
@@ -167,7 +187,7 @@ public class CustomerService {
         return customerRepository
                 .findInactiveCustomers(cutoff)
                 .stream()
-                .map(this::toResponse)
+                .map(c -> toResponse(c, false))
                 .collect(Collectors.toList());
     }
 
@@ -182,11 +202,7 @@ public class CustomerService {
         }
 
         // Check duplicate phone
-        boolean phoneExists = customerRepository
-                .findByActiveTrue()
-                .stream()
-                .anyMatch(c -> c.getPhone() != null
-                        && c.getPhone().equals(req.getPhone()));
+        boolean phoneExists = customerRepository.existsByPhoneAndActiveTrue(req.getPhone());
 
         if (phoneExists) {
             throw new RuntimeException(
@@ -209,8 +225,7 @@ public class CustomerService {
         Customer customer = Customer.builder()
                 .name(name)
                 .customerCode(generateCustomerCode())
-                .shopName(req.getShopName() != null
-                        ? req.getShopName().trim() : null)
+                .shopName(req.getShopName() != null ? req.getShopName().trim() : null)
                 .phone(req.getPhone())
                 .area(area)
                 .latitude(req.getLatitude())
@@ -223,7 +238,7 @@ public class CustomerService {
                 .active(true)
                 .build();
 
-        return toResponse(customerRepository.save(customer));
+        return toResponse(customerRepository.save(customer), true);
     }
 
     public CustomerResponse updateCustomer(
@@ -239,12 +254,8 @@ public class CustomerService {
         }
 
         // Check duplicate phone — exclude current
-        boolean phoneExists = customerRepository
-                .findByActiveTrue()
-                .stream()
-                .anyMatch(c -> c.getPhone() != null
-                        && c.getPhone().equals(req.getPhone())
-                        && !c.getId().equals(customer.getId()));
+        boolean phoneExists = customerRepository.existsByPhoneAndActiveTrueAndIdNot(
+                req.getPhone(), customer.getId());
 
         if (phoneExists) {
             throw new RuntimeException(
@@ -274,7 +285,7 @@ public class CustomerService {
             customer.setCreditLimit(req.getCreditLimit());
         }
 
-        return toResponse(customerRepository.save(customer));
+        return toResponse(customerRepository.save(customer), true);
     }
 
     public CustomerResponse updateLocation(
@@ -304,7 +315,7 @@ public class CustomerService {
         customer.setLongitude(lng);
         customer.setLocationMethod(method);
 
-        return toResponse(customerRepository.save(customer));
+        return toResponse(customerRepository.save(customer), true);
     }
 
     public void deactivateCustomer(String idOrCode) {

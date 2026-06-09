@@ -7,6 +7,7 @@ import fs from 'fs';
 import util from 'util';
 import { createServer } from 'net';
 import { randomUUID } from 'crypto';
+import { execSync } from 'child_process';
 
 dotenv.config();
 
@@ -225,10 +226,85 @@ let reconnectAttempts = 0;
 const MAX_RECONNECT = 10;
 const messageQueue = new MessageQueue();
 
+// ── Auto-detect Chrome executable path ──────────────
+// When running as a Windows service under LocalSystem, Puppeteer's
+// default cache (~\.cache\puppeteer) resolves to the system profile
+// directory where Chrome isn't installed. This helper searches
+// known locations and returns the first valid chrome.exe path.
+function findChromePath() {
+    // 0. If PUPPETEER_EXECUTABLE_PATH is set (e.g. via .env), use it directly
+    if (process.env.PUPPETEER_EXECUTABLE_PATH && fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
+        log('INFO', 'CHROME', `Using Chrome from env: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
+        return process.env.PUPPETEER_EXECUTABLE_PATH;
+    }
+
+    const candidates = [];
+
+    // 1. User-specific puppeteer cache (works when running as the user)
+    const userHome = process.env.USERPROFILE || process.env.HOME || '';
+    if (userHome) {
+        candidates.push(path.join(userHome, '.cache', 'puppeteer', 'chrome'));
+    }
+
+    // 2. All users — check common user profiles
+    const usersDir = process.env.SystemDrive ? process.env.SystemDrive + '\\Users' : 'C:\\Users';
+    try {
+        if (fs.existsSync(usersDir)) {
+            for (const user of fs.readdirSync(usersDir)) {
+                if (['Public', 'Default', 'Default User', 'All Users'].includes(user)) continue;
+                candidates.push(path.join(usersDir, user, '.cache', 'puppeteer', 'chrome'));
+            }
+        }
+    } catch (_) {}
+
+    // 3. System-installed Chrome
+    candidates.push(
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
+    );
+
+    for (const candidate of candidates) {
+        try {
+            if (!fs.existsSync(candidate)) continue;
+
+            // If it's a direct exe, return it
+            if (candidate.endsWith('.exe') && fs.statSync(candidate).isFile()) {
+                log('INFO', 'CHROME', `Found Chrome at: ${candidate}`);
+                return candidate;
+            }
+
+            // If it's a puppeteer cache dir, search for chrome.exe inside
+            // Prefer older/matching versions first (sort ascending) — Puppeteer
+            // 24.38.0 expects Chrome 146, not the newest available.
+            if (fs.statSync(candidate).isDirectory()) {
+                const versions = fs.readdirSync(candidate).filter(d => d.startsWith('win'));
+                for (const ver of versions.sort()) {
+                    const exePath = path.join(candidate, ver, 'chrome-win64', 'chrome.exe');
+                    if (fs.existsSync(exePath)) {
+                        log('INFO', 'CHROME', `Found Puppeteer Chrome at: ${exePath}`);
+                        return exePath;
+                    }
+                    const exePath32 = path.join(candidate, ver, 'chrome-win32', 'chrome.exe');
+                    if (fs.existsSync(exePath32)) {
+                        log('INFO', 'CHROME', `Found Puppeteer Chrome at: ${exePath32}`);
+                        return exePath32;
+                    }
+                }
+            }
+        } catch (_) {}
+    }
+
+    log('WARN', 'CHROME', 'Could not auto-detect Chrome path, falling back to Puppeteer default');
+    return undefined;
+}
+
+const detectedChromePath = findChromePath();
+
 const client = new Client({
     authStrategy: new LocalAuth({ dataPath: path.join(process.cwd(), 'session_data') }),
     puppeteer: {
         headless: true,
+        ...(detectedChromePath ? { executablePath: detectedChromePath } : {}),
         args: [
             '--no-sandbox', '--disable-setuid-sandbox',
             '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas',
@@ -339,7 +415,8 @@ function formatPhone(phone) {
 async function sendWhatsAppMessage(msg) {
     const chatId = formatPhone(msg.phone);
     if (msg.type === 'media' && msg.media) {
-        let base64Data = msg.media;
+        log('INFO', 'DEBUG_PDF', `Media length: ${msg.media.length}, start: ${msg.media.substring(0, 100)}`);
+        let base64Data = msg.media.replace(/\s/g, '');
         if (base64Data.includes(';base64,')) base64Data = base64Data.split(';base64,')[1];
         const media = new MessageMedia('application/pdf', base64Data, msg.filename || 'document.pdf');
         await client.sendMessage(chatId, media, { caption: msg.caption || '' });
@@ -498,6 +575,44 @@ app.post('/logout', async (_req, res) => {
     }
 });
 
+// ── Generate Invoice PDF (Puppeteer) ─────────────────
+app.post('/generate-pdf', express.json({ limit: '10mb' }), async (req, res) => {
+    const { html } = req.body;
+    if (!html) return res.status(400).json({ success: false, error: 'HTML content required' });
+
+    let browser = null;
+    let page = null;
+    try {
+        const puppeteer = (await import('puppeteer')).default;
+        browser = await puppeteer.launch({
+            headless: true,
+            executablePath: detectedChromePath,
+            args: [
+                '--no-sandbox', '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage', '--disable-gpu',
+                '--disable-extensions', '--no-first-run'
+            ]
+        });
+        page = await browser.newPage();
+        await page.setViewport({ width: 794, height: 1123 }); // A4 at 96dpi
+        await page.setContent(html, { waitUntil: 'networkidle0', timeout: 15000 });
+        const pdfBuffer = await page.pdf({
+            format: 'A4',
+            printBackground: true,
+            margin: { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' }
+        });
+        const base64 = Buffer.from(pdfBuffer).toString('base64');
+        log('INFO', 'PDF', 'Invoice PDF generated via Puppeteer');
+        res.json({ success: true, pdf: base64 });
+    } catch (err) {
+        log('ERROR', 'PDF', 'PDF generation failed', { err: err.message });
+        res.status(500).json({ success: false, error: err.message });
+    } finally {
+        if (page) { try { await page.close(); } catch (_) {} }
+        if (browser) { try { await browser.close(); } catch (_) {} }
+    }
+});
+
 // ── 404 Handler ───────────────────────────────────
 app.use((_req, res) => {
     res.status(404).json({ error: 'Endpoint not found' });
@@ -522,8 +637,25 @@ process.on('unhandledRejection', (r) => log('ERROR', 'SYSTEM', 'Unhandled reject
 // ═══════════════════════════════════════════════════
 //  BOOT
 // ═══════════════════════════════════════════════════
+function cleanupOrphanedChromes() {
+    try {
+        log('INFO', 'SYSTEM', 'Cleaning up any orphaned Chrome/Puppeteer processes...');
+        const systemRoot = process.env.SystemRoot || 'C:\\Windows';
+        const powershellPath = `"${systemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"`;
+        const cmd = `${powershellPath} -Command "Get-CimInstance Win32_Process -Filter \\"Name = 'chrome.exe'\\" | Where-Object { $_.CommandLine -like '*session_data*' -or $_.CommandLine -like '*whatsapp-service*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"`;
+        execSync(cmd);
+        log('INFO', 'SYSTEM', 'Orphaned Chrome processes cleaned.');
+    } catch (err) {
+        log('WARN', 'SYSTEM', 'Failed to auto-cleanup orphaned Chrome processes', { err: err.message });
+    }
+}
+
 async function boot() {
     log('INFO', 'SYSTEM', '🚀 Lari Traders WhatsApp Service v2.0 starting...');
+    
+    // Auto-cleanup any orphaned Chrome instances before starting
+    cleanupOrphanedChromes();
+
     const portFree = await waitForPort(PORT, 10, 3000);
     if (!portFree) {
         log('ERROR', 'SYSTEM', `Port ${PORT} still occupied after retries. Exiting.`);

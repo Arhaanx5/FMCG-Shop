@@ -164,5 +164,25 @@ public class WhatsAppService {
             throw new RuntimeException("WhatsApp text delivery failed: " + e.getMessage());
         }
     }
+
+    public String generateInvoicePdf(String html) {
+        try {
+            Map<String, String> payload = new HashMap<>();
+            payload.put("html", html);
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> response = restTemplate.postForObject(
+                nodeServiceUrl + "/generate-pdf", payload, Map.class);
+
+            if (response == null || !Boolean.TRUE.equals(response.get("success"))) {
+                throw new RuntimeException("PDF generation returned failure from Node service");
+            }
+            log.info("Invoice PDF generated successfully via Puppeteer");
+            return (String) response.get("pdf"); // base64 string
+        } catch (Exception e) {
+            log.error("Invoice PDF generation failed via Node service: {}", e.getMessage());
+            throw new RuntimeException("Invoice PDF generation failed: " + e.getMessage());
+        }
+    }
 }
 
