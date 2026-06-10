@@ -141,7 +141,8 @@ public class StockController {
     @PostMapping("/receive")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<ApiResponse<StockBatchResponse>> receiveStock(
-            @Valid @RequestBody ReceiveStockRequest req) {
+            @Valid @RequestBody ReceiveStockRequest req,
+            java.security.Principal principal) {
 
         if (req.getPrimaryReceived() == 0
                 && req.getExtraSecondaryReceived() == 0) {
@@ -158,8 +159,12 @@ public class StockController {
         serviceReq.setBuyPriceWithoutTax(req.getBuyPriceWithoutTax());
         serviceReq.setExpiryDate(req.getExpiryDate());
         serviceReq.setSupplierName(req.getSupplierName());
+        serviceReq.setSellPricePrimary(req.getSellPricePrimary());
+        serviceReq.setSellPriceSecondary(req.getSellPriceSecondary());
+        serviceReq.setLogAsExpense(req.isLogAsExpense());
 
-        StockBatch batch = stockService.receiveStock(serviceReq);
+        String username = principal != null ? principal.getName() : "System";
+        StockBatch batch = stockService.receiveStock(serviceReq, username);
 
         return ResponseEntity.ok(
                 ApiResponse.success(

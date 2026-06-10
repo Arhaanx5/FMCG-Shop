@@ -36,6 +36,10 @@ public class Expense {
     @JoinColumn(name = "added_by")
     private User addedBy;
 
+    @ManyToOne
+    @JoinColumn(name = "recipient_id")
+    private User recipient;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 

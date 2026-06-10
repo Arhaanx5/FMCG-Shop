@@ -42,4 +42,10 @@ public class ReceiveStockRequest {
     @Size(min = 2, max = 150,
             message = "Supplier name must be 2-150 characters")
     private String supplierName;
+
+    private BigDecimal sellPricePrimary;
+
+    private BigDecimal sellPriceSecondary;
+
+    private boolean logAsExpense = true;
 }

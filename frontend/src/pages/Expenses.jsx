@@ -9,15 +9,26 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import StatCard from '../components/StatCard'
 import { useToast } from '../context/ToastContext'
 
-const CATEGORIES = ['FUEL', 'SALARY', 'PACKAGING', 'RENT', 'ELECTRICITY', 'OTHER']
-const PIE_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899']
+const CATEGORIES = ['STOCK_PURCHASE', 'SALARY', 'VEHICLE_MAINTENANCE', 'FUEL', 'RENT', 'ELECTRICITY', 'PACKAGING', 'OTHER']
+const CATEGORY_LABELS = {
+  STOCK_PURCHASE: 'Stock Purchase (Maal Khareedi)',
+  SALARY: 'Salary (Vetan)',
+  VEHICLE_MAINTENANCE: 'Vehicle Maintenance (Gaadi Kharch)',
+  FUEL: 'Fuel (Indhan)',
+  RENT: 'Rent (Kiraya)',
+  ELECTRICITY: 'Electricity (Bijli)',
+  PACKAGING: 'Packaging Material',
+  OTHER: 'Other Expense (Baki Kharch)'
+}
+const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#6b7280']
 
-const emptyForm = { category: 'FUEL', amount: '', description: '', expenseDate: new Date().toISOString().split('T')[0] }
+const emptyForm = { category: 'STOCK_PURCHASE', amount: '', description: '', expenseDate: new Date().toISOString().split('T')[0], recipientId: '' }
 
 export default function Expenses() {
   const [expenses, setExpenses] = useState([])
   const [summary, setSummary] = useState({})
   const [loading, setLoading] = useState(true)
+  const [users, setUsers] = useState([])
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
   const [showModal, setShowModal] = useState(false)
@@ -27,6 +38,13 @@ export default function Expenses() {
   const toast = useToast()
 
   useEffect(() => { loadExpenses() }, [selectedYear, selectedMonth])
+
+  useEffect(() => {
+    // Load users list for salary tracking
+    api.get('/users')
+      .then(res => setUsers(res.data?.data || []))
+      .catch(err => console.error('Failed to load users', err))
+  }, [])
 
   const loadExpenses = async () => {
     setLoading(true)
@@ -47,7 +65,8 @@ export default function Expenses() {
     try {
       const payload = {
         ...form,
-        amount: Number(form.amount || 0)
+        amount: Number(form.amount || 0),
+        recipientId: form.category === 'SALARY' && form.recipientId ? form.recipientId : null
       }
       await api.post('/expenses', payload)
       toast.success('Expense added!')
@@ -68,16 +87,32 @@ export default function Expenses() {
   }
 
   const totalExpenses = Object.values(summary).reduce((sum, v) => sum + Number(v || 0), 0)
-  const pieData = Object.entries(summary).filter(([, v]) => Number(v) > 0).map(([name, value]) => ({ name, value: Number(value) }))
+  
+  const pieData = Object.entries(summary)
+    .filter(([, v]) => Number(v) > 0)
+    .map(([name, value]) => ({
+      name: CATEGORY_LABELS[name] || name,
+      value: Number(value)
+    }))
+
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-  const updateField = (key, val) => setForm(f => ({ ...f, [key]: val }))
+  
+  const updateField = (key, val) => {
+    setForm(f => {
+      const updated = { ...f, [key]: val }
+      if (key === 'category' && val !== 'SALARY') {
+        updated.recipientId = ''
+      }
+      return updated
+    })
+  }
 
   const columns = [
     { header: 'Category', accessor: 'category', render: (row) => {
-      const colorIdx = CATEGORIES.indexOf(row.category)
-      return <span className="badge badge-accent">{row.category}</span>
+      return <span className="badge badge-accent">{CATEGORY_LABELS[row.category] || row.category}</span>
     }},
     { header: 'Amount', accessor: 'amount', render: (row) => <span className="font-semibold">₹{Number(row.amount || 0).toLocaleString('en-IN')}</span> },
+    { header: 'Recipient (For Salary)', accessor: 'recipientName', render: (row) => row.recipientName ? <span className="badge badge-info">{row.recipientName}</span> : <span className="text-muted">—</span> },
     { header: 'Description', accessor: 'description', render: (row) => row.description || <span className="text-muted">—</span> },
     { header: 'Date', accessor: 'expenseDate', render: (row) => row.expenseDate ? new Date(row.expenseDate).toLocaleDateString('en-IN') : '—' },
     { header: 'Recorded By', accessor: 'createdBy', render: (row) => row.createdBy || <span className="text-muted">—</span> },
@@ -134,7 +169,7 @@ export default function Expenses() {
             <div className="form-group">
               <label className="form-label">Category *</label>
               <select className="form-select" value={form.category} onChange={e => updateField('category', e.target.value)}>
-                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                {CATEGORIES.map(c => <option key={c} value={c}>{CATEGORY_LABELS[c] || c}</option>)}
               </select>
             </div>
             <div className="form-group">
@@ -142,6 +177,19 @@ export default function Expenses() {
               <input className="form-input" type="number" min="1" step="0.01" value={form.amount} onChange={e => updateField('amount', e.target.value)} required />
             </div>
           </div>
+
+          {form.category === 'SALARY' && (
+            <div className="form-group">
+              <label className="form-label">Employee / Recipient *</label>
+              <select className="form-select" value={form.recipientId} onChange={e => updateField('recipientId', e.target.value)} required>
+                <option value="">-- Select Employee --</option>
+                {users.map(u => (
+                  <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div className="form-group">
             <label className="form-label">Description</label>
             <textarea className="form-textarea" value={form.description} onChange={e => updateField('description', e.target.value)} placeholder="What was this expense for?" rows={2} />

@@ -21,6 +21,9 @@ import com.shop.modules.damage.DamageLog;
 import com.shop.modules.damage.DamageReason;
 import com.shop.modules.damage.UnitLevel;
 import com.shop.modules.damage.ClaimStatus;
+import com.shop.modules.expense.Expense;
+import com.shop.modules.expense.ExpenseCategory;
+import com.shop.modules.expense.ExpenseRepository;
 
 @Service
 @RequiredArgsConstructor
@@ -32,6 +35,7 @@ public class StockService {
     private final StockAdjustmentLogRepository stockAdjustmentLogRepository;
     private final UserRepository userRepository;
     private final DamageLogRepository damageLogRepository;
+    private final ExpenseRepository expenseRepository;
 
     // ── Get all stock (non-paginated, for backward compat) ──
     public List<Stock> getAllStock() {
@@ -104,7 +108,7 @@ public class StockService {
     // ── Receive stock ──
     @Transactional
     public StockBatch receiveStock(
-            ReceiveStockRequest req) {
+            ReceiveStockRequest req, String addedByUsername) {
 
         Product product = productRepository
                 .findById(req.getProductId())
@@ -119,8 +123,21 @@ public class StockService {
                 <= 0) {
             throw new RuntimeException(
                     "Product unit config missing — "
-                            + "set secondaryPerPrimary first");
+                             + "set secondaryPerPrimary first");
         }
+
+        // Update product master prices
+        product.setBuyPriceWithoutTax(req.getBuyPriceWithoutTax());
+        product.calculateBuyPriceWithTax();
+
+        // Optional selling price updates
+        if (req.getSellPricePrimary() != null && req.getSellPricePrimary().compareTo(BigDecimal.ZERO) > 0) {
+            product.setSellPricePrimary(req.getSellPricePrimary());
+        }
+        if (req.getSellPriceSecondary() != null && req.getSellPriceSecondary().compareTo(BigDecimal.ZERO) > 0) {
+            product.setSellPriceSecondary(req.getSellPriceSecondary());
+        }
+        productRepository.save(product);
 
         // Calculate secondary from primary
         int secondaryFromPrimary =
@@ -179,6 +196,55 @@ public class StockService {
         normalizeStock(stock, product);
 
         stockRepository.save(stock);
+
+        // Auto-log stock purchase as expense
+        if (req.isLogAsExpense()) {
+            BigDecimal primaryCost = buyPriceWithTax.multiply(BigDecimal.valueOf(req.getPrimaryReceived()));
+            BigDecimal secondaryCost = BigDecimal.ZERO;
+            if (req.getExtraSecondaryReceived() > 0 && product.getSecondaryPerPrimary() > 0) {
+                BigDecimal buyPricePerSecondary = buyPriceWithTax.divide(
+                        BigDecimal.valueOf(product.getSecondaryPerPrimary()),
+                        4,
+                        RoundingMode.HALF_UP
+                );
+                secondaryCost = buyPricePerSecondary.multiply(BigDecimal.valueOf(req.getExtraSecondaryReceived()));
+            }
+            BigDecimal totalPurchaseCost = primaryCost.add(secondaryCost).setScale(2, RoundingMode.HALF_UP);
+
+            if (totalPurchaseCost.compareTo(BigDecimal.ZERO) > 0) {
+                com.shop.modules.user.User user = null;
+                if (addedByUsername != null && !addedByUsername.equals("System")) {
+                    user = userRepository.findByPhone(addedByUsername).orElse(null);
+                }
+                
+                String qtyDesc = "";
+                if (req.getPrimaryReceived() > 0 && req.getExtraSecondaryReceived() > 0) {
+                    qtyDesc = req.getPrimaryReceived() + " " + (product.getPrimaryUnit() != null ? product.getPrimaryUnit() : "BOX") 
+                            + " + " + req.getExtraSecondaryReceived() + " " + (product.getSecondaryUnit() != null ? product.getSecondaryUnit() : "LADI");
+                } else if (req.getPrimaryReceived() > 0) {
+                    qtyDesc = req.getPrimaryReceived() + " " + (product.getPrimaryUnit() != null ? product.getPrimaryUnit() : "BOX");
+                } else {
+                    qtyDesc = req.getExtraSecondaryReceived() + " " + (product.getSecondaryUnit() != null ? product.getSecondaryUnit() : "LADI");
+                }
+
+                String desc = String.format("Stock Purchase: %s of %s from %s (Batch: %s)", 
+                        qtyDesc,
+                        product.getName(), 
+                        req.getSupplierName(), 
+                        req.getBatchNumber());
+
+                Expense expense = Expense.builder()
+                        .category(ExpenseCategory.STOCK_PURCHASE)
+                        .amount(totalPurchaseCost)
+                        .description(desc)
+                        .expenseDate(LocalDate.now())
+                        .addedBy(user)
+                        .build();
+
+                expenseRepository.save(expense);
+            }
+        }
+
         return batch;
     }
 
@@ -588,5 +654,8 @@ public class StockService {
         private BigDecimal buyPriceWithoutTax;
         private LocalDate expiryDate;
         private String supplierName;
+        private BigDecimal sellPricePrimary;
+        private BigDecimal sellPriceSecondary;
+        private boolean logAsExpense;
     }
 }

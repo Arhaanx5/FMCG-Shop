@@ -29,6 +29,7 @@ public class UserService {
                 .lastLatitude(user.getLastLatitude())
                 .lastLongitude(user.getLastLongitude())
                 .lastLocationTime(user.getLastLocationTime())
+                .monthlySalary(user.getMonthlySalary())
                 .createdAt(user.getCreatedAt())
                 .build();
     }
@@ -88,6 +89,7 @@ public class UserService {
                         passwordEncoder.encode(req.getPassword()))
                 .active(true)
                 .mustChangePassword(true)
+                .monthlySalary(req.getMonthlySalary())
                 .build();
 
         return toResponse(userRepository.save(user));
@@ -121,6 +123,7 @@ public class UserService {
         user.setName(name);
         user.setPhone(phone);
         user.setRole(req.getRole());
+        user.setMonthlySalary(req.getMonthlySalary());
 
         if (req.getPassword() != null
                 && !req.getPassword().isBlank()

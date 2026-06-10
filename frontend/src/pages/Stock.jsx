@@ -10,7 +10,19 @@ import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
 import ConfirmDialog from '../components/ConfirmDialog'
 
-const emptyForm = { productId: '', batchNumber: '', primaryReceived: '', extraSecondaryReceived: '', buyPriceWithoutTax: '', buyPriceWithTax: '', expiryDate: '', supplierName: '' }
+const emptyForm = { 
+  productId: '', 
+  batchNumber: '', 
+  primaryReceived: '', 
+  extraSecondaryReceived: '', 
+  buyPriceWithoutTax: '', 
+  buyPriceWithTax: '', 
+  expiryDate: '', 
+  supplierName: '', 
+  sellPricePrimary: '', 
+  sellPriceSecondary: '', 
+  logAsExpense: true 
+}
 
 export default function Stock() {
   const { isAdmin, isManager } = useAuth()
@@ -234,19 +246,31 @@ export default function Stock() {
         primaryReceived: Number(form.primaryReceived || 0),
         extraSecondaryReceived: Number(form.extraSecondaryReceived || 0),
         buyPriceWithoutTax: Number(form.buyPriceWithoutTax || 0),
-        buyPriceWithTax: form.buyPriceWithTax ? Number(form.buyPriceWithTax) : null
+        buyPriceWithTax: form.buyPriceWithTax ? Number(form.buyPriceWithTax) : null,
+        sellPricePrimary: form.sellPricePrimary ? Number(form.sellPricePrimary) : null,
+        sellPriceSecondary: form.sellPriceSecondary ? Number(form.sellPriceSecondary) : null,
+        logAsExpense: !!form.logAsExpense
       }
       await api.post('/stock/receive', payload)
       toast.success('Stock received successfully!')
       setShowModal(false)
       setForm({ ...emptyForm })
+      setValidationErrors({})
       loadAll()
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to receive stock')
+      if (err.response?.status === 400 && err.response?.data?.data && typeof err.response.data.data === 'object') {
+        setValidationErrors(err.response.data.data)
+        toast.error('Validation failed. Please correct the highlighted fields.')
+      } else {
+        toast.error(err.response?.data?.message || 'Failed to receive stock')
+      }
     } finally { setSaving(false) }
   }
 
-  const updateField = (key, val) => setForm(f => ({ ...f, [key]: val }))
+  const updateField = (key, val) => {
+    setForm(f => ({ ...f, [key]: val }))
+    clearError(key)
+  }
 
   const handlePriceChange = (type, value) => {
     const selectedProduct = products.find(p => p.id === form.productId)
@@ -268,6 +292,7 @@ export default function Stock() {
         setForm(f => ({ ...f, buyPriceWithTax: value, buyPriceWithoutTax: withoutTax }))
       }
     }
+    clearError('buyPriceWithoutTax')
   }
 
   const handleProductChange = (productId) => {
@@ -280,6 +305,7 @@ export default function Stock() {
     } else {
       setForm(f => ({ ...f, productId }))
     }
+    clearError('productId')
   }
 
   const stockColumns = [
@@ -388,7 +414,7 @@ export default function Stock() {
           <p className="page-subtitle">{stockTotalElements} products in stock</p>
         </div>
         <div className="page-actions">
-          <motion.button className="btn btn-primary" onClick={() => setShowModal(true)} whileTap={{ scale: 0.95 }}>
+          <motion.button className="btn btn-primary" onClick={() => { setForm({ ...emptyForm }); setValidationErrors({}); setShowModal(true); }} whileTap={{ scale: 0.95 }}>
             <Plus size={18} /> Receive Stock
           </motion.button>
         </div>
@@ -700,68 +726,235 @@ export default function Stock() {
 
       {/* Receive Stock Modal */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Receive Stock" wide>
-        <form onSubmit={handleReceive} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          <div className="form-group">
-            <label className="form-label">Product *</label>
-            <SearchSelect
-              options={products.filter(p => p.active !== false)}
-              value={form.productId}
-              onChange={handleProductChange}
-              labelKey="name" valueKey="id"
-              placeholder="Select product..."
-            />
-          </div>
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">Batch Number *</label>
-              <input className="form-input" value={form.batchNumber} onChange={e => updateField('batchNumber', e.target.value)} required minLength={2} placeholder="e.g. B-2024-001" />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Supplier *</label>
-              <input className="form-input" value={form.supplierName} onChange={e => updateField('supplierName', e.target.value)} required placeholder="Supplier name" />
-            </div>
-          </div>
-          <div className="form-row-4">
-            <div className="form-group">
-              <label className="form-label">Primary Units</label>
-              <input 
-                className="form-input" 
-                type="number" 
-                min="0" 
-                value={form.primaryReceived} 
-                onChange={e => updateField('primaryReceived', e.target.value)} 
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Extra Secondary</label>
-              <input 
-                className="form-input" 
-                type="number" 
-                min="0" 
-                value={form.extraSecondaryReceived} 
-                onChange={e => updateField('extraSecondaryReceived', e.target.value)} 
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Buy Price (no tax) ₹ *</label>
-              <input className="form-input" type="number" min="0" step="0.01" value={form.buyPriceWithoutTax} onChange={e => handlePriceChange('without', e.target.value)} required />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Buy Price (with tax) ₹</label>
-              <input className="form-input" type="number" min="0" step="0.01" value={form.buyPriceWithTax || ''} onChange={e => handlePriceChange('with', e.target.value)} />
-            </div>
-          </div>
-          <div className="form-group">
-            <label className="form-label">Expiry Date *</label>
-            <input className="form-input" type="date" value={form.expiryDate} onChange={e => updateField('expiryDate', e.target.value)} required />
-          </div>
-          <div className="form-actions">
-            <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-            <motion.button type="submit" className="btn btn-primary" disabled={saving} whileTap={{ scale: 0.95 }}>
-              {saving ? 'Receiving...' : 'Receive Stock'}
-            </motion.button>
-          </div>
-        </form>
+        {(() => {
+          const selectedProduct = products.find(p => p.id === form.productId)
+          const primaryUnit = selectedProduct?.primaryUnit || 'Primary'
+          const secondaryUnit = selectedProduct?.secondaryUnit || 'Secondary'
+          const gst = selectedProduct ? Number(selectedProduct.gstPercent || 0) : 0
+          const buyPriceWithTaxVal = form.buyPriceWithTax 
+            ? Number(form.buyPriceWithTax) 
+            : (form.buyPriceWithoutTax ? Number(form.buyPriceWithoutTax) * (1 + gst / 100) : 0)
+          const totalCostVal = (Number(form.primaryReceived || 0) * buyPriceWithTaxVal) + 
+            (Number(form.extraSecondaryReceived || 0) * (buyPriceWithTaxVal / (selectedProduct?.secondaryPerPrimary || 1)))
+
+          return (
+            <form onSubmit={handleReceive} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+              <div className="form-group">
+                <label className="form-label">Product *</label>
+                <SearchSelect
+                  options={products.filter(p => p.active !== false)}
+                  value={form.productId}
+                  onChange={handleProductChange}
+                  labelKey="name" valueKey="id"
+                  placeholder="Select product..."
+                />
+                {validationErrors.productId && (
+                  <span className="text-xs" style={{ color: 'var(--color-danger)', marginTop: '4px', display: 'block' }}>
+                    {validationErrors.productId}
+                  </span>
+                )}
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Batch Number *</label>
+                  <input
+                    className="form-input"
+                    value={form.batchNumber}
+                    onChange={e => updateField('batchNumber', e.target.value)}
+                    style={validationErrors.batchNumber ? { borderColor: 'var(--color-danger)' } : {}}
+                    required
+                    minLength={2}
+                    placeholder="e.g. B-2024-001"
+                  />
+                  {validationErrors.batchNumber && (
+                    <span className="text-xs" style={{ color: 'var(--color-danger)', marginTop: '4px', display: 'block' }}>
+                      {validationErrors.batchNumber}
+                    </span>
+                  )}
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Supplier *</label>
+                  <input
+                    className="form-input"
+                    value={form.supplierName}
+                    onChange={e => updateField('supplierName', e.target.value)}
+                    style={validationErrors.supplierName ? { borderColor: 'var(--color-danger)' } : {}}
+                    required
+                    placeholder="Supplier name"
+                  />
+                  {validationErrors.supplierName && (
+                    <span className="text-xs" style={{ color: 'var(--color-danger)', marginTop: '4px', display: 'block' }}>
+                      {validationErrors.supplierName}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="form-row-4">
+                <div className="form-group">
+                  <label className="form-label">Primary Units ({primaryUnit})</label>
+                  <input 
+                    className="form-input" 
+                    type="number" 
+                    min="0" 
+                    value={form.primaryReceived} 
+                    onChange={e => updateField('primaryReceived', e.target.value)} 
+                    style={validationErrors.primaryReceived ? { borderColor: 'var(--color-danger)' } : {}}
+                  />
+                  {validationErrors.primaryReceived && (
+                    <span className="text-xs" style={{ color: 'var(--color-danger)', marginTop: '4px', display: 'block' }}>
+                      {validationErrors.primaryReceived}
+                    </span>
+                  )}
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Extra Secondary ({secondaryUnit})</label>
+                  <input 
+                    className="form-input" 
+                    type="number" 
+                    min="0" 
+                    value={form.extraSecondaryReceived} 
+                    onChange={e => updateField('extraSecondaryReceived', e.target.value)} 
+                    style={validationErrors.extraSecondaryReceived ? { borderColor: 'var(--color-danger)' } : {}}
+                  />
+                  {validationErrors.extraSecondaryReceived && (
+                    <span className="text-xs" style={{ color: 'var(--color-danger)', marginTop: '4px', display: 'block' }}>
+                      {validationErrors.extraSecondaryReceived}
+                    </span>
+                  )}
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Buy Price (Excl. Tax) ₹ *</label>
+                  <input
+                    className="form-input"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.buyPriceWithoutTax}
+                    onChange={e => handlePriceChange('without', e.target.value)}
+                    style={validationErrors.buyPriceWithoutTax ? { borderColor: 'var(--color-danger)' } : {}}
+                    required
+                  />
+                  {validationErrors.buyPriceWithoutTax && (
+                    <span className="text-xs" style={{ color: 'var(--color-danger)', marginTop: '4px', display: 'block' }}>
+                      {validationErrors.buyPriceWithoutTax}
+                    </span>
+                  )}
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Buy Price (Incl. Tax) ₹</label>
+                  <input
+                    className="form-input"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.buyPriceWithTax || ''}
+                    onChange={e => handlePriceChange('with', e.target.value)}
+                    style={validationErrors.buyPriceWithoutTax ? { borderColor: 'var(--color-danger)' } : {}}
+                  />
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Expiry Date *</label>
+                <input
+                  className="form-input"
+                  type="date"
+                  value={form.expiryDate}
+                  onChange={e => updateField('expiryDate', e.target.value)}
+                  style={validationErrors.expiryDate ? { borderColor: 'var(--color-danger)' } : {}}
+                  required
+                />
+                {validationErrors.expiryDate && (
+                  <span className="text-xs" style={{ color: 'var(--color-danger)', marginTop: '4px', display: 'block' }}>
+                    {validationErrors.expiryDate}
+                  </span>
+                )}
+              </div>
+
+              {selectedProduct && (
+                <div style={{
+                  background: 'var(--color-bg-secondary, #f8fafc)',
+                  border: '1px solid var(--color-border, #e2e8f0)',
+                  borderRadius: 'var(--radius-md, 8px)',
+                  padding: 'var(--space-4, 16px)',
+                  marginTop: 'var(--space-1, 4px)'
+                }}>
+                  <div style={{ fontSize: '13px', fontWeight: 'bold', marginBottom: '8px', color: 'var(--color-text-secondary)' }}>
+                    Sell Price Settings (Optional)
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', display: 'flex', gap: '20px' }}>
+                    <span>Current Sell ({primaryUnit}): <strong>₹{selectedProduct.sellPricePrimary || 0}</strong></span>
+                    <span>Current Sell ({secondaryUnit}): <strong>₹{selectedProduct.sellPriceSecondary || 0}</strong></span>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label className="form-label">New Sell Price ({primaryUnit}) ₹</label>
+                      <input
+                        className="form-input"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={form.sellPricePrimary}
+                        onChange={e => updateField('sellPricePrimary', e.target.value)}
+                        style={validationErrors.sellPricePrimary ? { borderColor: 'var(--color-danger)' } : {}}
+                        placeholder="Leave blank to keep current..."
+                      />
+                      {validationErrors.sellPricePrimary && (
+                        <span className="text-xs" style={{ color: 'var(--color-danger)', marginTop: '4px', display: 'block' }}>
+                          {validationErrors.sellPricePrimary}
+                        </span>
+                      )}
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">New Sell Price ({secondaryUnit}) ₹</label>
+                      <input
+                        className="form-input"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={form.sellPriceSecondary}
+                        onChange={e => updateField('sellPriceSecondary', e.target.value)}
+                        style={validationErrors.sellPriceSecondary ? { borderColor: 'var(--color-danger)' } : {}}
+                        placeholder="Leave blank to keep current..."
+                      />
+                      {validationErrors.sellPriceSecondary && (
+                        <span className="text-xs" style={{ color: 'var(--color-danger)', marginTop: '4px', display: 'block' }}>
+                          {validationErrors.sellPriceSecondary}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="form-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'var(--space-1)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="checkbox"
+                    id="logAsExpenseCheckbox"
+                    checked={!!form.logAsExpense}
+                    onChange={e => updateField('logAsExpense', e.target.checked)}
+                    style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                  />
+                  <label htmlFor="logAsExpenseCheckbox" style={{ fontSize: '13px', fontWeight: '500', cursor: 'pointer', margin: 0 }}>
+                    Auto-record as Expense (Expenses mein kharch darj karein)
+                  </label>
+                </div>
+                {totalCostVal > 0 && (
+                  <div style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--color-text-secondary)' }}>
+                    Total Purchase Cost: <span style={{ color: 'var(--color-danger)' }}>₹{totalCostVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="form-actions" style={{ marginTop: 'var(--space-2)' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
+                <motion.button type="submit" className="btn btn-primary" disabled={saving} whileTap={{ scale: 0.95 }}>
+                  {saving ? 'Receiving...' : 'Receive Stock'}
+                </motion.button>
+              </div>
+            </form>
+          )
+        })()}
       </Modal>
       
       {/* Write Off Confirm Dialog */}

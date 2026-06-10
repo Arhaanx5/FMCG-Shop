@@ -165,8 +165,13 @@ public class DashboardService {
             }
         }
 
+        BigDecimal opex = monthExpenses.stream()
+                .filter(e -> e.getCategory() != com.shop.modules.expense.ExpenseCategory.STOCK_PURCHASE)
+                .map(Expense::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
         BigDecimal netProfit =
-                monthRevenue.subtract(monthCogs).subtract(totalExpenses);
+                monthRevenue.subtract(monthCogs).subtract(opex);
 
         // Alerts
         long lowStockCount = productRepository
@@ -324,8 +329,13 @@ public class DashboardService {
             }
         }
 
+        BigDecimal opex = expenses.stream()
+                .filter(e -> e.getCategory() != com.shop.modules.expense.ExpenseCategory.STOCK_PURCHASE)
+                .map(Expense::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
         BigDecimal netProfit =
-                totalRevenue.subtract(monthCogs).subtract(totalExpenses);
+                totalRevenue.subtract(monthCogs).subtract(opex);
 
         // Fetch monthly damage loss
         BigDecimal totalDamageLoss = damageLogRepository.getTotalDamageLoss(start, end);
@@ -418,7 +428,12 @@ public class DashboardService {
             }
         }
 
-        BigDecimal netProfit = totalRevenue.subtract(monthCogs).subtract(totalExpenses);
+        BigDecimal opex = expenses.stream()
+                .filter(e -> e.getCategory() != com.shop.modules.expense.ExpenseCategory.STOCK_PURCHASE)
+                .map(Expense::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal netProfit = totalRevenue.subtract(monthCogs).subtract(opex);
 
         BigDecimal totalDamageLoss = damageLogRepository.getTotalDamageLoss(start, end);
         if (totalDamageLoss == null) {

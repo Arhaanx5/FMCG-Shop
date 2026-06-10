@@ -8,7 +8,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import { useToast } from '../context/ToastContext'
 
 const ROLES = ['ADMIN', 'MANAGER', 'DELIVERY_BOY', 'SALESMAN']
-const emptyForm = { name: '', phone: '', role: 'MANAGER', password: '' }
+const emptyForm = { name: '', phone: '', role: 'MANAGER', password: '', monthlySalary: '' }
 
 function getTrackingStatus(lastTimeStr) {
   if (!lastTimeStr) return { label: 'Offline', color: 'var(--color-text-muted)', dot: '#94a3b8' }
@@ -67,7 +67,7 @@ export default function Users() {
 
   const openCreate = () => { setForm({ ...emptyForm }); setEditingId(null); setShowModal(true) }
   const openEdit = (u) => {
-    setForm({ name: u.name || '', phone: u.phone || '', role: u.role || 'MANAGER', password: '' })
+    setForm({ name: u.name || '', phone: u.phone || '', role: u.role || 'MANAGER', password: '', monthlySalary: u.monthlySalary || '' })
     setEditingId(u.id)
     setShowModal(true)
   }
@@ -76,13 +76,16 @@ export default function Users() {
     e.preventDefault()
     setSaving(true)
     try {
+      const payload = {
+        ...form,
+        monthlySalary: form.monthlySalary ? Number(form.monthlySalary) : null
+      }
       if (editingId) {
-        const payload = { ...form }
         if (!payload.password) payload.password = 'unchanged123' // backend should handle
         await api.put(`/users/${editingId}`, payload)
         toast.success('User updated!')
       } else {
-        await api.post('/users', form)
+        await api.post('/users', payload)
         toast.success('User created!')
       }
       setShowModal(false)
@@ -128,6 +131,7 @@ export default function Users() {
       const colors = { ADMIN: 'badge-accent', MANAGER: 'badge-info', DELIVERY_BOY: 'badge-success', SALESMAN: 'badge-warning' }
       return <span className={`badge ${colors[row.role] || 'badge-neutral'}`}>{row.role?.replace('_', ' ')}</span>
     }},
+    { header: 'Monthly Salary', accessor: 'monthlySalary', render: (row) => row.monthlySalary ? <span className="font-semibold">₹{Number(row.monthlySalary).toLocaleString('en-IN')}</span> : <span className="text-muted">—</span> },
     { header: 'Status', accessor: 'active', render: (row) =>
       row.active ? <span className="badge badge-success">Active</span> : <span className="badge badge-danger">Inactive</span>
     },
@@ -266,6 +270,10 @@ export default function Users() {
                 {ROLES.map(r => <option key={r} value={r}>{r.replace('_', ' ')}</option>)}
               </select>
             </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Monthly Salary ₹</label>
+            <input className="form-input" type="number" min="0" value={form.monthlySalary} onChange={e => setForm({ ...form, monthlySalary: e.target.value })} placeholder="Enter fixed monthly salary" />
           </div>
           <div className="form-group">
             <label className="form-label">{editingId ? 'Password (leave blank to keep)' : 'Password *'}</label>

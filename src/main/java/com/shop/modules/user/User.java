@@ -40,6 +40,9 @@ public class User {
     @Builder.Default
     private Boolean  mustChangePassword = true;
 
+    @Column(name = "monthly_salary")
+    private java.math.BigDecimal monthlySalary;
+
     @Column(name = "last_latitude")
     private Double lastLatitude;
 

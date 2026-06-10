@@ -29,6 +29,10 @@ public class ExpenseService {
                 .expenseDate(expense.getExpenseDate())
                 .addedBy(expense.getAddedBy() != null
                         ? expense.getAddedBy().getName() : null)
+                .recipientId(expense.getRecipient() != null
+                        ? expense.getRecipient().getId() : null)
+                .recipientName(expense.getRecipient() != null
+                        ? expense.getRecipient().getName() : null)
                 .createdAt(expense.getCreatedAt())
                 .build();
     }
@@ -79,12 +83,19 @@ public class ExpenseService {
                 .orElseThrow(() ->
                         new RuntimeException("User not found"));
 
+        com.shop.modules.user.User recipient = null;
+        if (req.getRecipientId() != null) {
+            recipient = userRepository.findById(req.getRecipientId())
+                    .orElse(null);
+        }
+
         Expense expense = Expense.builder()
                 .category(req.getCategory())
                 .amount(req.getAmount())
                 .description(req.getDescription())
                 .expenseDate(req.getExpenseDate())
                 .addedBy(user)
+                .recipient(recipient)
                 .build();
 
         return toResponse(expenseRepository.save(expense));

@@ -19,5 +19,6 @@ public class UserResponse {
     private Double lastLatitude;
     private Double lastLongitude;
     private LocalDateTime lastLocationTime;
+    private java.math.BigDecimal monthlySalary;
     private LocalDateTime createdAt;
 }

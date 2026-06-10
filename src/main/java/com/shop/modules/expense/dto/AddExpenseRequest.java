@@ -21,4 +21,6 @@ public class AddExpenseRequest {
 
     @NotNull(message = "Date is required")
     private LocalDate expenseDate;
+
+    private java.util.UUID recipientId;
 }

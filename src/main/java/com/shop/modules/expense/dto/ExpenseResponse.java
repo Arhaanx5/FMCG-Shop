@@ -18,5 +18,7 @@ public class ExpenseResponse {
     private String description;
     private LocalDate expenseDate;
     private String addedBy;
+    private UUID recipientId;
+    private String recipientName;
     private LocalDateTime createdAt;
 }
