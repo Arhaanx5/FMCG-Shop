@@ -8254,3 +8254,62 @@ essage":"⚠️ Message failed, retry 2/3 in 15s","data":{"id":"7b8bff61-d1bf-4c
 {"ts":"2026-06-09T19:01:54.416Z","level":"INFO","module":"QUEUE","message":"Enqueued normal message","data":{"id":"e7e30e11-cfb6-4591-9667-c17d5842aabd","phone":"917084285785"}}
 {"ts":"2026-06-09T19:01:54.775Z","level":"INFO","module":"DEBUG_PDF","message":"Media length: 156800, start: JVBERi0xLjQKJdPr6eEKMSAwIG9iago8PC9UaXRsZSAoYWJvdXQ6YmxhbmspCi9DcmVhdG9yIChNb3ppbGxhLzUuMCBcKFdpbmRv"}
 {"ts":"2026-06-09T19:01:57.423Z","level":"INFO","module":"QUEUE","message":"✅ Message sent","data":{"id":"e7e30e11-cfb6-4591-9667-c17d5842aabd","phone":"917084285785","retries":0}}
+{"ts":"2026-06-09T21:44:55.817Z","level":"WARN","module":"WA","message":"Heartbeat: state drifted","data":{"state":"OPENING"}}
+{"ts":"2026-06-09T21:44:55.818Z","level":"INFO","module":"WA","message":"Reconnect attempt 1 scheduled in 3s"}
+{"ts":"2026-06-09T21:44:58.829Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-09T21:44:59.240Z","level":"ERROR","module":"WA","message":"Initialization failed","data":{"err":"The browser is already running for D:\\intelliJ2025\\fmcg-shop\\fmcg-shop\\whatsapp-service\\session_data\\session. Use a different `userDataDir` or stop the running browser first."}}
+{"ts":"2026-06-09T21:44:59.240Z","level":"INFO","module":"WA","message":"Reconnect attempt 2 scheduled in 5s"}
+{"ts":"2026-06-09T21:45:04.045Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-09T21:45:04.119Z","level":"ERROR","module":"WA","message":"Initialization failed","data":{"err":"The browser is already running for D:\\intelliJ2025\\fmcg-shop\\fmcg-shop\\whatsapp-service\\session_data\\session. Use a different `userDataDir` or stop the running browser first."}}
+{"ts":"2026-06-09T21:45:04.119Z","level":"INFO","module":"WA","message":"Reconnect attempt 3 scheduled in 8s"}
+{"ts":"2026-06-09T21:45:11.815Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-09T21:45:11.876Z","level":"ERROR","module":"WA","message":"Initialization failed","data":{"err":"The browser is already running for D:\\intelliJ2025\\fmcg-shop\\fmcg-shop\\whatsapp-service\\session_data\\session. Use a different `userDataDir` or stop the running browser first."}}
+{"ts":"2026-06-09T21:45:11.876Z","level":"INFO","module":"WA","message":"Reconnect attempt 4 scheduled in 12s"}
+{"ts":"2026-06-09T21:45:24.169Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-09T21:45:24.243Z","level":"ERROR","module":"WA","message":"Initialization failed","data":{"err":"The browser is already running for D:\\intelliJ2025\\fmcg-shop\\fmcg-shop\\whatsapp-service\\session_data\\session. Use a different `userDataDir` or stop the running browser first."}}
+{"ts":"2026-06-09T21:45:24.243Z","level":"INFO","module":"WA","message":"Reconnect attempt 5 scheduled in 20s"}
+{"ts":"2026-06-09T21:45:43.911Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-09T21:45:43.977Z","level":"ERROR","module":"WA","message":"Initialization failed","data":{"err":"The browser is already running for D:\\intelliJ2025\\fmcg-shop\\fmcg-shop\\whatsapp-service\\session_data\\session. Use a different `userDataDir` or stop the running browser first."}}
+{"ts":"2026-06-09T21:45:43.977Z","level":"INFO","module":"WA","message":"Reconnect attempt 6 scheduled in 31s"}
+{"ts":"2026-06-09T21:46:15.449Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-09T21:46:15.523Z","level":"ERROR","module":"WA","message":"Initialization failed","data":{"err":"The browser is already running for D:\\intelliJ2025\\fmcg-shop\\fmcg-shop\\whatsapp-service\\session_data\\session. Use a different `userDataDir` or stop the running browser first."}}
+{"ts":"2026-06-09T21:46:15.524Z","level":"INFO","module":"WA","message":"Reconnect attempt 7 scheduled in 50s"}
+{"ts":"2026-06-09T21:47:05.869Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-09T21:47:05.931Z","level":"ERROR","module":"WA","message":"Initialization failed","data":{"err":"The browser is already running for D:\\intelliJ2025\\fmcg-shop\\fmcg-shop\\whatsapp-service\\session_data\\session. Use a different `userDataDir` or stop the running browser first."}}
+{"ts":"2026-06-09T21:47:05.931Z","level":"INFO","module":"WA","message":"Reconnect attempt 8 scheduled in 81s"}
+{"ts":"2026-06-09T21:48:26.465Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-09T21:48:26.528Z","level":"ERROR","module":"WA","message":"Initialization failed","data":{"err":"The browser is already running for D:\\intelliJ2025\\fmcg-shop\\fmcg-shop\\whatsapp-service\\session_data\\session. Use a different `userDataDir` or stop the running browser first."}}
+{"ts":"2026-06-09T21:48:26.529Z","level":"INFO","module":"WA","message":"Reconnect attempt 9 scheduled in 90s"}
+{"ts":"2026-06-09T21:49:56.536Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-09T21:49:56.616Z","level":"ERROR","module":"WA","message":"Initialization failed","data":{"err":"The browser is already running for D:\\intelliJ2025\\fmcg-shop\\fmcg-shop\\whatsapp-service\\session_data\\session. Use a different `userDataDir` or stop the running browser first."}}
+{"ts":"2026-06-09T21:49:56.616Z","level":"INFO","module":"WA","message":"Reconnect attempt 10 scheduled in 90s"}
+{"ts":"2026-06-09T21:51:26.628Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-09T21:51:26.689Z","level":"ERROR","module":"WA","message":"Initialization failed","data":{"err":"The browser is already running for D:\\intelliJ2025\\fmcg-shop\\fmcg-shop\\whatsapp-service\\session_data\\session. Use a different `userDataDir` or stop the running browser first."}}
+{"ts":"2026-06-09T21:51:26.689Z","level":"ERROR","module":"WA","message":"Max reconnect attempts reached. Manual QR scan required."}
+[36m[2026-06-10T00:56:13.110Z] [INFO] [QUEUE] Loaded 0 pending messages from disk[0m
+[36m[2026-06-10T00:56:13.310Z] [INFO] [CHROME] Using Chrome from env: C:\Users\arhaa\.cache\puppeteer\chrome\win64-146.0.7680.31\chrome-win64\chrome.exe[0m
+[36m[2026-06-10T00:56:13.314Z] [INFO] [SYSTEM] 🚀 Lari Traders WhatsApp Service v2.0 starting...[0m
+[36m[2026-06-10T00:56:13.314Z] [INFO] [SYSTEM] Cleaning up any orphaned Chrome/Puppeteer processes...[0m
+[36m[2026-06-10T00:56:15.865Z] [INFO] [SYSTEM] Orphaned Chrome processes cleaned.[0m
+[36m[2026-06-10T00:56:15.885Z] [INFO] [SYSTEM] ✅ HTTP server listening on http://127.0.0.1:3000[0m
+[36m[2026-06-10T00:56:15.886Z] [INFO] [SYSTEM] 📋 Endpoints: /health /status /qr /send /send-bulk /send-media /queue/stats[0m
+[36m[2026-06-10T00:56:15.886Z] [INFO] [WA] Initializing WhatsApp client...[0m
+[36m[2026-06-10T00:56:34.028Z] [INFO] [WA] Loading 100%: WhatsApp[0m
+[36m[2026-06-10T00:56:39.308Z] [INFO] [WA] Authenticated ✅[0m
+[36m[2026-06-10T00:56:41.171Z] [INFO] [WA] WhatsApp READY ✅ — Queue processor started[0m
+[36m[2026-06-10T00:56:41.171Z] [INFO] [QUEUE] Message processor started[0m
+[36m[2026-06-10T05:36:23.333Z] [INFO] [API] GET /status[0m
+[36m[2026-06-10T05:36:23.587Z] [INFO] [API] GET /status[0m
+[36m[2026-06-10T06:30:21.084Z] [INFO] [API] GET /status[0m
+e":"SYSTEM","message":"Cleaning up any orphaned Chrome/Puppeteer processes..."}
+{"ts":"2026-06-10T00:56:15.865Z","level":"INFO","module":"SYSTEM","message":"Orphaned Chrome processes cleaned."}
+{"ts":"2026-06-10T00:56:15.885Z","level":"INFO","module":"SYSTEM","message":"✅ HTTP server listening on http://127.0.0.1:3000"}
+{"ts":"2026-06-10T00:56:15.886Z","level":"INFO","module":"SYSTEM","message":"📋 Endpoints: /health /status /qr /send /send-bulk /send-media /queue/stats"}
+{"ts":"2026-06-10T00:56:15.886Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-10T00:56:34.028Z","level":"INFO","module":"WA","message":"Loading 100%: WhatsApp"}
+{"ts":"2026-06-10T00:56:39.308Z","level":"INFO","module":"WA","message":"Authenticated ✅"}
+{"ts":"2026-06-10T00:56:41.171Z","level":"INFO","module":"WA","message":"WhatsApp READY ✅ — Queue processor started"}
+{"ts":"2026-06-10T00:56:41.171Z","level":"INFO","module":"QUEUE","message":"Message processor started"}
+{"ts":"2026-06-10T05:36:23.333Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-10T05:36:23.587Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-10T06:30:21.084Z","level":"INFO","module":"API","message":"GET /status"}
