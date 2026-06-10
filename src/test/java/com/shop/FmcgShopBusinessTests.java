@@ -76,7 +76,7 @@ public class FmcgShopBusinessTests {
 
     @org.junit.jupiter.api.BeforeEach
     public void setUp() {
-        this.stockService = new StockService(stockRepository, batchRepository, productRepository, stockAdjustmentLogRepository, userRepository, damageLogRepository);
+        this.stockService = new StockService(stockRepository, batchRepository, productRepository, stockAdjustmentLogRepository, userRepository, damageLogRepository, expenseRepository);
         
         this.damageService = new DamageService(
                 damageLogRepository,
