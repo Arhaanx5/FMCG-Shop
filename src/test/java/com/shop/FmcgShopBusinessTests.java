@@ -502,7 +502,7 @@ public class FmcgShopBusinessTests {
         request.setReturnedItems(Collections.singletonList(returnItem));
 
         when(billRepository.findById(billId)).thenReturn(Optional.of(bill));
-        when(billRepository.findByCustomerId(customerId)).thenReturn(Collections.singletonList(bill));
+        when(billRepository.findByCustomerIdOrderByCreatedAtDesc(customerId)).thenReturn(Collections.singletonList(bill));
         when(stockRepository.findByProductId(productId)).thenReturn(Optional.of(stock));
         when(batchRepository.findById(batchId)).thenReturn(Optional.of(batch));
         when(billRepository.save(any(Bill.class))).thenReturn(bill);

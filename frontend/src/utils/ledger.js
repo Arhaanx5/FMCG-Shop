@@ -93,7 +93,7 @@ export const getCustomerLedger = (customer, allBills, allPayments) => {
   })
 }
 
-export const generateLedgerHtml = (customer, ledger, totalUdhar, totalPaid, outstanding) => {
+export const generateLedgerHtml = (customer, ledger, totalUdhar, totalPaid, outstanding, openingBalance = 0, periodMonth = 'ALL') => {
   const rows = ledger.map(row => {
     const dateStr = row.createdAt ? new Date(row.createdAt).toLocaleString('en-IN', {
       day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true
@@ -102,7 +102,7 @@ export const generateLedgerHtml = (customer, ledger, totalUdhar, totalPaid, outs
     const cr = row.credit > 0 ? `₹${Number(row.credit).toLocaleString('en-IN')}` : '—'
     const bal = `₹${Number(row.runningBalance).toLocaleString('en-IN')}`
     return `
-      <tr style="border-bottom: 1px solid #e2e8f0;">
+      <tr style="border-bottom: 1px solid #e2e8f0; page-break-inside: avoid; break-inside: avoid;">
         <td style="padding: 8px 10px; border: 1px solid #e2e8f0; white-space: nowrap;">${dateStr}</td>
         <td style="padding: 8px 10px; border: 1px solid #e2e8f0;">${row.description}</td>
         <td style="padding: 8px 10px; border: 1px solid #e2e8f0; text-align: right;">${dr}</td>
@@ -112,12 +112,42 @@ export const generateLedgerHtml = (customer, ledger, totalUdhar, totalPaid, outs
     `
   }).join('')
 
+  const openingRowHtml = (periodMonth && periodMonth !== 'ALL') ? `
+    <tr style="border-bottom: 1px solid #e2e8f0; page-break-inside: avoid; break-inside: avoid; font-weight: bold; background: #fafafa;">
+      <td style="padding: 8px 10px; border: 1px solid #e2e8f0; white-space: nowrap;">—</td>
+      <td style="padding: 8px 10px; border: 1px solid #e2e8f0;">Opening Balance (Pichla Outstanding)</td>
+      <td style="padding: 8px 10px; border: 1px solid #e2e8f0; text-align: right;">—</td>
+      <td style="padding: 8px 10px; border: 1px solid #e2e8f0; text-align: right;">—</td>
+      <td style="padding: 8px 10px; border: 1px solid #e2e8f0; text-align: right; color: ${openingBalance > 0 ? '#ef4444' : '#16a34a'};">₹${Number(openingBalance).toLocaleString('en-IN')}</td>
+    </tr>
+  ` : '';
+
+  let periodText = 'Account Ledger Statement'
+  if (periodMonth && periodMonth !== 'ALL') {
+    const [year, month] = periodMonth.split('-').map(Number)
+    const monthName = new Date(year, month - 1, 1).toLocaleString('en-IN', { month: 'long', year: 'numeric' })
+    periodText = `Statement for ${monthName}`
+  }
+
   return `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 25px; color: #1e293b; max-width: 800px; margin: 0 auto; background: #fff;">
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 0; color: #1e293b; max-width: 800px; margin: 0 auto; background: #fff;">
+      <style>
+        body {
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+        tr, td, th {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
+        thead {
+          display: table-header-group !important;
+        }
+      </style>
       <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #6366f1; padding-bottom: 15px; margin-bottom: 20px;">
         <div>
           <h1 style="margin: 0; color: #4f46e5; font-size: 26px; font-weight: 800; letter-spacing: -0.5px;">LARI TRADERS</h1>
-          <p style="margin: 4px 0 0 0; font-size: 13px; color: #64748b; font-weight: 500;">Account Ledger Statement</p>
+          <p style="margin: 4px 0 0 0; font-size: 13px; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">${periodText}</p>
         </div>
         <div style="text-align: right;">
           <p style="margin: 0; font-size: 12px; color: #64748b;">Statement Generated On</p>
@@ -125,7 +155,7 @@ export const generateLedgerHtml = (customer, ledger, totalUdhar, totalPaid, outs
         </div>
       </div>
 
-      <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 30px; margin-bottom: 25px; font-size: 13px; line-height: 1.5;">
+      <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 30px; margin-bottom: 25px; font-size: 13px; line-height: 1.5; page-break-inside: avoid; break-inside: avoid;">
         <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
           <h4 style="margin: 0 0 8px 0; color: #475569; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Customer Info</h4>
           <strong style="font-size: 15px; color: #0f172a;">${customer.name}</strong><br/>
@@ -136,16 +166,22 @@ export const generateLedgerHtml = (customer, ledger, totalUdhar, totalPaid, outs
           <div>
             <h4 style="margin: 0 0 8px 0; color: #475569; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Balance Summary</h4>
             <table style="width: 100%; font-size: 12px; border-collapse: collapse;">
+              ${periodMonth && periodMonth !== 'ALL' ? `
               <tr>
-                <td style="padding: 2px 0; color: #64748b;">Total Credit Taken (Udhar)</td>
+                <td style="padding: 2px 0; color: #64748b;">Opening Balance (Pichla Outstanding)</td>
+                <td style="padding: 2px 0; text-align: right; font-weight: 600;">₹${Number(openingBalance).toLocaleString('en-IN')}</td>
+              </tr>
+              ` : ''}
+              <tr>
+                <td style="padding: 2px 0; color: #64748b;">${periodMonth && periodMonth !== 'ALL' ? 'New Credit Taken (Naya Udhar)' : 'Total Credit Taken (Udhar)'}</td>
                 <td style="padding: 2px 0; text-align: right; font-weight: 600;">₹${totalUdhar.toLocaleString('en-IN')}</td>
               </tr>
               <tr>
-                <td style="padding: 2px 0; color: #64748b;">Total Amount Paid (Bhugtan)</td>
+                <td style="padding: 2px 0; color: #64748b;">${periodMonth && periodMonth !== 'ALL' ? 'New Amount Paid (Naya Bhugtan)' : 'Total Amount Paid (Bhugtan)'}</td>
                 <td style="padding: 2px 0; text-align: right; font-weight: 600; color: #16a34a;">- ₹${totalPaid.toLocaleString('en-IN')}</td>
               </tr>
               <tr style="border-top: 1px solid #cbd5e1;">
-                <td style="padding: 6px 0 2px 0; font-weight: bold; color: #0f172a;">Remaining Outstanding</td>
+                <td style="padding: 6px 0 2px 0; font-weight: bold; color: #0f172a;">${periodMonth && periodMonth !== 'ALL' ? 'Total Outstanding Balance (Kul Baki)' : 'Remaining Outstanding'}</td>
                 <td style="padding: 6px 0 2px 0; text-align: right; font-weight: 800; font-size: 14px; color: #ef4444;">₹${outstanding.toLocaleString('en-IN')}</td>
               </tr>
             </table>
@@ -153,24 +189,75 @@ export const generateLedgerHtml = (customer, ledger, totalUdhar, totalPaid, outs
         </div>
       </div>
 
-      <table style="width: 100%; border-collapse: collapse; font-size: 11px; text-align: left;">
+      <table style="width: 100%; border-collapse: collapse; font-size: 11px; text-align: left; table-layout: fixed;">
         <thead>
           <tr style="background: #6366f1; color: #ffffff;">
-            <th style="padding: 10px 12px; border: 1px solid #6366f1; font-weight: 600; border-top-left-radius: 6px; border-bottom-left-radius: 6px;">Date & Time</th>
-            <th style="padding: 10px 12px; border: 1px solid #6366f1; font-weight: 600;">Transaction Details</th>
-            <th style="padding: 10px 12px; border: 1px solid #6366f1; font-weight: 600; text-align: right;">Udhar Taken (+)</th>
-            <th style="padding: 10px 12px; border: 1px solid #6366f1; font-weight: 600; text-align: right;">Amount Paid (-)</th>
-            <th style="padding: 10px 12px; border: 1px solid #6366f1; font-weight: 600; text-align: right; border-top-right-radius: 6px; border-bottom-right-radius: 6px;">Running O/S Balance</th>
+            <th style="padding: 10px 12px; border: 1px solid #6366f1; font-weight: 600; border-top-left-radius: 6px; border-bottom-left-radius: 6px; width: 22%;">Date & Time</th>
+            <th style="padding: 10px 12px; border: 1px solid #6366f1; font-weight: 600; width: 38%;">Transaction Details</th>
+            <th style="padding: 10px 12px; border: 1px solid #6366f1; font-weight: 600; text-align: right; width: 13%;">Udhar Taken (+)</th>
+            <th style="padding: 10px 12px; border: 1px solid #6366f1; font-weight: 600; text-align: right; width: 13%;">Amount Paid (-)</th>
+            <th style="padding: 10px 12px; border: 1px solid #6366f1; font-weight: 600; text-align: right; border-top-right-radius: 6px; border-bottom-right-radius: 6px; width: 14%;">Running O/S Balance</th>
           </tr>
         </thead>
         <tbody style="background: #ffffff;">
+          ${openingRowHtml}
           ${rows}
         </tbody>
       </table>
 
-      <div style="margin-top: 35px; text-align: center; border-top: 1px dashed #e2e8f0; padding-top: 15px;">
+      <div style="margin-top: 35px; text-align: center; border-top: 1px dashed #e2e8f0; padding-top: 15px; page-break-inside: avoid; break-inside: avoid;">
         <p style="margin: 0; font-size: 11px; color: #94a3b8; font-style: italic;">Thank you for doing business with Lari Traders. Please clear your outstanding balance as soon as possible.</p>
       </div>
     </div>
   `
+}
+
+export const getCustomerLedgerForPeriod = (customer, allBills, allPayments, periodMonth) => {
+  const fullLedger = getCustomerLedger(customer, allBills, allPayments)
+  
+  if (!periodMonth || periodMonth === 'ALL') {
+    const totalUdhar = fullLedger.reduce((sum, entry) => sum + entry.debit, 0)
+    const totalPaid = fullLedger.reduce((sum, entry) => sum + entry.credit, 0)
+    const outstanding = totalUdhar - totalPaid
+    return {
+      ledger: fullLedger,
+      openingBalance: 0,
+      totalUdhar,
+      totalPaid,
+      outstanding
+    }
+  }
+
+  const [year, month] = periodMonth.split('-').map(Number)
+  const startDate = new Date(year, month - 1, 1, 0, 0, 0, 0)
+  const endDate = new Date(year, month, 0, 23, 59, 59, 999)
+  
+  const startTime = startDate.getTime()
+  const endTime = endDate.getTime()
+
+  const preEntries = fullLedger.filter(entry => entry.date < startTime)
+  const periodEntries = fullLedger.filter(entry => entry.date >= startTime && entry.date <= endTime)
+
+  const openingBalance = preEntries.length > 0 ? preEntries[preEntries.length - 1].runningBalance : 0
+
+  let running = openingBalance
+  const periodLedger = periodEntries.map(entry => {
+    running += (entry.debit - entry.credit)
+    return {
+      ...entry,
+      runningBalance: running
+    }
+  })
+
+  const totalUdhar = periodLedger.reduce((sum, entry) => sum + entry.debit, 0)
+  const totalPaid = periodLedger.reduce((sum, entry) => sum + entry.credit, 0)
+  const outstanding = openingBalance + totalUdhar - totalPaid
+
+  return {
+    ledger: periodLedger,
+    openingBalance,
+    totalUdhar,
+    totalPaid,
+    outstanding
+  }
 }

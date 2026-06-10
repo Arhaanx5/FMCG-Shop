@@ -38,4 +38,10 @@ public interface CustomerRepository extends JpaRepository<Customer, UUID> {
 
     @Query("SELECT COALESCE(SUM(c.totalPending), 0) FROM Customer c WHERE c.active = true")
     BigDecimal getTotalPendingBalance();
+
+    @Query("SELECT COUNT(c) > 0 FROM Customer c WHERE c.phone = :phone AND c.active = true")
+    boolean existsByPhoneAndActiveTrue(@Param("phone") String phone);
+
+    @Query("SELECT COUNT(c) > 0 FROM Customer c WHERE c.phone = :phone AND c.active = true AND c.id <> :excludeId")
+    boolean existsByPhoneAndActiveTrueAndIdNot(@Param("phone") String phone, @Param("excludeId") UUID excludeId);
 }

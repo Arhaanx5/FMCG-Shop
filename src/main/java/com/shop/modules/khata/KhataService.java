@@ -107,7 +107,7 @@ public class KhataService {
             unpaidOpeningBalance = BigDecimal.ZERO;
         }
 
-        BigDecimal totalBillPending = billRepository.findByCustomerId(customer.getId())
+        BigDecimal totalBillPending = billRepository.findByCustomerIdOrderByCreatedAtDesc(customer.getId())
                 .stream()
                 .filter(b -> b.getStatus() != BillStatus.CANCELLED)
                 .map(Bill::getPendingAmount)
@@ -443,7 +443,7 @@ public class KhataService {
     private PaymentResponse recordGeneralPayment(
             RecordPaymentRequest req, Customer customer, User collector) {
 
-        List<Bill> pendingBills = billRepository.findByCustomerId(customer.getId())
+        List<Bill> pendingBills = billRepository.findByCustomerIdOrderByCreatedAtDesc(customer.getId())
                 .stream()
                 .filter(b -> (b.getStatus() == BillStatus.CONFIRMED || b.getStatus() == BillStatus.PARTIAL)
                         && b.getPendingAmount().compareTo(BigDecimal.ZERO) > 0)

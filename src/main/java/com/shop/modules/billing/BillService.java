@@ -159,7 +159,7 @@ public class BillService {
             unpaidOpeningBalance = BigDecimal.ZERO;
         }
 
-        BigDecimal totalBillPending = billRepository.findByCustomerId(customer.getId())
+        BigDecimal totalBillPending = billRepository.findByCustomerIdOrderByCreatedAtDesc(customer.getId())
                 .stream()
                 .filter(b -> b.getStatus() != BillStatus.CANCELLED)
                 .map(Bill::getPendingAmount)

@@ -86,7 +86,7 @@ public class Bill {
 
     @OneToMany(mappedBy = "bill",
             cascade = CascadeType.ALL,
-            fetch = FetchType.EAGER)
+            fetch = FetchType.LAZY)
     @Builder.Default
     @JsonIgnore  // ← use DTO items list instead
     private List<BillItem> items = new ArrayList<>();

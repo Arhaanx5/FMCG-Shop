@@ -8,7 +8,7 @@ import {
 import api from '../services/api'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useToast } from '../context/ToastContext'
-import { getCustomerLedger, generateLedgerHtml } from '../utils/ledger'
+import { getCustomerLedger, generateLedgerHtml, getCustomerLedgerForPeriod } from '../utils/ledger'
 
 export default function WhatsAppSetup() {
   const toast = useToast()
@@ -26,6 +26,10 @@ export default function WhatsAppSetup() {
   const [statusLoading, setStatusLoading] = useState(true)
   const [qrLoading, setQrLoading] = useState(false)
 
+  // Refs to avoid stale closures inside setInterval
+  const qrCodeRef = useRef(null)
+  const qrLoadingRef = useRef(false)
+
   // Customer queue states
   const [customers, setCustomers] = useState([])
   const [selectedIds, setSelectedIds] = useState([])
@@ -33,6 +37,25 @@ export default function WhatsAppSetup() {
 
   // Broadcast mode: 'TEXT' or 'PDF'
   const [broadcastMode, setBroadcastMode] = useState('PDF')
+
+  const getCurrentMonthCode = () => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  };
+
+  const getMonthOptions = () => {
+    const options = [{ value: 'ALL', label: 'All Time' }]
+    const now = new Date()
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      const label = d.toLocaleString('en-IN', { month: 'long', year: 'numeric' })
+      options.push({ value, label })
+    }
+    return options
+  };
+
+  const [statementMonth, setStatementMonth] = useState(getCurrentMonthCode())
 
   // Confirm dialog states
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
@@ -65,12 +88,14 @@ export default function WhatsAppSetup() {
 
       if (currentStatus === 'CONNECTED') {
         setQrCode(null)
+        qrCodeRef.current = null
         if (statusPollRef.current) {
           clearInterval(statusPollRef.current)
           statusPollRef.current = null
         }
-      } else if (currentStatus === 'DISCONNECTED' && !qrCode && !qrLoading) {
-        fetchQrCode()
+      } else if (currentStatus === 'DISCONNECTED' && !qrLoadingRef.current) {
+        const showSpinner = !qrCodeRef.current
+        fetchQrCode(showSpinner)
       }
     } catch (err) {
       console.error('Failed to fetch WhatsApp status:', err)
@@ -78,18 +103,26 @@ export default function WhatsAppSetup() {
     } finally {
       if (isInitial) setStatusLoading(false)
     }
-  }, [qrCode, qrLoading])
+  }, [])
 
   // ─── 2. Fetch QR Code ─────────────────────────────────────────────────────
-  const fetchQrCode = async () => {
-    setQrLoading(true)
+  const fetchQrCode = async (showSpinner = true) => {
+    qrLoadingRef.current = true
+    if (showSpinner) {
+      setQrLoading(true)
+    }
     try {
       const res = await api.get('/customers/whatsapp/qr')
-      setQrCode(res.data.data?.qr || null)
+      const qr = res.data.data?.qr || null
+      qrCodeRef.current = qr
+      setQrCode(qr)
     } catch (err) {
       console.error('Failed to fetch QR code:', err)
     } finally {
-      setQrLoading(false)
+      qrLoadingRef.current = false
+      if (showSpinner) {
+        setQrLoading(false)
+      }
     }
   }
 
@@ -101,6 +134,7 @@ export default function WhatsAppSetup() {
       await api.post('/customers/whatsapp/logout')
       setStatus('DISCONNECTED')
       setQrCode(null)
+      qrCodeRef.current = null
       fetchQrCode()
       toast.success('Device disconnected successfully.')
     } catch (err) {
@@ -147,35 +181,13 @@ export default function WhatsAppSetup() {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
   }
 
-  // ─── 7. Generate PDF Blob for one customer ────────────────────────────────
-  const generatePdfForCustomer = async (customer, allBills, allPayments) => {
-    const html2pdf = (await import('html2pdf.js')).default
+  const generatePdfForCustomer = async (customer, allBills, allPayments, periodMonth = 'ALL') => {
+    const { ledger, openingBalance, totalUdhar, totalPaid, outstanding } = getCustomerLedgerForPeriod(customer, allBills, allPayments, periodMonth)
 
-    const ledger = getCustomerLedger(customer, allBills, allPayments)
-    const totalUdhar = ledger.reduce((s, e) => s + e.debit, 0)
-    const totalPaid  = ledger.reduce((s, e) => s + e.credit, 0)
-    const outstanding = totalUdhar - totalPaid
+    const htmlContent = generateLedgerHtml(customer, ledger, totalUdhar, totalPaid, outstanding, openingBalance, periodMonth)
 
-    const htmlContent = generateLedgerHtml(customer, ledger, totalUdhar, totalPaid, outstanding)
-
-    const container = document.createElement('div')
-    container.style.cssText = 'position:fixed;left:-9999px;top:0;width:800px;'
-    container.innerHTML = htmlContent
-    document.body.appendChild(container)
-
-    const blob = await html2pdf()
-      .set({
-        margin: [8, 8, 8, 8],
-        filename: `ledger_${customer.name}.pdf`,
-        image: { type: 'jpeg', quality: 0.92 },
-        html2canvas: { scale: 2, useCORS: true, logging: false },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-      })
-      .from(container)
-      .outputPdf('blob')
-
-    document.body.removeChild(container)
-    return blob
+    const pdfRes = await api.post('/customers/whatsapp/generate-pdf', { html: htmlContent })
+    return pdfRes.data.data.pdf
   }
 
   // ─── 8. Convert Blob to Base64 ────────────────────────────────────────────
@@ -257,14 +269,24 @@ export default function WhatsAppSetup() {
 
         if (broadcastMode === 'PDF') {
           // — PDF mode —
-          const pdfBlob = await generatePdfForCustomer(customer, allBills, allPayments)
-          const base64  = await blobToBase64(pdfBlob)
+          const base64 = await generatePdfForCustomer(customer, allBills, allPayments, statementMonth)
+
+          let dateHeading = 'account ledger statement'
+          if (statementMonth !== 'ALL') {
+            const [year, month] = statementMonth.split('-').map(Number)
+            const monthName = new Date(year, month - 1, 1).toLocaleString('en-IN', { month: 'long', year: 'numeric' })
+            dateHeading = `${monthName} statement`
+          }
+
+          const { openingBalance, totalUdhar, totalPaid, outstanding } = getCustomerLedgerForPeriod(customer, allBills, allPayments, statementMonth)
+
+          const caption = `Dear ${customer.name}, please find your ${dateHeading} attached.\n${statementMonth !== 'ALL' ? `Opening Balance (Pichli Baki): ₹${openingBalance.toLocaleString('en-IN')}\nNew Credit (Naya Udhar): ₹${totalUdhar.toLocaleString('en-IN')}\nNew Paid (Naya Bhugtan): ₹${totalPaid.toLocaleString('en-IN')}\nTotal Outstanding (Kul Baki): ₹${outstanding.toLocaleString('en-IN')}` : `Total Outstanding Balance: ₹${outstanding.toLocaleString('en-IN')}`}\n\nKindly clear your outstanding balance. Thank you! — Lari Traders`
 
           await api.post('/customers/whatsapp/send-media', {
             phone: phoneWithCountry,
             media: base64,
             filename: `Ledger_${customer.name.replace(/\s+/g, '_')}.pdf`,
-            caption: `Dear ${customer.name}, please find your account ledger statement attached. Kindly clear your outstanding balance. Thank you! — Lari Traders`
+            caption
           })
         } else {
           // — Text mode —
@@ -510,43 +532,66 @@ export default function WhatsAppSetup() {
             <span className="text-xs text-muted">{customers.length} customers with outstanding balance</span>
           </div>
 
-          {/* ── Broadcast Mode Toggle ── */}
-          {status === 'CONNECTED' && !customersLoading && customers.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-3)', background: 'var(--color-surface-2)', borderRadius: 'var(--radius-md)' }}>
-              <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">Send Mode:</span>
-              <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                <button
-                  onClick={() => setBroadcastMode('PDF')}
-                  disabled={progress.isSending}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 14px',
-                    borderRadius: 'var(--radius-sm)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', border: 'none', transition: 'all 0.2s',
-                    background: broadcastMode === 'PDF' ? 'var(--color-accent)' : 'transparent',
-                    color: broadcastMode === 'PDF' ? '#fff' : 'var(--color-text-muted)',
-                    outline: broadcastMode !== 'PDF' ? '1px solid var(--color-border)' : 'none'
-                  }}
-                >
-                  <FileText size={13} /> PDF Ledger
-                </button>
-                <button
-                  onClick={() => setBroadcastMode('TEXT')}
-                  disabled={progress.isSending}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 14px',
-                    borderRadius: 'var(--radius-sm)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', border: 'none', transition: 'all 0.2s',
-                    background: broadcastMode === 'TEXT' ? 'var(--color-accent)' : 'transparent',
-                    color: broadcastMode === 'TEXT' ? '#fff' : 'var(--color-text-muted)',
-                    outline: broadcastMode !== 'TEXT' ? '1px solid var(--color-border)' : 'none'
-                  }}
-                >
-                  <Type size={13} /> Text Reminder
-                </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', padding: 'var(--space-3)', background: 'var(--color-surface-2)', borderRadius: 'var(--radius-md)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">Send Mode:</span>
+                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                  <button
+                    onClick={() => setBroadcastMode('PDF')}
+                    disabled={progress.isSending}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 14px',
+                      borderRadius: 'var(--radius-sm)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', border: 'none', transition: 'all 0.2s',
+                      background: broadcastMode === 'PDF' ? 'var(--color-accent)' : 'transparent',
+                      color: broadcastMode === 'PDF' ? '#fff' : 'var(--color-text-muted)',
+                      outline: broadcastMode !== 'PDF' ? '1px solid var(--color-border)' : 'none'
+                    }}
+                  >
+                    <FileText size={13} /> PDF Ledger
+                  </button>
+                  <button
+                    onClick={() => setBroadcastMode('TEXT')}
+                    disabled={progress.isSending}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 14px',
+                      borderRadius: 'var(--radius-sm)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', border: 'none', transition: 'all 0.2s',
+                      background: broadcastMode === 'TEXT' ? 'var(--color-accent)' : 'transparent',
+                      color: broadcastMode === 'TEXT' ? '#fff' : 'var(--color-text-muted)',
+                      outline: broadcastMode !== 'TEXT' ? '1px solid var(--color-border)' : 'none'
+                    }}
+                  >
+                    <Type size={13} /> Text Reminder
+                  </button>
+                </div>
+                <span className="text-[10px] text-muted" style={{ marginLeft: 'auto' }}>
+                  {broadcastMode === 'PDF' ? '📄 Full PDF ledger statement attached' : '💬 Short text reminder message'}
+                </span>
               </div>
-              <span className="text-[10px] text-muted" style={{ marginLeft: 'auto' }}>
-                {broadcastMode === 'PDF' ? '📄 Full PDF ledger statement attached' : '💬 Short text reminder message'}
-              </span>
+              
+              {broadcastMode === 'PDF' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-2)' }}>
+                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-400" style={{ fontSize: '12px' }}>Statement Period:</span>
+                  <select 
+                    value={statementMonth}
+                    onChange={(e) => setStatementMonth(e.target.value)}
+                    disabled={progress.isSending}
+                    className="form-select text-xs"
+                    style={{ 
+                      padding: '4px 8px', 
+                      borderRadius: '6px', 
+                      border: '1px solid var(--color-border)', 
+                      background: 'var(--color-bg-primary)', 
+                      color: 'var(--color-text)', 
+                      fontSize: '12px' 
+                    }}
+                  >
+                    {getMonthOptions().map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
-          )}
 
           {status !== 'CONNECTED' ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-10) var(--space-4)', gap: 'var(--space-3)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>

@@ -12,6 +12,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
 
+
 const mapToBackendUnitType = (unit) => {
   if (!unit) return 'PACK'
   const u = unit.toUpperCase().trim()
@@ -214,6 +215,10 @@ const generateInvoiceHtml = (bill) => {
             padding: 0;
           }
         }
+        tr, td, th {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
         .invoice-container {
           border: 1.5px solid #000;
           padding: 0;
@@ -312,7 +317,7 @@ const generateInvoiceHtml = (bill) => {
         </table>
 
         <!-- Tax Summary & Invoice Totals -->
-        <div style="display: flex; border-bottom: 1.5px solid #000;">
+        <div style="display: flex; border-bottom: 1.5px solid #000; page-break-inside: avoid; break-inside: avoid;">
           <div style="flex: 1.2; padding: 12px; border-right: 1.5px solid #000;">
             <h4 style="margin: 0 0 6px 0; font-size: 12px; font-weight: 700; text-transform: uppercase; color: #555;">Tax Summary:</h4>
             <table style="width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 11px;">
@@ -371,7 +376,7 @@ const generateInvoiceHtml = (bill) => {
         </div>
 
         <!-- Terms & Signatures -->
-        <div style="display: flex;">
+        <div style="display: flex; page-break-inside: avoid; break-inside: avoid;">
           <div style="flex: 1.2; padding: 12px; border-right: 1.5px solid #000; font-size: 10px; display: flex; flex-direction: column; justify-content: space-between; min-height: 140px;">
             <div>
               <h4 style="margin: 0 0 6px 0; font-weight: 700; text-transform: uppercase; color: #555; font-size: 11px; letter-spacing: 0.5px;">Terms And Conditions:</h4>
@@ -394,7 +399,7 @@ const generateInvoiceHtml = (bill) => {
           </div>
         </div>
         <!-- Thank You Footer -->
-        <div style="text-align: center; padding: 10px 0 6px 0; border-top: 1.5px solid #000; margin-top: 0;">
+        <div style="text-align: center; padding: 10px 0 6px 0; border-top: 1.5px solid #000; margin-top: 0; page-break-inside: avoid; break-inside: avoid;">
           <div style="font-size: 13px; font-weight: 700; color: #111; letter-spacing: 0.3px;">Thank you for your business!</div>
           <div style="font-size: 11px; font-style: italic; color: #555; margin-top: 2px;">Our goal is customer satisfaction.</div>
         </div>
@@ -809,54 +814,20 @@ Thank you for doing business with Lari Traders!`
 
     if (isConnected) {
       toast.info('Generating PDF invoice and sending to WhatsApp...')
-      const tempContainer = document.createElement('div')
-      tempContainer.innerHTML = generateInvoiceHtml(bill)
-      const bodyContent = tempContainer.querySelector('.invoice-container') || tempContainer
-
-      const opt = {
-        margin:       [0.4, 0.4, 0.4, 0.4],
-        filename:     `Invoice-${bill.billNumber}.pdf`,
-        image:        { type: 'jpeg', quality: 0.98 },
-        html2canvas:  { scale: 2, useCORS: true },
-        jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
-      };
-
-      const runMediaSend = async () => {
-        try {
-          const worker = window.html2pdf().from(bodyContent).set(opt)
-          const pdfBlob = await worker.outputPdf('blob')
-          
-          const reader = new FileReader()
-          reader.readAsDataURL(pdfBlob)
-          reader.onloadend = async () => {
-            try {
-              const base64Data = reader.result.split(',')[1]
-              await api.post('/customers/whatsapp/send-media', {
-                phone: phoneWithCountry,
-                media: base64Data,
-                filename: `Invoice-${bill.billNumber}.pdf`,
-                caption: text
-              })
-              toast.success('Invoice PDF sent successfully via WhatsApp!')
-            } catch (err) {
-              console.error(err)
-              toast.error('WhatsApp PDF delivery failed: ' + (err.response?.data?.message || err.message))
-            }
-          }
-        } catch (err) {
-          console.error(err)
-          toast.error('PDF generation failed: ' + err.message)
-        }
-      }
-
-      if (window.html2pdf) {
-        await runMediaSend()
-      } else {
-        const script = document.createElement('script')
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
-        script.onload = runMediaSend
-        script.onerror = () => toast.error('Failed to load PDF engine')
-        document.body.appendChild(script)
+      const invoiceHtmlContent = generateInvoiceHtml(bill)
+      try {
+        const pdfRes = await api.post('/customers/whatsapp/generate-pdf', { html: invoiceHtmlContent })
+        const base64Pdf = pdfRes.data.data.pdf
+        await api.post('/customers/whatsapp/send-media', {
+          phone: phoneWithCountry,
+          media: base64Pdf,
+          filename: `Invoice-${bill.billNumber}.pdf`,
+          caption: text
+        })
+        toast.success('Invoice PDF sent successfully via WhatsApp!')
+      } catch (err) {
+        console.error(err)
+        toast.error('WhatsApp PDF delivery failed: ' + (err.response?.data?.message || err.message))
       }
     } else {
       // Fallback to text redirect
@@ -873,65 +844,24 @@ Thank you for doing business with Lari Traders!`
     if (isNative) {
       try {
         toast.info('Generating Invoice PDF...')
-        const tempContainer = document.createElement('div')
-        tempContainer.innerHTML = generateInvoiceHtml(bill)
-        const bodyContent = tempContainer.querySelector('.invoice-container') || tempContainer
-        
-        const opt = {
-          margin:       [0.4, 0.4, 0.4, 0.4],
-          filename:     `Invoice-${bill.billNumber}.pdf`,
-          image:        { type: 'jpeg', quality: 0.98 },
-          html2canvas:  { scale: 2, useCORS: true },
-          jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
-        };
+        const nativeInvoiceHtml = generateInvoiceHtml(bill)
+        const pdfRes = await api.post('/customers/whatsapp/generate-pdf', { html: nativeInvoiceHtml })
+        const base64Data = pdfRes.data.data.pdf
+        const fileName = `Invoice-${bill.billNumber}.pdf`
 
-        const runGeneration = async () => {
-          try {
-            const worker = window.html2pdf().from(bodyContent).set(opt)
-            const pdfBlob = await worker.outputPdf('blob')
-            
-            const reader = new FileReader()
-            reader.readAsDataURL(pdfBlob)
-            reader.onloadend = async () => {
-              try {
-                const base64Data = reader.result.split(',')[1]
-                const fileName = `Invoice-${bill.billNumber}.pdf`
-                
-                const writeResult = await Filesystem.writeFile({
-                  path: fileName,
-                  data: base64Data,
-                  directory: Directory.Cache
-                })
-                
-                await Share.share({
-                  title: `Invoice ${bill.billNumber}`,
-                  files: [writeResult.uri]
-                })
-                toast.success('Invoice shared successfully!')
-              } catch (err) {
-                console.error(err)
-                toast.error('Share failed: ' + err.message)
-              }
-            }
-          } catch (err) {
-            console.error(err)
-            toast.error('PDF generation failed: ' + err.message)
-          }
-        }
-
-        if (window.html2pdf) {
-          await runGeneration()
-        } else {
-          toast.info('Preparing PDF engine...')
-          const script = document.createElement('script')
-          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
-          script.onload = runGeneration
-          script.onerror = () => toast.error('Failed to load PDF engine')
-          document.body.appendChild(script)
-        }
+        const writeResult = await Filesystem.writeFile({
+          path: fileName,
+          data: base64Data,
+          directory: Directory.Cache
+        })
+        await Share.share({
+          title: `Invoice ${bill.billNumber}`,
+          files: [writeResult.uri]
+        })
+        toast.success('Invoice shared successfully!')
       } catch (err) {
         console.error(err)
-        toast.error('Failed to initiate PDF generation')
+        toast.error('Failed to generate/share PDF: ' + (err.response?.data?.message || err.message))
       }
     } else {
       if (iframeRef && iframeRef.current) {

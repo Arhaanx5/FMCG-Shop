@@ -10,7 +10,7 @@ import StatCard from '../components/StatCard'
 import OverpaymentModal from '../components/OverpaymentModal'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
-import { getCustomerLedger, generateLedgerHtml } from '../utils/ledger'
+import { getCustomerLedger, generateLedgerHtml, getCustomerLedgerForPeriod } from '../utils/ledger'
 
 const emptyForm = { customerId: '', billId: '', amount: '', paymentMode: 'CASH', notes: '' }
 
@@ -129,7 +129,20 @@ export default function Khata() {
   const [customerPanelTab, setCustomerPanelTab] = useState({})
   const [customerPayments, setCustomerPayments] = useState({}) // { [customerId]: [payments] }
   const [customerPaymentsLoading, setCustomerPaymentsLoading] = useState({}) // { [customerId]: boolean }
+  const [selectedMonths, setSelectedMonths] = useState({}) // { [customerId]: 'ALL' }
   const toast = useToast()
+
+  const getMonthOptions = () => {
+    const options = [{ value: 'ALL', label: 'All Time' }]
+    const now = new Date()
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      const label = d.toLocaleString('en-IN', { month: 'long', year: 'numeric' })
+      options.push({ value, label })
+    }
+    return options
+  }
 
   // Edit Payment State
   const [editingPayment, setEditingPayment] = useState(null)
@@ -195,19 +208,9 @@ export default function Khata() {
     }
   }
 
-  const handleWhatsAppShare = async (customer, totalUdhar, totalPaid, outstanding) => {
+  const handleWhatsAppShare = async (customer, periodMonth = 'ALL') => {
     if (!customer) return
     
-    const text = `*LARI TRADERS*
-Outstanding Statement
-Customer: *${customer.name}*
-Shop Name: *${customer.shopName || '—'}*
-Total Udhar Taken: *₹${totalUdhar.toLocaleString('en-IN')}*
-Total Amount Paid: *₹${totalPaid.toLocaleString('en-IN')}*
-Current Outstanding Balance: *₹${outstanding.toLocaleString('en-IN')}*
-
-Please clear your outstanding balance as soon as possible. Thank you for doing business with Lari Traders!`
-
     const phone = customer.phone ? customer.phone.trim().replace(/\D/g, '') : ''
     let phoneWithCountry = phone
     if (phone.length === 10) {
@@ -239,68 +242,56 @@ Please clear your outstanding balance as soon as possible. Thank you for doing b
       }
 
       toast.info('Generating PDF Ledger and sending to WhatsApp...')
-      const ledger = getCustomerLedger(customer, allBills, custPayments)
+      const { ledger, openingBalance, totalUdhar, totalPaid, outstanding } = getCustomerLedgerForPeriod(customer, allBills, custPayments, periodMonth)
       
-      const tempContainer = document.createElement('div')
-      tempContainer.innerHTML = generateLedgerHtml(customer, ledger, totalUdhar, totalPaid, outstanding)
-      tempContainer.style.position = 'absolute'
-      tempContainer.style.left = '-9999px'
-      tempContainer.style.top = '-9999px'
-      document.body.appendChild(tempContainer)
-
-      const opt = {
-        margin:       [0.4, 0.4, 0.4, 0.4],
-        filename:     `Ledger-${customer.name.replace(/\s+/g, '_')}.pdf`,
-        image:        { type: 'jpeg', quality: 0.98 },
-        html2canvas:  { scale: 2, useCORS: true },
-        jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
-      };
-
-      const runMediaSend = async () => {
-        try {
-          const worker = window.html2pdf().from(tempContainer).set(opt)
-          const pdfBlob = await worker.outputPdf('blob')
-          
-          const reader = new FileReader()
-          reader.readAsDataURL(pdfBlob)
-          reader.onloadend = async () => {
-            try {
-              const base64Data = reader.result.split(',')[1]
-              await api.post('/customers/whatsapp/send-media', {
-                phone: phoneWithCountry,
-                media: base64Data,
-                filename: `Ledger-${customer.name.replace(/\s+/g, '_')}.pdf`,
-                caption: text
-              })
-              toast.success('Ledger statement PDF sent successfully via WhatsApp!')
-            } catch (err) {
-              console.error(err)
-              toast.error('WhatsApp PDF delivery failed: ' + (err.response?.data?.message || err.message))
-            } finally {
-              document.body.removeChild(tempContainer)
-            }
-          }
-        } catch (err) {
-          console.error(err)
-          toast.error('PDF generation failed: ' + err.message)
-          document.body.removeChild(tempContainer)
-        }
+      let dateHeading = 'Outstanding Statement'
+      if (periodMonth !== 'ALL') {
+        const [year, month] = periodMonth.split('-').map(Number)
+        const monthName = new Date(year, month - 1, 1).toLocaleString('en-IN', { month: 'long', year: 'numeric' })
+        dateHeading = `Statement for ${monthName}`
       }
 
-      if (window.html2pdf) {
-        await runMediaSend()
-      } else {
-        const script = document.createElement('script')
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
-        script.onload = runMediaSend
-        script.onerror = () => {
-          toast.error('Failed to load PDF engine')
-          document.body.removeChild(tempContainer)
-        }
-        document.body.appendChild(script)
+      const text = `*LARI TRADERS*
+${dateHeading}
+Customer: *${customer.name}*
+Shop Name: *${customer.shopName || '—'}*
+${periodMonth !== 'ALL' ? `Opening Balance (Pichla Outstanding): *₹${openingBalance.toLocaleString('en-IN')}*\nNew Credit (Naya Udhar): *₹${totalUdhar.toLocaleString('en-IN')}*\nNew Paid (Naya Bhugtan): *₹${totalPaid.toLocaleString('en-IN')}*\nTotal Outstanding (Kul Baki): *₹${outstanding.toLocaleString('en-IN')}*` : `Total Udhar Taken: *₹${totalUdhar.toLocaleString('en-IN')}*\nTotal Amount Paid: *₹${totalPaid.toLocaleString('en-IN')}*\nRemaining Outstanding: *₹${outstanding.toLocaleString('en-IN')}*`}
+
+Please clear your outstanding balance. Thank you for doing business with Lari Traders!`
+
+      const htmlContent = generateLedgerHtml(customer, ledger, totalUdhar, totalPaid, outstanding, openingBalance, periodMonth)
+
+      toast.info('Generating PDF statement and sending to WhatsApp...')
+      try {
+        const pdfRes = await api.post('/customers/whatsapp/generate-pdf', { html: htmlContent })
+        const base64Pdf = pdfRes.data.data.pdf
+        await api.post('/customers/whatsapp/send-media', {
+          phone: phoneWithCountry,
+          media: base64Pdf,
+          filename: `Ledger-${customer.name.replace(/\s+/g, '_')}.pdf`,
+          caption: text
+        })
+        toast.success('Ledger statement PDF sent successfully via WhatsApp!')
+      } catch (err) {
+        console.error(err)
+        toast.error('WhatsApp PDF delivery failed: ' + (err.response?.data?.message || err.message))
       }
     } else {
-      // Fallback to text redirect
+      const custPayments = customerPayments[customer.id] || []
+      const { totalUdhar, totalPaid, outstanding } = getCustomerLedgerForPeriod(customer, allBills, custPayments, periodMonth)
+      let dateHeading = 'Outstanding Statement'
+      if (periodMonth !== 'ALL') {
+        const [year, month] = periodMonth.split('-').map(Number)
+        const monthName = new Date(year, month - 1, 1).toLocaleString('en-IN', { month: 'long', year: 'numeric' })
+        dateHeading = `Statement for ${monthName}`
+      }
+      const text = `*LARI TRADERS*
+${dateHeading}
+Customer: *${customer.name}*
+Shop Name: *${customer.shopName || '—'}*
+Current Outstanding Balance: *₹${outstanding.toLocaleString('en-IN')}*
+
+Please clear your outstanding balance as soon as possible. Thank you for doing business with Lari Traders!`
       toast.info('WhatsApp service is disconnected. Sharing via text summary...')
       const encodedText = encodeURIComponent(text)
       const whatsappUrl = `https://api.whatsapp.com/send?phone=${phoneWithCountry}&text=${encodedText}`
@@ -330,15 +321,110 @@ Please clear your outstanding balance as soon as possible. Thank you for doing b
 
   const renderCustomerLedgerTable = (customer) => {
     const custPayments = customerPayments[customer.id] || []
-    const ledger = getCustomerLedger(customer, allBills, custPayments)
+    const custSelectedMonth = selectedMonths[customer.id] || 'ALL'
+    const { ledger, openingBalance, totalUdhar, totalPaid, outstanding } = getCustomerLedgerForPeriod(customer, allBills, custPayments, custSelectedMonth)
     
     if (ledger.length === 0) {
-      return <div className="text-center py-6 text-xs text-muted">No transactions found for this customer.</div>
+      return (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>Statement Period:</span>
+              <select 
+                value={custSelectedMonth}
+                onChange={(e) => setSelectedMonths(prev => ({ ...prev, [customer.id]: e.target.value }))}
+                className="form-select text-xs"
+                style={{ 
+                  padding: '4px 8px', 
+                  borderRadius: '6px', 
+                  border: '1px solid var(--color-border)', 
+                  background: 'var(--color-bg-primary)', 
+                  color: 'var(--color-text)', 
+                  fontSize: '12px' 
+                }}
+              >
+                {getMonthOptions().map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+            <button 
+              className="btn btn-secondary btn-sm"
+              onClick={() => handleWhatsAppShare(customer, custSelectedMonth)}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#25D366' }}
+            >
+              Share PDF
+            </button>
+          </div>
+          <div className="text-center py-6 text-xs text-muted">No transactions found for this customer in this period.</div>
+        </div>
+      )
     }
 
     return (
-      <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-theme shadow-sm">
-        <table className="w-full border-collapse text-left text-sm text-slate-500 dark:text-slate-400">
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>Statement Period:</span>
+            <select 
+              value={custSelectedMonth}
+              onChange={(e) => setSelectedMonths(prev => ({ ...prev, [customer.id]: e.target.value }))}
+              className="form-select text-xs"
+              style={{ 
+                padding: '4px 8px', 
+                borderRadius: '6px', 
+                border: '1px solid var(--color-border)', 
+                background: 'var(--color-bg-primary)', 
+                color: 'var(--color-text)', 
+                fontSize: '12px' 
+              }}
+            >
+              {getMonthOptions().map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+          <button 
+            className="btn btn-secondary btn-sm"
+            onClick={() => handleWhatsAppShare(customer, custSelectedMonth)}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#25D366' }}
+          >
+            Share PDF
+          </button>
+        </div>
+        
+        {custSelectedMonth !== 'ALL' && (
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', 
+            gap: '12px', 
+            marginBottom: '16px',
+            background: 'var(--color-bg-primary)',
+            padding: '12px',
+            borderRadius: '8px',
+            border: '1px solid var(--color-border)'
+          }}>
+            <div>
+              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>Previous Outstanding (Pichli Baki)</div>
+              <div style={{ fontWeight: 'bold', fontSize: '15px' }}>₹{openingBalance.toLocaleString('en-IN')}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>New Udhar (Credit)</div>
+              <div style={{ fontWeight: 'bold', fontSize: '15px' }}>₹{totalUdhar.toLocaleString('en-IN')}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>New Bhugtan (Paid)</div>
+              <div style={{ fontWeight: 'bold', fontSize: '15px', color: 'var(--color-success)' }}>- ₹{totalPaid.toLocaleString('en-IN')}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>Total Outstanding (Kul Baki)</div>
+              <div style={{ fontWeight: 'bold', fontSize: '15px', color: outstanding > 0 ? 'var(--color-danger)' : 'var(--color-success)' }}>₹{outstanding.toLocaleString('en-IN')}</div>
+            </div>
+          </div>
+        )}
+
+        <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-theme shadow-sm">
+          <table className="w-full border-collapse text-left text-sm text-slate-500 dark:text-slate-400">
           <thead>
             <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
               <th className="px-4 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Date & Time</th>
@@ -407,6 +493,7 @@ Please clear your outstanding balance as soon as possible. Thank you for doing b
           </tbody>
         </table>
       </div>
+    </div>
     )
   }
 
@@ -646,7 +733,7 @@ Please clear your outstanding balance as soon as possible. Thank you for doing b
                         className="btn btn-ghost btn-icon btn-sm" 
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleWhatsAppShare(customer, totalUdhar, totalPaid, outstanding);
+                          handleWhatsAppShare(customer, selectedMonths[customer.id] || 'ALL');
                         }} 
                         title="Share Balance on WhatsApp"
                         style={{ color: '#25D366' }}
