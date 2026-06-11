@@ -105,18 +105,6 @@ public class DataInitializer implements CommandLineRunner {
                 }
             }
 
-            // Drop products_category_check constraint if it exists to allow the new enum value
-            try {
-                jdbcTemplate.execute("ALTER TABLE products DROP CONSTRAINT IF EXISTS products_category_check");
-                if (isDev) {
-                    System.out.println("✅ Dropped products_category_check constraint to allow new categories");
-                }
-            } catch (Exception e) {
-                if (isDev) {
-                    System.out.println("⚠️ Could not drop products_category_check constraint: " + e.getMessage());
-                }
-            }
-
             // Patch Lays Chips Classic secondary unit to LADI
             productRepository.findByNameExact("Lays Chips Classic").forEach(product -> {
                 if (!"LADI".equals(product.getSecondaryUnit())) {
@@ -127,21 +115,30 @@ public class DataInitializer implements CommandLineRunner {
                     }
                 }
             });
-
-            // Move any product containing "Chips" or "Chip" in name/brand from SNACKS to CHIPS
-            productRepository.findAll().forEach(product -> {
-                if (product.getCategory() == Category.SNACKS) {
-                    String nameLower = product.getName() != null ? product.getName().toLowerCase() : "";
-                    String brandLower = product.getBrand() != null ? product.getBrand().toLowerCase() : "";
-                    if (nameLower.contains("chip") || nameLower.contains("chips") ||
-                        brandLower.contains("chip") || brandLower.contains("chips")) {
-                        product.setCategory(Category.CHIPS);
-                        productRepository.save(product);
-                        System.out.println("✅ Moved product '" + product.getName() + "' to CHIPS category");
-                    }
-                }
-            });
         }
+
+        // Drop products_category_check constraint if it exists to allow the new enum value (all environments)
+        try {
+            jdbcTemplate.execute("ALTER TABLE products DROP CONSTRAINT IF EXISTS products_category_check");
+            System.out.println("✅ Dropped products_category_check constraint to allow new categories (all environments)");
+        } catch (Exception e) {
+            System.out.println("⚠️ Could not drop products_category_check constraint: " + e.getMessage());
+        }
+
+        // Move any product containing "Chips" or "Chip" in name/brand from SNACKS to CHIPS (all environments)
+        productRepository.findAll().forEach(product -> {
+            if (product.getCategory() == Category.SNACKS) {
+                String nameLower = product.getName() != null ? product.getName().toLowerCase() : "";
+                String brandLower = product.getBrand() != null ? product.getBrand().toLowerCase() : "";
+                if (nameLower.contains("chip") || nameLower.contains("chips") ||
+                    brandLower.contains("chip") || brandLower.contains("chips")) {
+                    product.setCategory(Category.CHIPS);
+                    productRepository.save(product);
+                    System.out.println("✅ Moved product '" + product.getName() + "' to CHIPS category");
+                }
+            }
+        });
+
 
         // Create admin if not exists
         User admin = null;

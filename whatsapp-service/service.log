@@ -8425,3 +8425,23 @@ essage":"⚠️ Message failed, retry 2/3 in 15s","data":{"id":"7b8bff61-d1bf-4c
 {"ts":"2026-06-11T11:35:32.014Z","level":"WARN","module":"PORT","message":"Port 3000 busy, retrying in 3000ms (10/10)"}
 {"ts":"2026-06-11T11:35:35.023Z","level":"ERROR","module":"SYSTEM","message":"Port 3000 still occupied after retries. Exiting."}
 {"ts":"2026-06-11T13:40:52.410Z","level":"INFO","module":"SYSTEM","message":"Received SIGINT — shutting down"}
+{"ts":"2026-06-11T13:44:21.103Z","level":"INFO","module":"QUEUE","message":"Loaded 0 pending messages from disk"}
+{"ts":"2026-06-11T13:44:21.146Z","level":"INFO","module":"CHROME","message":"Using Chrome from env: C:\\Users\\arhaa\\.cache\\puppeteer\\chrome\\win64-146.0.7680.31\\chrome-win64\\chrome.exe"}
+{"ts":"2026-06-11T13:44:21.150Z","level":"INFO","module":"SYSTEM","message":"🚀 Lari Traders WhatsApp Service v2.0 starting..."}
+{"ts":"2026-06-11T13:44:21.150Z","level":"INFO","module":"SYSTEM","message":"Cleaning up any orphaned Chrome/Puppeteer processes..."}
+{"ts":"2026-06-11T13:44:21.509Z","level":"INFO","module":"SYSTEM","message":"Orphaned Chrome processes cleaned."}
+{"ts":"2026-06-11T13:44:21.520Z","level":"INFO","module":"SYSTEM","message":"✅ HTTP server listening on http://127.0.0.1:3000"}
+{"ts":"2026-06-11T13:44:21.520Z","level":"INFO","module":"SYSTEM","message":"📋 Endpoints: /health /status /qr /send /send-bulk /send-media /queue/stats"}
+{"ts":"2026-06-11T13:44:21.520Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-11T13:44:33.327Z","level":"INFO","module":"WA","message":"Loading 0%: WhatsApp"}
+{"ts":"2026-06-11T13:44:36.462Z","level":"INFO","module":"WA","message":"Authenticated ✅"}
+{"ts":"2026-06-11T13:44:37.643Z","level":"INFO","module":"WA","message":"Loading 2%: WhatsApp"}
+{"ts":"2026-06-11T13:44:37.958Z","level":"INFO","module":"WA","message":"WhatsApp READY ✅ — Queue processor started"}
+{"ts":"2026-06-11T13:44:37.958Z","level":"INFO","module":"QUEUE","message":"Message processor started"}
+{"ts":"2026-06-11T13:44:38.726Z","level":"INFO","module":"WA","message":"Loading 28%: WhatsApp"}
+{"ts":"2026-06-11T13:44:39.276Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-11T13:44:40.404Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-11T13:44:41.812Z","level":"INFO","module":"WA","message":"Loading 46%: WhatsApp"}
+{"ts":"2026-06-11T13:44:42.813Z","level":"INFO","module":"WA","message":"Loading 73%: WhatsApp"}
+{"ts":"2026-06-11T13:44:43.861Z","level":"INFO","module":"WA","message":"Loading 95%: WhatsApp"}
+{"ts":"2026-06-11T13:44:44.715Z","level":"INFO","module":"WA","message":"Loading 99%: WhatsApp"}
