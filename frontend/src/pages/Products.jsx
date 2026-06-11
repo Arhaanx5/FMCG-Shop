@@ -469,17 +469,21 @@ export default function Products() {
         }
         /* First row tooltip positioning (show downwards to prevent table header cut-off) */
         tbody tr:first-child .stock-tooltip-box {
-          bottom: auto;
-          top: 125%;
-          transform: translateX(-50%) translateY(-10px);
+          bottom: auto !important;
+          top: 125% !important;
+          transform: translateX(-50%) translateY(-10px) !important;
         }
         tbody tr:first-child .stock-tooltip-container:hover .stock-tooltip-box {
-          transform: translateX(-50%) translateY(0);
+          opacity: 1 !important;
+          visibility: visible !important;
+          transform: translateX(-50%) translateY(0) !important;
+          bottom: auto !important;
+          top: 125% !important;
         }
         tbody tr:first-child .stock-tooltip-arrow {
-          top: auto;
-          bottom: 100%;
-          border-color: transparent transparent rgba(15, 23, 42, 0.95) transparent;
+          top: auto !important;
+          bottom: 100% !important;
+          border-color: transparent transparent rgba(15, 23, 42, 0.95) transparent !important;
         }
       `}</style>
       <div className="page-header">
