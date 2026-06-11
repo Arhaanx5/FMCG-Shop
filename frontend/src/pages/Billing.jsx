@@ -568,11 +568,13 @@ export default function Billing() {
       const gstRate = Number(item.gstPercent || 0)
       const cessRate = Number(item.cessPercent || 0)
       
-      const lineTotal = (item.sellPricePrimary * qPri) + (item.sellPriceSecondary * qSec)
-      const gst = lineTotal * (gstRate / 100)
-      const cess = lineTotal * (cessRate / 100)
+      const lineTotalInclusive = (item.sellPricePrimary * qPri) + (item.sellPriceSecondary * qSec)
+      const taxDivisor = 1 + (gstRate + cessRate) / 100
+      const lineTotalBase = lineTotalInclusive / taxDivisor
+      const gst = lineTotalBase * (gstRate / 100)
+      const cess = lineTotalBase * (cessRate / 100)
       
-      acc.cartSubtotal += lineTotal
+      acc.cartSubtotal += lineTotalBase
       acc.gstTotal += gst
       acc.cessTotal += cess
       return acc

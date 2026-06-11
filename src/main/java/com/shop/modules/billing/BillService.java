@@ -290,34 +290,38 @@ public class BillService {
 
             Product product = productService.findProductByIdentifier(itemReq.getProductId());
 
-            // Get rate based on unit type
-            BigDecimal rate = getRateForUnit(
+            // Get rate based on unit type (stored inclusive of tax)
+            BigDecimal inclusivePrice = getRateForUnit(
                     product,
                     itemReq.getUnitType().name());
 
-            // Calculate GST
-            BigDecimal itemSubtotal = rate
-                    .multiply(BigDecimal.valueOf(
-                            itemReq.getQuantity()));
-
             BigDecimal itemGstPercent = itemReq.getGstPercent() != null ? itemReq.getGstPercent() : product.getGstPercent();
-            BigDecimal gstRate = itemGstPercent
-                    .divide(BigDecimal.valueOf(100));
+            BigDecimal itemCessPercent = itemReq.getCessPercent() != null ? itemReq.getCessPercent() : (product.getCessPercent() != null ? product.getCessPercent() : BigDecimal.ZERO);
 
+            // taxDivisor = 1 + (gstPercent + cessPercent) / 100
+            BigDecimal taxDivisor = BigDecimal.ONE.add(
+                    itemGstPercent.add(itemCessPercent).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)
+            );
+
+            // Back-calculate the base rate (excluding tax)
+            BigDecimal rate = inclusivePrice.divide(taxDivisor, 4, RoundingMode.HALF_UP);
+
+            // Calculate item subtotal based on base rate
+            BigDecimal itemSubtotal = rate
+                    .multiply(BigDecimal.valueOf(itemReq.getQuantity()))
+                    .setScale(2, RoundingMode.HALF_UP);
+
+            BigDecimal gstRate = itemGstPercent.divide(BigDecimal.valueOf(100));
             BigDecimal gstAmount = itemSubtotal
                     .multiply(gstRate)
                     .setScale(2, RoundingMode.HALF_UP);
 
-            BigDecimal itemCessPercent = itemReq.getCessPercent() != null ? itemReq.getCessPercent() : (product.getCessPercent() != null ? product.getCessPercent() : BigDecimal.ZERO);
-            BigDecimal cessRate = itemCessPercent
-                    .divide(BigDecimal.valueOf(100));
-
+            BigDecimal cessRate = itemCessPercent.divide(BigDecimal.valueOf(100));
             BigDecimal cessAmount = itemSubtotal
                     .multiply(cessRate)
                     .setScale(2, RoundingMode.HALF_UP);
 
-            BigDecimal itemTotal =
-                    itemSubtotal.add(gstAmount).add(cessAmount);
+            BigDecimal itemTotal = itemSubtotal.add(gstAmount).add(cessAmount);
 
             // Get source batch
             StockBatch linkedBatch = null;

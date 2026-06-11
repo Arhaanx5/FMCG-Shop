@@ -8301,8 +8301,8 @@ essage":"⚠️ Message failed, retry 2/3 in 15s","data":{"id":"7b8bff61-d1bf-4c
 [36m[2026-06-10T05:36:23.333Z] [INFO] [API] GET /status[0m
 [36m[2026-06-10T05:36:23.587Z] [INFO] [API] GET /status[0m
 [36m[2026-06-10T06:30:21.084Z] [INFO] [API] GET /status[0m
-e":"SYSTEM","message":"Cleaning up any orphaned Chrome/Puppeteer processes..."}
-{"ts":"2026-06-10T00:56:15.865Z","level":"INFO","module":"SYSTEM","message":"Orphaned Chrome processes cleaned."}
+[36m[2026-06-10T08:10:01.866Z] [INFO] [SYSTEM] Received SIGINT — shutting down[0m
+"2026-06-10T00:56:15.865Z","level":"INFO","module":"SYSTEM","message":"Orphaned Chrome processes cleaned."}
 {"ts":"2026-06-10T00:56:15.885Z","level":"INFO","module":"SYSTEM","message":"✅ HTTP server listening on http://127.0.0.1:3000"}
 {"ts":"2026-06-10T00:56:15.886Z","level":"INFO","module":"SYSTEM","message":"📋 Endpoints: /health /status /qr /send /send-bulk /send-media /queue/stats"}
 {"ts":"2026-06-10T00:56:15.886Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
@@ -8313,3 +8313,115 @@ e":"SYSTEM","message":"Cleaning up any orphaned Chrome/Puppeteer processes..."}
 {"ts":"2026-06-10T05:36:23.333Z","level":"INFO","module":"API","message":"GET /status"}
 {"ts":"2026-06-10T05:36:23.587Z","level":"INFO","module":"API","message":"GET /status"}
 {"ts":"2026-06-10T06:30:21.084Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-10T08:10:01.866Z","level":"INFO","module":"SYSTEM","message":"Received SIGINT — shutting down"}
+{"ts":"2026-06-10T09:02:54.860Z","level":"INFO","module":"QUEUE","message":"Loaded 0 pending messages from disk"}
+{"ts":"2026-06-10T09:02:54.930Z","level":"INFO","module":"CHROME","message":"Using Chrome from env: C:\\Users\\arhaa\\.cache\\puppeteer\\chrome\\win64-146.0.7680.31\\chrome-win64\\chrome.exe"}
+{"ts":"2026-06-10T09:02:54.937Z","level":"INFO","module":"SYSTEM","message":"🚀 Lari Traders WhatsApp Service v2.0 starting..."}
+{"ts":"2026-06-10T09:02:54.937Z","level":"INFO","module":"SYSTEM","message":"Cleaning up any orphaned Chrome/Puppeteer processes..."}
+{"ts":"2026-06-10T09:02:55.666Z","level":"INFO","module":"SYSTEM","message":"Orphaned Chrome processes cleaned."}
+{"ts":"2026-06-10T09:02:55.698Z","level":"INFO","module":"SYSTEM","message":"✅ HTTP server listening on http://127.0.0.1:3000"}
+{"ts":"2026-06-10T09:02:55.698Z","level":"INFO","module":"SYSTEM","message":"📋 Endpoints: /health /status /qr /send /send-bulk /send-media /queue/stats"}
+{"ts":"2026-06-10T09:02:55.699Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-10T09:03:13.787Z","level":"INFO","module":"WA","message":"Loading 0%: WhatsApp"}
+{"ts":"2026-06-10T09:03:18.049Z","level":"INFO","module":"WA","message":"Authenticated ✅"}
+{"ts":"2026-06-10T09:03:20.328Z","level":"INFO","module":"WA","message":"WhatsApp READY ✅ — Queue processor started"}
+{"ts":"2026-06-10T09:03:20.342Z","level":"INFO","module":"QUEUE","message":"Message processor started"}
+{"ts":"2026-06-10T09:03:20.807Z","level":"INFO","module":"WA","message":"Loading 56%: WhatsApp"}
+{"ts":"2026-06-10T09:03:21.821Z","level":"INFO","module":"WA","message":"Loading 95%: WhatsApp"}
+{"ts":"2026-06-10T09:03:22.668Z","level":"INFO","module":"WA","message":"Loading 99%: WhatsApp"}
+{"ts":"2026-06-10T09:09:55.043Z","level":"WARN","module":"WA","message":"Heartbeat: state drifted","data":{"state":"OPENING"}}
+{"ts":"2026-06-10T09:09:55.044Z","level":"INFO","module":"WA","message":"Reconnect attempt 1 scheduled in 3s"}
+{"ts":"2026-06-10T09:09:58.059Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-10T09:09:58.202Z","level":"ERROR","module":"WA","message":"Initialization failed","data":{"err":"The browser is already running for d:\\intelliJ2025\\fmcg-shop\\fmcg-shop\\whatsapp-service\\session_data\\session. Use a different `userDataDir` or stop the running browser first."}}
+{"ts":"2026-06-10T09:09:58.203Z","level":"INFO","module":"WA","message":"Reconnect attempt 2 scheduled in 5s"}
+{"ts":"2026-06-10T09:10:03.018Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-10T09:10:03.124Z","level":"ERROR","module":"WA","message":"Initialization failed","data":{"err":"The browser is already running for d:\\intelliJ2025\\fmcg-shop\\fmcg-shop\\whatsapp-service\\session_data\\session. Use a different `userDataDir` or stop the running browser first."}}
+{"ts":"2026-06-10T09:10:03.124Z","level":"INFO","module":"WA","message":"Reconnect attempt 3 scheduled in 8s"}
+{"ts":"2026-06-10T09:10:10.810Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-10T09:10:10.917Z","level":"ERROR","module":"WA","message":"Initialization failed","data":{"err":"The browser is already running for d:\\intelliJ2025\\fmcg-shop\\fmcg-shop\\whatsapp-service\\session_data\\session. Use a different `userDataDir` or stop the running browser first."}}
+{"ts":"2026-06-10T09:10:10.917Z","level":"INFO","module":"WA","message":"Reconnect attempt 4 scheduled in 12s"}
+{"ts":"2026-06-10T09:10:23.221Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-10T09:10:23.333Z","level":"ERROR","module":"WA","message":"Initialization failed","data":{"err":"The browser is already running for d:\\intelliJ2025\\fmcg-shop\\fmcg-shop\\whatsapp-service\\session_data\\session. Use a different `userDataDir` or stop the running browser first."}}
+{"ts":"2026-06-10T09:10:23.334Z","level":"INFO","module":"WA","message":"Reconnect attempt 5 scheduled in 20s"}
+{"ts":"2026-06-10T09:10:43.007Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-10T09:10:43.137Z","level":"ERROR","module":"WA","message":"Initialization failed","data":{"err":"The browser is already running for d:\\intelliJ2025\\fmcg-shop\\fmcg-shop\\whatsapp-service\\session_data\\session. Use a different `userDataDir` or stop the running browser first."}}
+{"ts":"2026-06-10T09:10:43.137Z","level":"INFO","module":"WA","message":"Reconnect attempt 6 scheduled in 31s"}
+{"ts":"2026-06-10T09:11:14.597Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-10T09:11:14.708Z","level":"ERROR","module":"WA","message":"Initialization failed","data":{"err":"The browser is already running for d:\\intelliJ2025\\fmcg-shop\\fmcg-shop\\whatsapp-service\\session_data\\session. Use a different `userDataDir` or stop the running browser first."}}
+{"ts":"2026-06-10T09:11:14.708Z","level":"INFO","module":"WA","message":"Reconnect attempt 7 scheduled in 50s"}
+{"ts":"2026-06-10T09:12:05.041Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-10T09:12:05.168Z","level":"ERROR","module":"WA","message":"Initialization failed","data":{"err":"The browser is already running for d:\\intelliJ2025\\fmcg-shop\\fmcg-shop\\whatsapp-service\\session_data\\session. Use a different `userDataDir` or stop the running browser first."}}
+{"ts":"2026-06-10T09:12:05.169Z","level":"INFO","module":"WA","message":"Reconnect attempt 8 scheduled in 81s"}
+{"ts":"2026-06-10T09:13:25.714Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-10T09:13:25.823Z","level":"ERROR","module":"WA","message":"Initialization failed","data":{"err":"The browser is already running for d:\\intelliJ2025\\fmcg-shop\\fmcg-shop\\whatsapp-service\\session_data\\session. Use a different `userDataDir` or stop the running browser first."}}
+{"ts":"2026-06-10T09:13:25.823Z","level":"INFO","module":"WA","message":"Reconnect attempt 9 scheduled in 90s"}
+{"ts":"2026-06-10T09:14:55.829Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-10T09:14:55.961Z","level":"ERROR","module":"WA","message":"Initialization failed","data":{"err":"The browser is already running for d:\\intelliJ2025\\fmcg-shop\\fmcg-shop\\whatsapp-service\\session_data\\session. Use a different `userDataDir` or stop the running browser first."}}
+{"ts":"2026-06-10T09:14:55.961Z","level":"INFO","module":"WA","message":"Reconnect attempt 10 scheduled in 90s"}
+{"ts":"2026-06-10T09:16:25.969Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-10T09:16:26.071Z","level":"ERROR","module":"WA","message":"Initialization failed","data":{"err":"The browser is already running for d:\\intelliJ2025\\fmcg-shop\\fmcg-shop\\whatsapp-service\\session_data\\session. Use a different `userDataDir` or stop the running browser first."}}
+{"ts":"2026-06-10T09:16:26.072Z","level":"ERROR","module":"WA","message":"Max reconnect attempts reached. Manual QR scan required."}
+{"ts":"2026-06-10T09:22:10.231Z","level":"INFO","module":"WA","message":"Loading 0%: WhatsApp"}
+{"ts":"2026-06-10T09:22:10.463Z","level":"INFO","module":"WA","message":"Loading 99%: WhatsApp"}
+[36m[2026-06-11T11:34:24.031Z] [INFO] [QUEUE] Loaded 0 pending messages from disk[0m
+[36m[2026-06-11T11:34:24.357Z] [INFO] [CHROME] Using Chrome from env: C:\Users\arhaa\.cache\puppeteer\chrome\win64-146.0.7680.31\chrome-win64\chrome.exe[0m
+[36m[2026-06-11T11:34:24.364Z] [INFO] [SYSTEM] 🚀 Lari Traders WhatsApp Service v2.0 starting...[0m
+[36m[2026-06-11T11:34:24.365Z] [INFO] [SYSTEM] Cleaning up any orphaned Chrome/Puppeteer processes...[0m
+[36m[2026-06-11T11:34:25.899Z] [INFO] [SYSTEM] Orphaned Chrome processes cleaned.[0m
+[36m[2026-06-11T11:34:25.916Z] [INFO] [SYSTEM] ✅ HTTP server listening on http://127.0.0.1:3000[0m
+[36m[2026-06-11T11:34:25.916Z] [INFO] [SYSTEM] 📋 Endpoints: /health /status /qr /send /send-bulk /send-media /queue/stats[0m
+[36m[2026-06-11T11:34:25.916Z] [INFO] [WA] Initializing WhatsApp client...[0m
+[36m[2026-06-11T11:34:26.689Z] [INFO] [API] GET /status[0m
+[36m[2026-06-11T11:34:28.962Z] [INFO] [API] GET /status[0m
+[36m[2026-06-11T11:34:40.948Z] [INFO] [WA] Loading 0%: WhatsApp[0m
+[36m[2026-06-11T11:34:41.947Z] [INFO] [WA] Loading 1%: WhatsApp[0m
+[36m[2026-06-11T11:34:42.952Z] [INFO] [WA] Loading 7%: WhatsApp[0m
+[36m[2026-06-11T11:34:43.956Z] [INFO] [WA] Loading 9%: WhatsApp[0m
+[36m[2026-06-11T11:34:44.963Z] [INFO] [WA] Loading 11%: WhatsApp[0m
+[36m[2026-06-11T11:34:45.962Z] [INFO] [WA] Loading 19%: WhatsApp[0m
+[36m[2026-06-11T11:34:46.964Z] [INFO] [WA] Loading 22%: WhatsApp[0m
+[36m[2026-06-11T11:34:47.970Z] [INFO] [WA] Loading 36%: WhatsApp[0m
+[36m[2026-06-11T11:34:48.970Z] [INFO] [WA] Loading 42%: WhatsApp[0m
+[36m[2026-06-11T11:34:49.970Z] [INFO] [WA] Loading 51%: WhatsApp[0m
+[36m[2026-06-11T11:34:50.971Z] [INFO] [WA] Loading 54%: WhatsApp[0m
+[36m[2026-06-11T11:34:52.983Z] [INFO] [WA] Loading 60%: WhatsApp[0m
+[36m[2026-06-11T11:34:53.987Z] [INFO] [WA] Loading 76%: WhatsApp[0m
+[36m[2026-06-11T11:34:54.995Z] [INFO] [WA] Loading 77%: WhatsApp[0m
+[36m[2026-06-11T11:34:55.639Z] [INFO] [WA] Loading 100%: WhatsApp[0m
+[36m[2026-06-11T11:35:04.255Z] [INFO] [WA] Authenticated ✅[0m
+[31m[2026-06-11T11:35:05.071Z] [ERROR] [SYSTEM] Unhandled rejection[0m
+[36m[2026-06-11T11:35:14.214Z] [INFO] [API] GET /status[0m
+[36m[2026-06-11T13:40:52.410Z] [INFO] [SYSTEM] Received SIGINT — shutting down[0m
+2026-06-11T11:34:42.952Z","level":"INFO","module":"WA","message":"Loading 7%: WhatsApp"}
+{"ts":"2026-06-11T11:34:43.956Z","level":"INFO","module":"WA","message":"Loading 9%: WhatsApp"}
+{"ts":"2026-06-11T11:34:44.963Z","level":"INFO","module":"WA","message":"Loading 11%: WhatsApp"}
+{"ts":"2026-06-11T11:34:45.962Z","level":"INFO","module":"WA","message":"Loading 19%: WhatsApp"}
+{"ts":"2026-06-11T11:34:46.964Z","level":"INFO","module":"WA","message":"Loading 22%: WhatsApp"}
+{"ts":"2026-06-11T11:34:47.970Z","level":"INFO","module":"WA","message":"Loading 36%: WhatsApp"}
+{"ts":"2026-06-11T11:34:48.970Z","level":"INFO","module":"WA","message":"Loading 42%: WhatsApp"}
+{"ts":"2026-06-11T11:34:49.970Z","level":"INFO","module":"WA","message":"Loading 51%: WhatsApp"}
+{"ts":"2026-06-11T11:34:50.971Z","level":"INFO","module":"WA","message":"Loading 54%: WhatsApp"}
+{"ts":"2026-06-11T11:34:52.983Z","level":"INFO","module":"WA","message":"Loading 60%: WhatsApp"}
+{"ts":"2026-06-11T11:34:53.987Z","level":"INFO","module":"WA","message":"Loading 76%: WhatsApp"}
+{"ts":"2026-06-11T11:34:54.995Z","level":"INFO","module":"WA","message":"Loading 77%: WhatsApp"}
+{"ts":"2026-06-11T11:34:55.639Z","level":"INFO","module":"WA","message":"Loading 100%: WhatsApp"}
+{"ts":"2026-06-11T11:35:04.255Z","level":"INFO","module":"WA","message":"Authenticated ✅"}
+{"ts":"2026-06-11T11:35:04.396Z","level":"INFO","module":"QUEUE","message":"Loaded 0 pending messages from disk"}
+{"ts":"2026-06-11T11:35:04.456Z","level":"INFO","module":"CHROME","message":"Using Chrome from env: C:\\Users\\arhaa\\.cache\\puppeteer\\chrome\\win64-146.0.7680.31\\chrome-win64\\chrome.exe"}
+{"ts":"2026-06-11T11:35:04.460Z","level":"INFO","module":"SYSTEM","message":"🚀 Lari Traders WhatsApp Service v2.0 starting..."}
+{"ts":"2026-06-11T11:35:04.461Z","level":"INFO","module":"SYSTEM","message":"Cleaning up any orphaned Chrome/Puppeteer processes..."}
+{"ts":"2026-06-11T11:35:04.943Z","level":"INFO","module":"SYSTEM","message":"Orphaned Chrome processes cleaned."}
+{"ts":"2026-06-11T11:35:04.952Z","level":"WARN","module":"PORT","message":"Port 3000 busy, retrying in 3000ms (1/10)"}
+{"ts":"2026-06-11T11:35:05.071Z","level":"ERROR","module":"SYSTEM","message":"Unhandled rejection","data":{"reason":"TargetCloseError: Protocol error (Runtime.callFunctionOn): Target closed"}}
+{"ts":"2026-06-11T11:35:07.961Z","level":"WARN","module":"PORT","message":"Port 3000 busy, retrying in 3000ms (2/10)"}
+{"ts":"2026-06-11T11:35:10.971Z","level":"WARN","module":"PORT","message":"Port 3000 busy, retrying in 3000ms (3/10)"}
+{"ts":"2026-06-11T11:35:13.985Z","level":"WARN","module":"PORT","message":"Port 3000 busy, retrying in 3000ms (4/10)"}
+{"ts":"2026-06-11T11:35:14.214Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-11T11:35:16.991Z","level":"WARN","module":"PORT","message":"Port 3000 busy, retrying in 3000ms (5/10)"}
+{"ts":"2026-06-11T11:35:19.993Z","level":"WARN","module":"PORT","message":"Port 3000 busy, retrying in 3000ms (6/10)"}
+{"ts":"2026-06-11T11:35:22.998Z","level":"WARN","module":"PORT","message":"Port 3000 busy, retrying in 3000ms (7/10)"}
+{"ts":"2026-06-11T11:35:26.000Z","level":"WARN","module":"PORT","message":"Port 3000 busy, retrying in 3000ms (8/10)"}
+{"ts":"2026-06-11T11:35:29.012Z","level":"WARN","module":"PORT","message":"Port 3000 busy, retrying in 3000ms (9/10)"}
+{"ts":"2026-06-11T11:35:32.014Z","level":"WARN","module":"PORT","message":"Port 3000 busy, retrying in 3000ms (10/10)"}
+{"ts":"2026-06-11T11:35:35.023Z","level":"ERROR","module":"SYSTEM","message":"Port 3000 still occupied after retries. Exiting."}
+{"ts":"2026-06-11T13:40:52.410Z","level":"INFO","module":"SYSTEM","message":"Received SIGINT — shutting down"}

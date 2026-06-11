@@ -8,13 +8,16 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import Pagination from '../components/Pagination'
 import { useToast } from '../context/ToastContext'
 
-const CATEGORIES = ['SNACKS', 'BEVERAGES', 'CIGARETTES', 'BISCUITS', 'NAMKEEN', 'OTHER']
+const CATEGORIES = ['CHIPS', 'SNACKS', 'BEVERAGES', 'CIGARETTES', 'BISCUITS', 'NAMKEEN', 'OTHER']
 
 const emptyForm = {
   name: '', brand: '', category: 'SNACKS', otherCategoryDetail: '', gstPercent: '0', cessPercent: '0', isCessApplicable: false,
   primaryUnit: 'BOX', secondaryUnit: 'LADI', customSecondaryUnit: '', secondaryPerPrimary: '1',
   canSellPrimary: true, canSellSecondary: true,
-  buyPriceWithoutTax: '', buyPriceWithTax: '', sellPricePrimary: '', sellPriceSecondary: '',
+  buyPriceWithoutTax: '', buyPriceWithTax: '',
+  sellPricePrimary: '', sellPriceSecondary: '',
+  sellPricePrimaryExcl: '', sellPricePrimaryIncl: '',
+  sellPriceSecondaryExcl: '', sellPriceSecondaryIncl: '',
   lowStockAlert: '10', lowStockUnit: 'SECONDARY',
 }
 
@@ -75,7 +78,17 @@ export default function Products() {
 
 
   const openCreate = () => {
-    setForm({ ...emptyForm, buyPriceWithTax: '', isCessApplicable: false, otherCategoryDetail: '', customSecondaryUnit: '' })
+    setForm({
+      ...emptyForm,
+      buyPriceWithTax: '',
+      isCessApplicable: false,
+      otherCategoryDetail: '',
+      customSecondaryUnit: '',
+      sellPricePrimaryExcl: '',
+      sellPricePrimaryIncl: '',
+      sellPriceSecondaryExcl: '',
+      sellPriceSecondaryIncl: ''
+    })
     setEditingId(null)
     setShowModal(true)
   }
@@ -85,10 +98,16 @@ export default function Products() {
     const gst = product.gstPercent || 0
     const cess = product.cessPercent || 0
     const buyPriceWithTax = buyPriceWithoutTax ? (Number(buyPriceWithoutTax) * (1 + (gst + cess) / 100)).toFixed(2) : ''
-    
+
     const isStandardUnit = ['LADI', 'PACK', 'BOTTLE'].includes(product.secondaryUnit)
     const secondaryUnitVal = isStandardUnit ? (product.secondaryUnit || 'LADI') : 'OTHER'
     const customSecondaryUnitVal = isStandardUnit ? '' : (product.secondaryUnit || '')
+
+    const sellPricePrimaryIncl = product.sellPricePrimary !== undefined ? product.sellPricePrimary.toString() : ''
+    const sellPricePrimaryExcl = sellPricePrimaryIncl ? (Number(sellPricePrimaryIncl) / (1 + (gst + cess) / 100)).toFixed(2) : ''
+
+    const sellPriceSecondaryIncl = product.sellPriceSecondary !== undefined ? product.sellPriceSecondary.toString() : ''
+    const sellPriceSecondaryExcl = sellPriceSecondaryIncl ? (Number(sellPriceSecondaryIncl) / (1 + (gst + cess) / 100)).toFixed(2) : ''
 
     setForm({
       name: product.name || '', brand: product.brand || '', category: product.category || 'SNACKS',
@@ -103,6 +122,10 @@ export default function Products() {
       buyPriceWithoutTax,
       buyPriceWithTax,
       sellPricePrimary: product.sellPricePrimary || '', sellPriceSecondary: product.sellPriceSecondary || '',
+      sellPricePrimaryExcl,
+      sellPricePrimaryIncl,
+      sellPriceSecondaryExcl,
+      sellPriceSecondaryIncl,
       lowStockAlert: product.lowStockAlert !== undefined ? product.lowStockAlert.toString() : '10',
       lowStockUnit: product.lowStockUnit || 'SECONDARY',
       isCessApplicable: cess > 0,
@@ -134,41 +157,124 @@ export default function Products() {
     }
   }
 
+  const handleSellPriceChange = (unitType, fieldType, value) => {
+    const gst = Number(form.gstPercent || 0)
+    const cess = Number(form.cessPercent || 0)
+    const taxRate = 1 + (gst + cess) / 100
+
+    if (unitType === 'primary') {
+      if (fieldType === 'excl') {
+        const parsed = parseFloat(value)
+        if (isNaN(parsed) || !value) {
+          setForm(f => ({ ...f, sellPricePrimaryExcl: value, sellPricePrimaryIncl: '' }))
+        } else {
+          const incl = (parsed * taxRate).toFixed(2)
+          setForm(f => ({ ...f, sellPricePrimaryExcl: value, sellPricePrimaryIncl: incl }))
+        }
+      } else {
+        const parsed = parseFloat(value)
+        if (isNaN(parsed) || !value) {
+          setForm(f => ({ ...f, sellPricePrimaryIncl: value, sellPricePrimaryExcl: '' }))
+        } else {
+          const excl = (parsed / taxRate).toFixed(2)
+          setForm(f => ({ ...f, sellPricePrimaryIncl: value, sellPricePrimaryExcl: excl }))
+        }
+      }
+    } else {
+      if (fieldType === 'excl') {
+        const parsed = parseFloat(value)
+        if (isNaN(parsed) || !value) {
+          setForm(f => ({ ...f, sellPriceSecondaryExcl: value, sellPriceSecondaryIncl: '' }))
+        } else {
+          const incl = (parsed * taxRate).toFixed(2)
+          setForm(f => ({ ...f, sellPriceSecondaryExcl: value, sellPriceSecondaryIncl: incl }))
+        }
+      } else {
+        const parsed = parseFloat(value)
+        if (isNaN(parsed) || !value) {
+          setForm(f => ({ ...f, sellPriceSecondaryIncl: value, sellPriceSecondaryExcl: '' }))
+        } else {
+          const excl = (parsed / taxRate).toFixed(2)
+          setForm(f => ({ ...f, sellPriceSecondaryIncl: value, sellPriceSecondaryExcl: excl }))
+        }
+      }
+    }
+  }
+
   const handleGstChange = (gstValue) => {
     const gst = Number(gstValue || 0)
     const cess = Number(form.cessPercent || 0)
+    const taxRate = 1 + (gst + cess) / 100
     const withoutTax = parseFloat(form.buyPriceWithoutTax)
+    let newBuyPriceWithTax = form.buyPriceWithTax
     if (!isNaN(withoutTax)) {
-      const withTax = (withoutTax * (1 + (gst + cess) / 100)).toFixed(2)
-      setForm(f => ({ ...f, gstPercent: gstValue, buyPriceWithTax: withTax }))
-    } else {
-      setForm(f => ({ ...f, gstPercent: gstValue }))
+      newBuyPriceWithTax = (withoutTax * taxRate).toFixed(2)
     }
+
+    const sellPriIncl = parseFloat(form.sellPricePrimaryIncl)
+    const sellPriExcl = !isNaN(sellPriIncl) ? (sellPriIncl / taxRate).toFixed(2) : ''
+
+    const sellSecIncl = parseFloat(form.sellPriceSecondaryIncl)
+    const sellSecExcl = !isNaN(sellSecIncl) ? (sellSecIncl / taxRate).toFixed(2) : ''
+
+    setForm(f => ({
+      ...f,
+      gstPercent: gstValue,
+      buyPriceWithTax: newBuyPriceWithTax,
+      sellPricePrimaryExcl: sellPriExcl,
+      sellPriceSecondaryExcl: sellSecExcl
+    }))
   }
 
   const handleCessChange = (cessValue) => {
     const cess = Number(cessValue || 0)
     const gst = Number(form.gstPercent || 0)
+    const taxRate = 1 + (gst + cess) / 100
     const withoutTax = parseFloat(form.buyPriceWithoutTax)
+    let newBuyPriceWithTax = form.buyPriceWithTax
     if (!isNaN(withoutTax)) {
-      const withTax = (withoutTax * (1 + (gst + cess) / 100)).toFixed(2)
-      setForm(f => ({ ...f, cessPercent: cessValue, buyPriceWithTax: withTax }))
-    } else {
-      setForm(f => ({ ...f, cessPercent: cessValue }))
+      newBuyPriceWithTax = (withoutTax * taxRate).toFixed(2)
     }
+
+    const sellPriIncl = parseFloat(form.sellPricePrimaryIncl)
+    const sellPriExcl = !isNaN(sellPriIncl) ? (sellPriIncl / taxRate).toFixed(2) : ''
+
+    const sellSecIncl = parseFloat(form.sellPriceSecondaryIncl)
+    const sellSecExcl = !isNaN(sellSecIncl) ? (sellSecIncl / taxRate).toFixed(2) : ''
+
+    setForm(f => ({
+      ...f,
+      cessPercent: cessValue,
+      buyPriceWithTax: newBuyPriceWithTax,
+      sellPricePrimaryExcl: sellPriExcl,
+      sellPriceSecondaryExcl: sellSecExcl
+    }))
   }
 
   const handleCessApplicableChange = (applicable) => {
-    const withoutTax = parseFloat(form.buyPriceWithoutTax)
     const gst = Number(form.gstPercent || 0)
-    const newCess = applicable ? (Number(form.cessPercent) > 0 ? Number(form.cessPercent) : 12) : 0 // Default to 12% if turned on (standard for beverages), or keep existing
-    
+    const newCess = applicable ? (Number(form.cessPercent) > 0 ? Number(form.cessPercent) : 12) : 0
+    const taxRate = 1 + (gst + newCess) / 100
+    const withoutTax = parseFloat(form.buyPriceWithoutTax)
+    let newBuyPriceWithTax = form.buyPriceWithTax
     if (!isNaN(withoutTax)) {
-      const withTax = (withoutTax * (1 + (gst + newCess) / 100)).toFixed(2)
-      setForm(f => ({ ...f, isCessApplicable: applicable, cessPercent: newCess, buyPriceWithTax: withTax }))
-    } else {
-      setForm(f => ({ ...f, isCessApplicable: applicable, cessPercent: newCess }))
+      newBuyPriceWithTax = (withoutTax * taxRate).toFixed(2)
     }
+
+    const sellPriIncl = parseFloat(form.sellPricePrimaryIncl)
+    const sellPriExcl = !isNaN(sellPriIncl) ? (sellPriIncl / taxRate).toFixed(2) : ''
+
+    const sellSecIncl = parseFloat(form.sellPriceSecondaryIncl)
+    const sellSecExcl = !isNaN(sellSecIncl) ? (sellSecIncl / taxRate).toFixed(2) : ''
+
+    setForm(f => ({
+      ...f,
+      isCessApplicable: applicable,
+      cessPercent: newCess,
+      buyPriceWithTax: newBuyPriceWithTax,
+      sellPricePrimaryExcl: sellPriExcl,
+      sellPriceSecondaryExcl: sellSecExcl
+    }))
   }
 
   const handleSave = async (e) => {
@@ -182,8 +288,8 @@ export default function Products() {
         secondaryPerPrimary: Number(form.secondaryPerPrimary || 1),
         buyPriceWithoutTax: form.buyPriceWithoutTax !== '' ? Number(form.buyPriceWithoutTax) : null,
         buyPriceWithTax: form.buyPriceWithTax !== '' ? Number(form.buyPriceWithTax) : null,
-        sellPricePrimary: form.sellPricePrimary !== '' ? Number(form.sellPricePrimary) : 0,
-        sellPriceSecondary: form.sellPriceSecondary !== '' ? Number(form.sellPriceSecondary) : 0,
+        sellPricePrimary: form.sellPricePrimaryIncl !== '' ? Number(form.sellPricePrimaryIncl) : 0,
+        sellPriceSecondary: form.sellPriceSecondaryIncl !== '' ? Number(form.sellPriceSecondaryIncl) : 0,
         lowStockAlert: form.lowStockAlert !== '' ? Number(form.lowStockAlert) : 0,
         secondaryUnit: form.secondaryUnit === 'OTHER' ? (form.customSecondaryUnit || 'OTHER').toUpperCase().trim() : form.secondaryUnit,
       }
@@ -211,31 +317,104 @@ export default function Products() {
   }
 
   const columns = [
-    { header: 'Name', accessor: 'name', render: (row) => (
-      <div>
-        <div style={{ fontWeight: 'var(--font-weight-medium)' }}>{row.name}</div>
-        {isMobile && row.brand && (
-          <div className="text-xs text-muted" style={{ marginTop: '2px' }}>
-            {row.brand}
-          </div>
-        )}
-      </div>
-    )},
+    {
+      header: 'Name', accessor: 'name', render: (row) => (
+        <div>
+          <div style={{ fontWeight: 'var(--font-weight-medium)' }}>{row.name}</div>
+          {isMobile && row.brand && (
+            <div className="text-xs text-muted" style={{ marginTop: '2px' }}>
+              {row.brand}
+            </div>
+          )}
+        </div>
+      )
+    },
     { header: 'Brand', accessor: 'brand' },
-    { header: 'Category', accessor: 'category', render: (row) => (
-      <span className="badge badge-accent">
-        {row.category === 'OTHER' && row.otherCategoryDetail ? row.otherCategoryDetail : row.category}
-      </span>
-    )},
+    {
+      header: 'Category', accessor: 'category', render: (row) => (
+        <span className="badge badge-accent">
+          {row.category === 'OTHER' && row.otherCategoryDetail ? row.otherCategoryDetail : row.category}
+        </span>
+      )
+    },
     { header: 'Buy ₹', accessor: 'buyPriceWithoutTax', render: (row) => `₹${Number(row.buyPriceWithoutTax || 0).toLocaleString('en-IN')}` },
     { header: 'Sell (P)', accessor: 'sellPricePrimary', render: (row) => `₹${Number(row.sellPricePrimary || 0).toLocaleString('en-IN')}` },
     { header: 'Sell (S)', accessor: 'sellPriceSecondary', render: (row) => `₹${Number(row.sellPriceSecondary || 0).toLocaleString('en-IN')}` },
-    { header: 'Stock', accessor: 'totalSecondaryUnits', render: (row) => (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-        <span>{row.totalSecondaryUnits ?? 0} {row.secondaryUnit}</span>
-        {row.isLowStock && <AlertTriangle size={14} style={{ color: 'var(--color-danger)' }} />}
-      </div>
-    )},
+    {
+      header: 'Stock', accessor: 'totalSecondaryUnits', render: (row) => {
+        const totalSec = row.totalSecondaryUnits ?? 0
+        const ratio = row.secondaryPerPrimary || 1
+        const priUnit = row.primaryUnit || 'BOX'
+        const secUnit = row.secondaryUnit || 'LADI'
+        
+        let displayStock = ''
+        if (ratio > 1) {
+          const pri = Math.floor(totalSec / ratio)
+          const sec = totalSec % ratio
+          if (pri > 0 && sec > 0) {
+            displayStock = `${pri} ${priUnit} + ${sec} ${secUnit}`
+          } else if (pri > 0) {
+            displayStock = `${pri} ${priUnit}`
+          } else {
+            displayStock = `${sec} ${secUnit}`
+          }
+        } else {
+          displayStock = `${totalSec} ${secUnit}`
+        }
+
+        return (
+          <div 
+            className="stock-tooltip-container" 
+            style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: ratio > 1 ? 'help' : 'default' }}
+          >
+            <span>{displayStock}</span>
+            {row.isLowStock && <AlertTriangle size={14} style={{ color: 'var(--color-danger)' }} />}
+            {ratio > 1 && (
+              <div className="stock-tooltip-box">
+                <div style={{
+                  fontWeight: '600',
+                  fontSize: '11px',
+                  color: 'rgba(255, 255, 255, 0.7)',
+                  marginBottom: '8px',
+                  borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                  paddingBottom: '4px',
+                  textAlign: 'left'
+                }}>
+                  Stock Breakdown
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', textAlign: 'left' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--color-info)' }} />
+                    <span style={{ color: 'rgba(255, 255, 255, 0.7)', minWidth: '90px' }}>Primary:</span>
+                    <span style={{ fontWeight: '750', color: '#fff' }}>{Math.floor(totalSec / ratio)} {priUnit}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--color-warning)' }} />
+                    <span style={{ color: 'rgba(255, 255, 255, 0.7)', minWidth: '90px' }}>Secondary:</span>
+                    <span style={{ fontWeight: '750', color: '#fff' }}>{totalSec % ratio} {secUnit}</span>
+                  </div>
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px', 
+                    fontSize: '11px', 
+                    whiteSpace: 'nowrap',
+                    borderTop: '1px dashed rgba(255, 255, 255, 0.1)',
+                    paddingTop: '6px',
+                    marginTop: '2px'
+                  }}>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--color-success)' }} />
+                    <span style={{ color: 'rgba(255, 255, 255, 0.7)', minWidth: '90px' }}>Total Stock:</span>
+                    <span style={{ fontWeight: '800', color: '#fff' }}>{totalSec} {secUnit}</span>
+                  </div>
+                </div>
+                <div className="stock-tooltip-arrow" />
+              </div>
+            )}
+          </div>
+        )
+      }
+    },
     { header: 'GST', accessor: 'gstPercent', render: (row) => `${row.gstPercent}%` },
     { header: 'Cess', accessor: 'cessPercent', render: (row) => row.cessPercent > 0 ? `${row.cessPercent}%` : <span className="text-muted">—</span> },
   ].filter(col => {
@@ -249,6 +428,46 @@ export default function Products() {
 
   return (
     <div className="page-container">
+      <style>{`
+        .stock-tooltip-container {
+          position: relative;
+        }
+        .stock-tooltip-container .stock-tooltip-box {
+          position: absolute;
+          bottom: 125%;
+          left: 50%;
+          transform: translateX(-50%) translateY(10px);
+          background: rgba(15, 23, 42, 0.95);
+          backdrop-filter: blur(8px);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: var(--radius-md);
+          padding: 8px 12px;
+          color: #fff;
+          font-size: 11px;
+          font-weight: 600;
+          white-space: nowrap;
+          opacity: 0;
+          visibility: hidden;
+          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+          z-index: 100;
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+          pointer-events: none;
+        }
+        .stock-tooltip-container:hover .stock-tooltip-box {
+          opacity: 1;
+          visibility: visible;
+          transform: translateX(-50%) translateY(0);
+        }
+        .stock-tooltip-arrow {
+          position: absolute;
+          top: 100%;
+          left: 50%;
+          transform: translateX(-50%);
+          border-width: 6px;
+          border-style: solid;
+          border-color: rgba(15, 23, 42, 0.95) transparent transparent transparent;
+        }
+      `}</style>
       <div className="page-header">
         <div>
           <h2 className="page-title">Products</h2>
@@ -340,13 +559,13 @@ export default function Products() {
                 {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
               {form.category === 'OTHER' && (
-                <input 
-                  className="form-input" 
-                  style={{ marginTop: 'var(--space-2)' }} 
-                  value={form.otherCategoryDetail} 
-                  onChange={e => updateField('otherCategoryDetail', e.target.value)} 
-                  placeholder="Specify Category (e.g. Soaps)" 
-                  required 
+                <input
+                  className="form-input"
+                  style={{ marginTop: 'var(--space-2)' }}
+                  value={form.otherCategoryDetail}
+                  onChange={e => updateField('otherCategoryDetail', e.target.value)}
+                  placeholder="Specify Category (e.g. Soaps)"
+                  required
                 />
               )}
             </div>
@@ -358,23 +577,23 @@ export default function Products() {
               <label className="form-label">&nbsp;</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: 'pointer', userSelect: 'none', height: '38px', margin: 0, fontSize: 'var(--font-size-sm)' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={form.isCessApplicable || false} 
+                  <input
+                    type="checkbox"
+                    checked={form.isCessApplicable || false}
                     onChange={e => handleCessApplicableChange(e.target.checked)}
                     style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--color-primary)' }}
                   />
                   Cess Applicable
                 </label>
                 {form.isCessApplicable && (
-                  <input 
-                    className="form-input" 
-                    type="number" 
-                    min="0" 
-                    max="100" 
-                    step="0.01" 
-                    value={form.cessPercent} 
-                    onChange={e => handleCessChange(e.target.value)} 
+                  <input
+                    className="form-input"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={form.cessPercent}
+                    onChange={e => handleCessChange(e.target.value)}
                     placeholder="Cess %"
                     required
                   />
@@ -403,13 +622,13 @@ export default function Products() {
                 <option value="OTHER">OTHER (Custom)</option>
               </select>
               {form.secondaryUnit === 'OTHER' && (
-                <input 
-                  className="form-input" 
-                  style={{ marginTop: 'var(--space-2)' }} 
-                  value={form.customSecondaryUnit || ''} 
-                  onChange={e => updateField('customSecondaryUnit', e.target.value.toUpperCase())} 
-                  placeholder="Specify Unit (e.g. PCS, TIN)" 
-                  required 
+                <input
+                  className="form-input"
+                  style={{ marginTop: 'var(--space-2)' }}
+                  value={form.customSecondaryUnit || ''}
+                  onChange={e => updateField('customSecondaryUnit', e.target.value.toUpperCase())}
+                  placeholder="Specify Unit (e.g. PCS, TIN)"
+                  required
                 />
               )}
             </div>
@@ -418,7 +637,7 @@ export default function Products() {
               <input className="form-input" type="number" min="1" value={form.secondaryPerPrimary} onChange={e => updateField('secondaryPerPrimary', e.target.value)} required />
             </div>
           </div>
-          <div className="form-row-4">
+          <div className="form-row">
             <div className="form-group">
               <label className="form-label">Buy (Excl. Tax) ₹ *</label>
               <input className="form-input" type="number" min="0" step="0.01" value={form.buyPriceWithoutTax} onChange={e => handlePriceChange('without', e.target.value)} required />
@@ -427,13 +646,25 @@ export default function Products() {
               <label className="form-label">Buy (Incl. Tax) ₹</label>
               <input className="form-input" type="number" min="0" step="0.01" value={form.buyPriceWithTax || ''} onChange={e => handlePriceChange('with', e.target.value)} />
             </div>
+          </div>
+          <div className="form-row">
             <div className="form-group">
-              <label className="form-label">Sell (Primary) ₹ *</label>
-              <input className="form-input" type="number" min="0" step="0.01" value={form.sellPricePrimary} onChange={e => updateField('sellPricePrimary', e.target.value)} required />
+              <label className="form-label">Sell (Primary - {form.primaryUnit}) (Excl. Tax) ₹</label>
+              <input className="form-input" type="number" min="0" step="0.01" value={form.sellPricePrimaryExcl} onChange={e => handleSellPriceChange('primary', 'excl', e.target.value)} />
             </div>
             <div className="form-group">
-              <label className="form-label">Sell (Secondary) ₹ *</label>
-              <input className="form-input" type="number" min="0" step="0.01" value={form.sellPriceSecondary} onChange={e => updateField('sellPriceSecondary', e.target.value)} required />
+              <label className="form-label">Sell (Primary - {form.primaryUnit}) (Incl. Tax) ₹ *</label>
+              <input className="form-input" type="number" min="0" step="0.01" value={form.sellPricePrimaryIncl} onChange={e => handleSellPriceChange('primary', 'incl', e.target.value)} required />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Sell (Secondary - {form.secondaryUnit === 'OTHER' ? (form.customSecondaryUnit || 'OTHER') : form.secondaryUnit}) (Excl. Tax) ₹</label>
+              <input className="form-input" type="number" min="0" step="0.01" value={form.sellPriceSecondaryExcl} onChange={e => handleSellPriceChange('secondary', 'excl', e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Sell (Secondary - {form.secondaryUnit === 'OTHER' ? (form.customSecondaryUnit || 'OTHER') : form.secondaryUnit}) (Incl. Tax) ₹ *</label>
+              <input className="form-input" type="number" min="0" step="0.01" value={form.sellPriceSecondaryIncl} onChange={e => handleSellPriceChange('secondary', 'incl', e.target.value)} required />
             </div>
           </div>
           <div className="form-actions">
