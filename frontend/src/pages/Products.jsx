@@ -467,6 +467,20 @@ export default function Products() {
           border-style: solid;
           border-color: rgba(15, 23, 42, 0.95) transparent transparent transparent;
         }
+        /* First row tooltip positioning (show downwards to prevent table header cut-off) */
+        tbody tr:first-child .stock-tooltip-box {
+          bottom: auto;
+          top: 125%;
+          transform: translateX(-50%) translateY(-10px);
+        }
+        tbody tr:first-child .stock-tooltip-container:hover .stock-tooltip-box {
+          transform: translateX(-50%) translateY(0);
+        }
+        tbody tr:first-child .stock-tooltip-arrow {
+          top: auto;
+          bottom: 100%;
+          border-color: transparent transparent rgba(15, 23, 42, 0.95) transparent;
+        }
       `}</style>
       <div className="page-header">
         <div>
