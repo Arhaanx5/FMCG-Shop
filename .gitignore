@@ -59,3 +59,7 @@ whatsapp-service/queue.json
 # Temp zips
 *.zip
 
+# Google Drive credentials key
+google-drive-key.json
+
+
