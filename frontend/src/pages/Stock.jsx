@@ -84,6 +84,7 @@ export default function Stock() {
   const [scannerFile, setScannerFile] = useState(null)
   const [scannerLoading, setScannerLoading] = useState(false)
   const [scannerPreview, setScannerPreview] = useState([])
+  const [editingNameIndex, setEditingNameIndex] = useState(null)
   const [scannerSupplier, setScannerSupplier] = useState('Saurabh Agency')
   const [scannerInvoiceNumber, setScannerInvoiceNumber] = useState('')
   const [invoiceAlreadyScanned, setInvoiceAlreadyScanned] = useState(false)
@@ -1226,18 +1227,56 @@ export default function Stock() {
                   <tbody>
                     {scannerPreview.map((item, index) => (
                       <tr key={index} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                        <td style={{ padding: '8px 16px' }}>
-                          <input
-                            type="text"
-                            className="form-input"
-                            style={{ width: '100%', minWidth: '180px', padding: '4px 8px', fontSize: '12px', margin: 0 }}
-                            value={item.productName || ''}
-                            onChange={e => {
-                              const updated = [...scannerPreview];
-                              updated[index].productName = e.target.value;
-                              setScannerPreview(updated);
-                            }}
-                          />
+                        <td style={{ padding: '8px 16px', verticalAlign: 'middle' }}>
+                          {editingNameIndex === index ? (
+                            <textarea
+                              className="form-input"
+                              style={{ 
+                                width: '100%', 
+                                minWidth: '180px', 
+                                padding: '6px 8px', 
+                                fontSize: '12px', 
+                                margin: 0,
+                                resize: 'none',
+                                minHeight: '52px',
+                                lineHeight: '1.4',
+                                display: 'block',
+                                boxSizing: 'border-box'
+                              }}
+                              value={item.productName || ''}
+                              autoFocus
+                              onChange={e => {
+                                const updated = [...scannerPreview];
+                                updated[index].productName = e.target.value;
+                                setScannerPreview(updated);
+                              }}
+                              onBlur={() => setEditingNameIndex(null)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  setEditingNameIndex(null);
+                                }
+                              }}
+                            />
+                          ) : (
+                            <div
+                              onClick={() => setEditingNameIndex(index)}
+                              style={{ 
+                                cursor: 'pointer', 
+                                padding: '6px 8px', 
+                                borderRadius: 'var(--radius-md)', 
+                                border: '1px dashed transparent',
+                                minHeight: '32px',
+                                display: 'flex',
+                                alignItems: 'center'
+                              }}
+                              onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--color-border)'}
+                              onMouseLeave={e => e.currentTarget.style.borderColor = 'transparent'}
+                              title="Click to edit product name"
+                            >
+                              {item.productName}
+                            </div>
+                          )}
                         </td>
                         <td style={{ padding: '8px 16px' }}>
                           <select
