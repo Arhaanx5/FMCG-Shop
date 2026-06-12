@@ -19,11 +19,24 @@ public class DashboardAiService {
 
     private final DashboardService dashboardService;
     private static final String PYTHON_TEXT_GEN_URL = "http://127.0.0.1:8087/ocr/generate-text";
+    private final Map<String, String> insightsCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     public String generateInsights(int year, int month) {
+        return generateInsights(year, month, false);
+    }
+
+    public String generateInsights(int year, int month, boolean forceRefresh) {
+        String cacheKey = year + "-" + month;
+        if (!forceRefresh && insightsCache.containsKey(cacheKey)) {
+            return insightsCache.get(cacheKey);
+        }
         DashboardSummaryResponse summary = dashboardService.getDashboardSummary(year, month);
         String prompt = buildPromptForSummary(summary, year, month);
-        return callPythonTextGen(prompt);
+        String insights = callPythonTextGen(prompt);
+        if (insights != null && !insights.startsWith("Failed to connect")) {
+            insightsCache.put(cacheKey, insights);
+        }
+        return insights;
     }
 
     public String chatWithDashboard(String message, int year, int month) {

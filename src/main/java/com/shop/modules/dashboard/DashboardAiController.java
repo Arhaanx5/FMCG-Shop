@@ -19,8 +19,9 @@ public class DashboardAiController {
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<ApiResponse<Map<String, String>>> getAiInsights(
             @RequestParam int year,
-            @RequestParam int month) {
-        String insights = dashboardAiService.generateInsights(year, month);
+            @RequestParam int month,
+            @RequestParam(required = false, defaultValue = "false") boolean force) {
+        String insights = dashboardAiService.generateInsights(year, month, force);
         Map<String, String> result = new HashMap<>();
         result.put("insights", insights);
         return ResponseEntity.ok(ApiResponse.success(result));

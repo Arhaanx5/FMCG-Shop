@@ -105,10 +105,10 @@ function AiCopilotWidget({ year, month }) {
   const messagesEndRef = useRef(null)
   const toast = useToast()
 
-  const fetchInsights = async () => {
+  const fetchInsights = async (force = false) => {
     setInsightsLoading(true)
     try {
-      const res = await api.get(`/dashboard/ai/insights?year=${year}&month=${month}`)
+      const res = await api.get(`/dashboard/ai/insights?year=${year}&month=${month}${force ? '&force=true' : ''}`)
       if (res.data?.data?.insights) {
         setInsights(res.data.data.insights)
       } else {
@@ -124,7 +124,7 @@ function AiCopilotWidget({ year, month }) {
 
   useEffect(() => {
     if (activeTab === 'insights' && !insights) {
-      fetchInsights()
+      fetchInsights(false)
     }
   }, [year, month, activeTab])
 
@@ -224,7 +224,7 @@ function AiCopilotWidget({ year, month }) {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 'var(--font-size-xs)', color: 'rgba(248, 250, 252, 0.5)' }}>
             <span>Monthly business intelligence suggestions</span>
             <button 
-              onClick={fetchInsights} 
+              onClick={() => fetchInsights(true)} 
               disabled={insightsLoading}
               className="btn btn-sm btn-ghost btn-icon" 
               style={{ width: '24px', height: '24px' }}
