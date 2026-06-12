@@ -1226,9 +1226,34 @@ export default function Stock() {
                   <tbody>
                     {scannerPreview.map((item, index) => (
                       <tr key={index} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                        <td style={{ padding: '12px 16px', fontWeight: '500' }}>{item.productName}</td>
-                        <td style={{ padding: '12px 16px' }}>
-                          <span className="badge badge-accent">{item.category}</span>
+                        <td style={{ padding: '8px 16px' }}>
+                          <input
+                            type="text"
+                            className="form-input"
+                            style={{ width: '100%', minWidth: '180px', padding: '4px 8px', fontSize: '12px', margin: 0 }}
+                            value={item.productName || ''}
+                            onChange={e => {
+                              const updated = [...scannerPreview];
+                              updated[index].productName = e.target.value;
+                              setScannerPreview(updated);
+                            }}
+                          />
+                        </td>
+                        <td style={{ padding: '8px 16px' }}>
+                          <select
+                            className="form-select"
+                            style={{ width: '110px', padding: '4px 8px', fontSize: '12px', margin: 0, height: '32px' }}
+                            value={item.category || 'SNACKS'}
+                            onChange={e => {
+                              const updated = [...scannerPreview];
+                              updated[index].category = e.target.value;
+                              setScannerPreview(updated);
+                            }}
+                          >
+                            {CATEGORIES.map(cat => (
+                              <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                          </select>
                         </td>
                         <td style={{ padding: '8px 16px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
