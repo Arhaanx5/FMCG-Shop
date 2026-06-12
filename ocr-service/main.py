@@ -130,12 +130,29 @@ async def scan_invoice(file: UploadFile = File(...)):
         contents = await file.read()
         logger.info(f"Received file: {file.filename}, size: {len(contents)} bytes")
         
-        # Compress image to speed up upload
-        processed_image = compress_image(contents)
-        logger.info(f"Processed file size for upload: {len(processed_image)} bytes")
-        
-        # Base64 encode for raw HTTP REST request
-        base64_image = base64.b64encode(processed_image).decode('utf-8')
+        # Determine MIME type based on extension or content-type
+        content_type = file.content_type
+        if not content_type:
+            ext = os.path.splitext(file.filename)[1].lower()
+            if ext == '.pdf':
+                content_type = 'application/pdf'
+            elif ext in ['.jpg', '.jpeg']:
+                content_type = 'image/jpeg'
+            elif ext == '.png':
+                content_type = 'image/png'
+            else:
+                content_type = 'image/jpeg'
+
+        if content_type == 'application/pdf':
+            mime_type = 'application/pdf'
+            base64_data = base64.b64encode(contents).decode('utf-8')
+            logger.info("PDF file detected. Sending original PDF bytes directly to Gemini.")
+        else:
+            mime_type = 'image/jpeg'
+            # Compress image to speed up upload
+            processed_image = compress_image(contents)
+            base64_data = base64.b64encode(processed_image).decode('utf-8')
+            logger.info(f"Image file detected. Compressed size: {len(processed_image)} bytes.")
         
         # Using gemini-flash-lite-latest to ensure fast response times, high rate limits and API compatibility
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={api_key}"
@@ -146,8 +163,8 @@ async def scan_invoice(file: UploadFile = File(...)):
                     {"text": PROMPT},
                     {
                         "inlineData": {
-                            "mime_type": "image/jpeg",
-                            "data": base64_image
+                            "mime_type": mime_type,
+                            "data": base64_data
                         }
                     }
                 ]

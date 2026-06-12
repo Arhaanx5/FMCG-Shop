@@ -1062,7 +1062,7 @@ export default function Stock() {
                   }}>
                     <input
                       type="file"
-                      accept="image/*"
+                      accept="image/*,application/pdf"
                       onChange={e => setScannerFile(e.target.files[0])}
                       style={{
                         position: 'absolute',
@@ -1077,7 +1077,7 @@ export default function Stock() {
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', color: 'var(--color-text-secondary)' }}>
                       <Upload size={18} />
                       <span style={{ fontSize: '13px', fontWeight: '500' }}>
-                        {scannerFile ? scannerFile.name : 'Invoice Photo Select / Camera Click Karein'}
+                        {scannerFile ? scannerFile.name : 'Invoice Photo / PDF Select Karein'}
                       </span>
                     </div>
                   </div>
