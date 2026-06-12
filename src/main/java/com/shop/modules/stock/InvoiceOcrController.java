@@ -43,6 +43,7 @@ public class InvoiceOcrController {
         private int invoice_cases;
         private int packs_per_case;
         private BigDecimal buy_price_per_piece;
+        private BigDecimal taxable_value;
         private BigDecimal gst_percent;
     }
 
@@ -111,6 +112,7 @@ public class InvoiceOcrController {
                         .invoiceCases(item.getInvoice_cases())
                         .packsPerCase(item.getPacks_per_case())
                         .buyPricePerPiece(item.getBuy_price_per_piece())
+                        .taxableValue(item.getTaxable_value())
                         .gstPercent(item.getGst_percent())
                         .build();
             }).collect(Collectors.toList());

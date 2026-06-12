@@ -31,6 +31,7 @@ public class StockMappingService {
         private int invoiceCases;
         private int packsPerCase;
         private BigDecimal buyPricePerPiece;
+        private BigDecimal taxableValue;
         private BigDecimal gstPercent;
     }
 
@@ -47,6 +48,7 @@ public class StockMappingService {
         private int invoiceCases;
         private int packsPerCase;
         private BigDecimal buyPricePerPiece;
+        private BigDecimal taxableValue;
         private BigDecimal gstPercent;
         private String primaryUnit;
         private String secondaryUnit;
@@ -75,12 +77,20 @@ public class StockMappingService {
                     .invoiceCases(rawItem.getInvoiceCases())
                     .packsPerCase(rawItem.getPacksPerCase())
                     .buyPricePerPiece(rawItem.getBuyPricePerPiece())
+                    .taxableValue(rawItem.getTaxableValue())
                     .gstPercent(rawItem.getGstPercent())
                     .mrp(rawItem.getMrp())
                     .duplicateBatch(duplicateBatch);
 
             if (isNewProduct) {
                 // If it is a new product, propose values based on invoice
+                BigDecimal buyPriceWithoutTax = null;
+                if (rawItem.getTaxableValue() != null && rawItem.getTaxableValue().compareTo(BigDecimal.ZERO) > 0 && rawItem.getInvoiceCases() > 0) {
+                    buyPriceWithoutTax = rawItem.getTaxableValue().divide(BigDecimal.valueOf(rawItem.getInvoiceCases()), 2, RoundingMode.HALF_UP);
+                } else {
+                    buyPriceWithoutTax = rawItem.getBuyPricePerPiece().multiply(BigDecimal.valueOf(rawItem.getPacksPerCase())).setScale(2, RoundingMode.HALF_UP);
+                }
+
                 builder.newProduct(true)
                         .productName(rawItem.getName())
                         .brand("Haldiram's") // Default guess
@@ -91,7 +101,7 @@ public class StockMappingService {
                         .primaryAdded(rawItem.getInvoiceCases())
                         .secondaryAdded(rawItem.getInvoiceCases() * (rawItem.getPacksPerCase() == 72 || rawItem.getPacksPerCase() == 216 ? 72 : 20))
                         .openBoxAdded(0)
-                        .buyPriceWithoutTax(rawItem.getBuyPricePerPiece().multiply(BigDecimal.valueOf(rawItem.getPacksPerCase())).setScale(2, RoundingMode.HALF_UP));
+                        .buyPriceWithoutTax(buyPriceWithoutTax);
             } else {
                 // Map based on existing product's DB configurations
                 int ratio = bestMatch.getSecondaryPerPrimary() != null ? bestMatch.getSecondaryPerPrimary() : 1;
@@ -115,9 +125,14 @@ public class StockMappingService {
                 int primaryAdded = totalSecondaryUnits / ratio;
                 int openBoxAdded = totalSecondaryUnits % ratio;
 
-                BigDecimal buyPriceWithoutTax = rawItem.getBuyPricePerPiece()
-                        .multiply(BigDecimal.valueOf(ratio * packPerSecondary))
-                        .setScale(2, RoundingMode.HALF_UP);
+                BigDecimal buyPriceWithoutTax = null;
+                if (rawItem.getTaxableValue() != null && rawItem.getTaxableValue().compareTo(BigDecimal.ZERO) > 0 && rawItem.getInvoiceCases() > 0) {
+                    buyPriceWithoutTax = rawItem.getTaxableValue().divide(BigDecimal.valueOf(rawItem.getInvoiceCases()), 2, RoundingMode.HALF_UP);
+                } else {
+                    buyPriceWithoutTax = rawItem.getBuyPricePerPiece()
+                            .multiply(BigDecimal.valueOf(ratio * packPerSecondary))
+                            .setScale(2, RoundingMode.HALF_UP);
+                }
 
                 builder.newProduct(false)
                         .productId(bestMatch.getId())

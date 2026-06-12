@@ -38,6 +38,7 @@ class InvoiceItem(BaseModel):
     invoice_cases: int = 1
     packs_per_case: int = 1
     buy_price_per_piece: float = 0.0
+    taxable_value: float = 0.0
     gst_percent: float = 5.0
 
 class ScanResponse(BaseModel):
@@ -48,12 +49,12 @@ You are an expert accountant parsing a retail shop purchase tax invoice.
 Scan the uploaded image of the tax invoice and extract all listed items.
 
 The invoice is a structured table with the following columns:
-S No. | Item Name | Hsn Code | Batch Number | Expiry Date | MRP | UOM | Total Invoice Cases | Price/Piece | Net Amt.
+S No. | Item Name | Hsn Code | Batch Number | Expiry Date | MRP | UOM | Total Invoice Cases | Price/Piece | Net Amt. | GST Discount (%) | GST Discount | Total Scheme Dis. | Taxable Value | GST (%)
 
 CRITICAL ALIGNMENT RULE:
 You MUST read the table row-by-row. Do NOT mix up columns from different rows!
 For each serial number (S No.), extract all of its columns from the same horizontal line.
-For example, for a single row, the 'Item Name', 'Batch Number', 'Expiry Date', 'MRP', 'UOM', 'Total Invoice Cases', and 'Price/Piece' must all belong to that same row. Do NOT align the 'Batch Number' of one row with the 'Item Name' of another row.
+For example, for a single row, the 'Item Name', 'Batch Number', 'Expiry Date', 'MRP', 'UOM', 'Total Invoice Cases', 'Price/Piece', and 'Taxable Value' must all belong to that same row. Do NOT align the 'Batch Number' of one row with the 'Item Name' of another row.
 
 Please extract:
 1. "name": The exact name of the item (from 'Item Name' column).
@@ -64,10 +65,12 @@ Please extract:
 5. "invoice_cases": The quantity of cases purchased from the 'Total Invoice Cases' column.
 6. "packs_per_case": The packing quantity per case from the 'UOM' column (integer, e.g., 100, 516, 312).
 7. "buy_price_per_piece": The buy price per piece without tax. Read this strictly from the 'Price/Piece' column (numeric float).
-8. "gst_percent": The GST tax percentage applied to this item from the 'GST (%)' column (numeric float, e.g., 5.0, 12.0, 18.0).
+8. "taxable_value": The total taxable value of the row after discount but before GST tax. Read this strictly from the 'Taxable Value' column (numeric float). If the 'Taxable Value' column is missing or empty, use the 'Net Amt' minus any discount, or raw row total before tax.
+9. "gst_percent": The GST tax percentage applied to this item from the 'GST (%)' column (numeric float, e.g., 5.0, 12.0, 18.0).
 
 Return ONLY the raw JSON list inside a code block. Do not write any markdown descriptions or introductory text.
 """
+
 
 
 def compress_image(image_bytes: bytes) -> bytes:

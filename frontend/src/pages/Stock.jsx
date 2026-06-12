@@ -309,9 +309,11 @@ export default function Stock() {
           const primaryAdded = Math.floor(totalSecondaryUnits / ratio)
           const openBoxAdded = totalSecondaryUnits % ratio
           const buyPricePerPiece = Number(item.buyPricePerPiece || 0)
-          const buyPriceWithoutTax = buyPricePerPiece > 0
-            ? Number((buyPricePerPiece * ratio * packPerSecondary).toFixed(2))
-            : Number(item.buyPriceWithoutTax || 0)
+          const buyPriceWithoutTax = (item.taxableValue && item.invoiceCases > 0)
+            ? Number((item.taxableValue / item.invoiceCases).toFixed(2))
+            : (buyPricePerPiece > 0
+              ? Number((buyPricePerPiece * ratio * packPerSecondary).toFixed(2))
+              : Number(item.buyPriceWithoutTax || 0))
           updated[quickProductIndex] = {
             ...item,
             productId: newProduct.id,
@@ -364,9 +366,11 @@ export default function Stock() {
               const primaryAdded = Math.floor(totalSecondaryUnits / ratio)
               const openBoxAdded = totalSecondaryUnits % ratio
               const buyPricePerPiece = Number(item.buyPricePerPiece || 0)
-              const buyPriceWithoutTax = buyPricePerPiece > 0
-                ? Number((buyPricePerPiece * ratio * packPerSecondary).toFixed(2))
-                : Number(item.buyPriceWithoutTax || 0)
+              const buyPriceWithoutTax = (item.taxableValue && item.invoiceCases > 0)
+                ? Number((item.taxableValue / item.invoiceCases).toFixed(2))
+                : (buyPricePerPiece > 0
+                  ? Number((buyPricePerPiece * ratio * packPerSecondary).toFixed(2))
+                  : Number(item.buyPriceWithoutTax || 0))
               updated[quickProductIndex] = {
                 ...item,
                 productId: matchedProduct.id,
@@ -439,7 +443,9 @@ export default function Stock() {
       const primaryAdded = Math.floor(totalSecondaryUnits / ratio)
       const openBoxAdded = totalSecondaryUnits % ratio
       
-      const buyPriceWithoutTax = Number(item.buyPricePerPiece) * ratio * packPerSecondary
+      const buyPriceWithoutTax = (item.taxableValue && item.invoiceCases > 0)
+        ? Number((item.taxableValue / item.invoiceCases).toFixed(2))
+        : Number(item.buyPricePerPiece) * ratio * packPerSecondary
       
       updated[index] = {
         ...item,
@@ -453,7 +459,7 @@ export default function Stock() {
         primaryAdded,
         secondaryAdded: totalSecondaryUnits,
         openBoxAdded,
-        buyPriceWithoutTax: Number(buyPriceWithoutTax.toFixed(2)),
+        buyPriceWithoutTax,
         newProduct: false
       }
     } else {
