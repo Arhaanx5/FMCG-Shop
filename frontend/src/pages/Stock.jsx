@@ -1300,14 +1300,16 @@ export default function Stock() {
                               type="number"
                               className="form-input"
                               style={{ width: '70px', padding: '4px 8px', fontSize: '12px', margin: 0 }}
-                              value={item.primaryAdded || 0}
+                              value={item.primaryAdded ?? ''}
                               min="0"
                               onChange={e => {
-                                const val = parseInt(e.target.value) || 0;
+                                const val = e.target.value;
                                 const updated = [...scannerPreview];
                                 updated[index].primaryAdded = val;
                                 const ratio = item.secondaryPerPrimary || 1;
-                                updated[index].secondaryAdded = (val * ratio) + (item.openBoxAdded || 0);
+                                const pAdded = val === '' ? 0 : (parseInt(val) || 0);
+                                const oAdded = item.openBoxAdded === '' ? 0 : (parseInt(item.openBoxAdded) || 0);
+                                updated[index].secondaryAdded = (pAdded * ratio) + oAdded;
                                 setScannerPreview(updated);
                               }}
                             />
@@ -1323,14 +1325,16 @@ export default function Stock() {
                               type="number"
                               className="form-input"
                               style={{ width: '60px', padding: '4px 8px', fontSize: '12px', margin: 0 }}
-                              value={item.openBoxAdded || 0}
+                              value={item.openBoxAdded ?? ''}
                               min="0"
                               onChange={e => {
-                                const val = parseInt(e.target.value) || 0;
+                                const val = e.target.value;
                                 const updated = [...scannerPreview];
                                 updated[index].openBoxAdded = val;
                                 const ratio = item.secondaryPerPrimary || 1;
-                                updated[index].secondaryAdded = ((item.primaryAdded || 0) * ratio) + val;
+                                const pAdded = item.primaryAdded === '' ? 0 : (parseInt(item.primaryAdded) || 0);
+                                const oAdded = val === '' ? 0 : (parseInt(val) || 0);
+                                updated[index].secondaryAdded = (pAdded * ratio) + oAdded;
                                 setScannerPreview(updated);
                               }}
                             />
@@ -1372,10 +1376,10 @@ export default function Stock() {
                               step="0.01"
                               className="form-input"
                               style={{ width: '85px', padding: '4px 8px', fontSize: '12px', margin: 0 }}
-                              value={item.buyPriceWithoutTax || 0}
+                              value={item.buyPriceWithoutTax ?? ''}
                               min="0"
                               onChange={e => {
-                                const val = parseFloat(e.target.value) || 0;
+                                const val = e.target.value;
                                 const updated = [...scannerPreview];
                                 updated[index].buyPriceWithoutTax = val;
                                 setScannerPreview(updated);

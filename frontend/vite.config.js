@@ -20,19 +20,37 @@ export default defineConfig({
     }
   },
   build: {
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
-              return 'vendor';
+            // Maps library — only loaded when Deliveries page is open
+            if (id.includes('leaflet') || id.includes('react-leaflet')) {
+              return 'maps'
             }
+            // Charts library — only loaded when Dashboard is open
+            if (id.includes('recharts') || id.includes('d3-') || id.includes('victory')) {
+              return 'charts'
+            }
+            // PDF generation — only loaded when printing a bill
+            if (id.includes('html2pdf') || id.includes('jspdf') || id.includes('html2canvas')) {
+              return 'pdf-lib'
+            }
+            // Animations library
             if (id.includes('framer-motion')) {
-              return 'motion';
+              return 'motion'
             }
+            // React core — always needed
+            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) {
+              return 'vendor'
+            }
+            // All other node_modules
+            return 'vendor-misc'
           }
         }
       }
     }
   }
 })
+
