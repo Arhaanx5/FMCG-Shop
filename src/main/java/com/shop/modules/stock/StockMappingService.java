@@ -91,21 +91,36 @@ public class StockMappingService {
                     buyPriceWithoutTax = rawItem.getBuyPricePerPiece().multiply(BigDecimal.valueOf(rawItem.getPacksPerCase())).setScale(2, RoundingMode.HALF_UP);
                 }
 
+                String secUnit = (rawItem.getPacksPerCase() == 72 || rawItem.getPacksPerCase() == 216) ? "PACK" : "LADI";
+                int proposedRatio = 20;
+                if ("PACK".equals(secUnit)) {
+                    proposedRatio = rawItem.getPacksPerCase() > 0 ? rawItem.getPacksPerCase() : 72;
+                } else {
+                    BigDecimal mrpVal = rawItem.getMrp() != null ? rawItem.getMrp() : BigDecimal.ZERO;
+                    int ladiSize = (mrpVal.compareTo(BigDecimal.valueOf(10)) > 0) ? 10 : 12;
+                    proposedRatio = rawItem.getPacksPerCase() > 0 ? (rawItem.getPacksPerCase() / ladiSize) : 20;
+                    if (proposedRatio <= 0) {
+                        proposedRatio = 20;
+                    }
+                }
+
+                int secondaryAdded = rawItem.getInvoiceCases() * proposedRatio;
+
                 builder.newProduct(true)
                         .productName(rawItem.getName())
                         .brand("Haldiram's") // Default guess
                         .category(rawItem.getName().toLowerCase().contains("chip") ? "CHIPS" : "SNACKS")
                         .primaryUnit("BOX")
-                        .secondaryUnit(rawItem.getPacksPerCase() == 72 || rawItem.getPacksPerCase() == 216 ? "PACK" : "LADI")
-                        .secondaryPerPrimary(rawItem.getPacksPerCase() == 72 || rawItem.getPacksPerCase() == 216 ? 72 : 20)
+                        .secondaryUnit(secUnit)
+                        .secondaryPerPrimary(proposedRatio)
                         .primaryAdded(rawItem.getInvoiceCases())
-                        .secondaryAdded(rawItem.getInvoiceCases() * (rawItem.getPacksPerCase() == 72 || rawItem.getPacksPerCase() == 216 ? 72 : 20))
+                        .secondaryAdded(secondaryAdded)
                         .openBoxAdded(0)
                         .buyPriceWithoutTax(buyPriceWithoutTax);
             } else {
                 // Map based on existing product's DB configurations
                 int ratio = bestMatch.getSecondaryPerPrimary() != null ? bestMatch.getSecondaryPerPrimary() : 1;
-                String secUnit = bestMatch.getSecondaryUnit() != null ? bestMatch.getSecondaryUnit().toUpperCase() : "PACK";
+                String secUnit = bestMatch.getSecondaryUnit() != null ? bestMatch.getSecondaryUnit().toUpperCase() : "LADI";
                 
                 int packPerSecondary = 1;
                 if ("LADI".equals(secUnit)) {

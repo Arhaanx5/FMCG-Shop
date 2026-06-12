@@ -16,6 +16,7 @@ public class StockBatchResponse {
     private String productName;
     private String brand;
     private String batchNumber;
+    private String invoiceNumber;
 
     // Unit info
     private String primaryUnit;

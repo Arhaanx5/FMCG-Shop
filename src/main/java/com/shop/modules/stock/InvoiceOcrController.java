@@ -3,6 +3,7 @@ package com.shop.modules.stock;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.shop.common.ApiResponse;
+import lombok.Builder;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.ByteArrayResource;
@@ -25,12 +26,22 @@ import java.util.stream.Collectors;
 public class InvoiceOcrController {
 
     private final StockMappingService mappingService;
+    private final StockBatchRepository batchRepository;
 
     // Python OCR service URL
     private static final String PYTHON_SERVICE_URL = "http://127.0.0.1:8087/ocr/scan-invoice";
 
     @Data
+    @Builder
+    public static class InvoiceScanResult {
+        private String invoiceNumber;
+        private boolean alreadyScanned;
+        private List<StockMappingService.MappedStockPreview> items;
+    }
+
+    @Data
     public static class PythonOcrResponse {
+        private String invoice_number;
         private List<PythonOcrItem> rawItems;
     }
 
@@ -49,8 +60,10 @@ public class InvoiceOcrController {
 
     @PostMapping("/parse-invoice")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
-    public ResponseEntity<ApiResponse<List<StockMappingService.MappedStockPreview>>> parseInvoice(
-            @RequestParam("file") MultipartFile file) {
+    public ResponseEntity<ApiResponse<InvoiceScanResult>> parseInvoice(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "supplierName", required = false) String supplierName) {
+
         
         if (file.isEmpty()) {
             return ResponseEntity.badRequest().body(ApiResponse.error("Uploaded file is empty"));
@@ -92,7 +105,12 @@ public class InvoiceOcrController {
             PythonOcrResponse ocrResult = objectMapper.readValue(response.getBody(), PythonOcrResponse.class);
 
             if (ocrResult == null || ocrResult.getRawItems() == null) {
-                return ResponseEntity.ok(ApiResponse.success("No items detected in invoice", new ArrayList<>()));
+                InvoiceScanResult emptyResult = InvoiceScanResult.builder()
+                        .invoiceNumber(ocrResult != null ? ocrResult.getInvoice_number() : null)
+                        .alreadyScanned(false)
+                        .items(new ArrayList<>())
+                        .build();
+                return ResponseEntity.ok(ApiResponse.success("No items detected in invoice", emptyResult));
             }
 
             // 3. Map to RawInvoiceItem model
@@ -120,11 +138,38 @@ public class InvoiceOcrController {
             // 4. Perform mapping logic (semantic search, unit conversions, batch duplicates)
             List<StockMappingService.MappedStockPreview> mappedPreview = mappingService.mapInvoiceItems(rawItems);
 
-            return ResponseEntity.ok(ApiResponse.success("Invoice parsed and mapped successfully", mappedPreview));
+            boolean alreadyScanned = false;
+            if (ocrResult.getInvoice_number() != null && !ocrResult.getInvoice_number().isBlank()) {
+                String supplier = (supplierName != null && !supplierName.isBlank()) ? supplierName.trim() : "Saurabh Agency";
+                alreadyScanned = batchRepository.existsBySupplierNameIgnoreCaseAndInvoiceNumberIgnoreCase(supplier, ocrResult.getInvoice_number().trim());
+            }
+
+            InvoiceScanResult scanResult = InvoiceScanResult.builder()
+                    .invoiceNumber(ocrResult.getInvoice_number() != null ? ocrResult.getInvoice_number().trim() : null)
+                    .alreadyScanned(alreadyScanned)
+                    .items(mappedPreview)
+                    .build();
+
+            return ResponseEntity.ok(ApiResponse.success("Invoice parsed and mapped successfully", scanResult));
+
 
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("Failed to parse invoice: " + e.getMessage()));
         }
+    }
+
+    @GetMapping("/check-duplicate-invoice")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<Boolean>> checkDuplicateInvoice(
+            @RequestParam String supplierName,
+            @RequestParam String invoiceNumber) {
+        boolean exists = false;
+        if (invoiceNumber != null && !invoiceNumber.isBlank()) {
+            exists = batchRepository.existsBySupplierNameIgnoreCaseAndInvoiceNumberIgnoreCase(
+                    supplierName.trim(), invoiceNumber.trim()
+            );
+        }
+        return ResponseEntity.ok(ApiResponse.success(exists));
     }
 }

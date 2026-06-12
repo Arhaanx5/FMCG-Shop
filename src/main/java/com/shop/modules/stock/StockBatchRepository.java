@@ -36,4 +36,8 @@ public interface StockBatchRepository
     boolean existsByBatchNumberIgnoreCase(String batchNumber);
 
     boolean existsByProductIdAndBatchNumberIgnoreCase(UUID productId, String batchNumber);
+
+    boolean existsBySupplierNameIgnoreCaseAndInvoiceNumberIgnoreCase(String supplierName, String invoiceNumber);
+
+    List<StockBatch> findByInvoiceNumberIgnoreCase(String invoiceNumber);
 }

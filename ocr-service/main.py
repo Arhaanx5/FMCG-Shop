@@ -42,13 +42,17 @@ class InvoiceItem(BaseModel):
     gst_percent: float = 5.0
 
 class ScanResponse(BaseModel):
+    invoice_number: Optional[str] = None
     rawItems: List[InvoiceItem]
 
 PROMPT = """
 You are an expert accountant parsing a retail shop purchase tax invoice.
-Scan the uploaded image of the tax invoice and extract all listed items.
+Scan the uploaded image of the tax invoice.
 
-The invoice is a structured table with the following columns:
+First, look at the header area of the invoice and extract:
+- "invoice_number": Locate and extract the Invoice Number (or Bill Number / Inv No., e.g., '26-27/SA-0821', 'SA-0820'). If not found, return null.
+
+Next, parse the listed invoice items. The invoice is a structured table with the following columns:
 S No. | Item Name | Hsn Code | Batch Number | Expiry Date | MRP | UOM | Total Invoice Cases | Price/Piece | Net Amt. | GST Discount (%) | GST Discount | Total Scheme Dis. | Taxable Value | GST (%)
 
 CRITICAL ALIGNMENT RULE:
@@ -56,7 +60,7 @@ You MUST read the table row-by-row. Do NOT mix up columns from different rows!
 For each serial number (S No.), extract all of its columns from the same horizontal line.
 For example, for a single row, the 'Item Name', 'Batch Number', 'Expiry Date', 'MRP', 'UOM', 'Total Invoice Cases', 'Price/Piece', and 'Taxable Value' must all belong to that same row. Do NOT align the 'Batch Number' of one row with the 'Item Name' of another row.
 
-Please extract:
+Please extract each item with:
 1. "name": The exact name of the item (from 'Item Name' column).
 2. "mrp": The Maximum Retail Price per piece/packet (numeric float, from the 'MRP' column).
 3. "batch_number": Read from the 'Batch Number' column.
@@ -77,8 +81,9 @@ For example:
 - S No 2 (Aloo Bhujia): cases = 3, packs_per_case = 100, buy_price = 14.5407. Verification: 3 * 100 * 14.5407 = 4362.21. This matches the row's Taxable Value of 4,362.21. So cases MUST be 3 (NOT 2).
 If you find a mathematical mismatch (e.g. if you wrote cases = 3 for S No 1, but its Taxable Value is 2,908.14), you have mixed up adjacent row values. Re-scan the image, align the columns correctly for that row, and fix it.
 
-Return ONLY the raw JSON list inside a code block. Do not write any markdown descriptions or introductory text.
+Return a JSON object with the keys "invoice_number" and "rawItems" containing the parsed results in a code block. Do not write any markdown descriptions or introductory text.
 """
+
 
 
 

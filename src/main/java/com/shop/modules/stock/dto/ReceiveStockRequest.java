@@ -17,6 +17,8 @@ public class ReceiveStockRequest {
             message = "Batch number must be 2-100 characters")
     private String batchNumber;
 
+    private String invoiceNumber;
+
     // Primary units received (BOX/CRATE/CARTON)
     @Min(value = 0,
             message = "Primary received cannot be negative")

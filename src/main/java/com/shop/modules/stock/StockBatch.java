@@ -29,6 +29,9 @@ public class StockBatch {
     @Column(name = "batch_number")
     private String batchNumber;
 
+    @Column(name = "invoice_number")
+    private String invoiceNumber;
+
     // Primary units received (BOX/CRATE/CARTON)
     @Column(name = "primary_received")
     @Builder.Default

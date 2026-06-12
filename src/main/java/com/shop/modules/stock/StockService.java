@@ -164,6 +164,7 @@ public class StockService {
         StockBatch batch = StockBatch.builder()
                 .product(product)
                 .batchNumber(req.getBatchNumber())
+                .invoiceNumber(req.getInvoiceNumber())
                 .primaryReceived(req.getPrimaryReceived())
                 .secondaryReceived(totalSecondary)
                 .secondaryRemaining(totalSecondary)
@@ -644,11 +645,19 @@ public class StockService {
         stockAdjustmentLogRepository.save(log);
     }
 
+    public List<StockBatch> getBatchesByInvoice(String invoiceNumber) {
+        if (invoiceNumber == null || invoiceNumber.trim().isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        return batchRepository.findByInvoiceNumberIgnoreCase(invoiceNumber.trim());
+    }
+
     // ── Inner request class ──
     @Data
     public static class ReceiveStockRequest {
         private UUID productId;
         private String batchNumber;
+        private String invoiceNumber;
         private int primaryReceived;
         private int extraSecondaryReceived;
         private BigDecimal buyPriceWithoutTax;

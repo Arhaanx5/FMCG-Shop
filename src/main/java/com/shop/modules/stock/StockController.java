@@ -83,6 +83,7 @@ public class StockController {
                 .gstPercent(batch.getGstPercent())
                 .expiryDate(batch.getExpiryDate())
                 .supplierName(batch.getSupplierName())
+                .invoiceNumber(batch.getInvoiceNumber())
                 .exhausted(batch.getExhausted() != null && batch.getExhausted())
                 .expiringSoon(expiringSoon)
                 .receivedAt(batch.getReceivedAt())
@@ -163,6 +164,7 @@ public class StockController {
         serviceReq.setSellPricePrimary(req.getSellPricePrimary());
         serviceReq.setSellPriceSecondary(req.getSellPriceSecondary());
         serviceReq.setLogAsExpense(req.isLogAsExpense());
+        serviceReq.setInvoiceNumber(req.getInvoiceNumber());
 
         String username = principal != null ? principal.getName() : "System";
         StockBatch batch = stockService.receiveStock(serviceReq, username);
@@ -198,12 +200,24 @@ public class StockController {
             serviceReq.setSellPricePrimary(req.getSellPricePrimary());
             serviceReq.setSellPriceSecondary(req.getSellPriceSecondary());
             serviceReq.setLogAsExpense(req.isLogAsExpense());
+            serviceReq.setInvoiceNumber(req.getInvoiceNumber());
 
             StockBatch batch = stockService.receiveStock(serviceReq, username);
             responses.add(toBatchResponse(batch));
         }
 
         return ResponseEntity.ok(ApiResponse.success("Bulk stock received successfully", responses));
+    }
+
+    @GetMapping("/batches/invoice/{invoiceNumber}")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<List<StockBatchResponse>>> getBatchesByInvoice(
+            @PathVariable String invoiceNumber) {
+        List<StockBatchResponse> responses = stockService.getBatchesByInvoice(invoiceNumber)
+                .stream()
+                .map(this::toBatchResponse)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(ApiResponse.success(responses));
     }
 
     // ── Adjust Stock Batch Quantity (Admin & Manager only) ──
