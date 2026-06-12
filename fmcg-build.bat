@@ -68,6 +68,11 @@ pause
 exit /b
 
 :package_ok
+:: Copy Google Drive key to target folder if it exists
+if exist google-drive-key.json (
+    echo Copying google-drive-key.json to target...
+    copy /y google-drive-key.json target\ >nul
+)
 echo ==========================================
 echo 5. STARTING BACKEND SERVICE...
 echo ==========================================
