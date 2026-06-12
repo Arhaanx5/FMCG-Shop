@@ -66,7 +66,7 @@ public class StockMappingService {
         List<Product> allProducts = productRepository.findByActiveTrue();
 
         for (RawInvoiceItem rawItem : rawItems) {
-            Product bestMatch = findBestProductMatch(rawItem.getName(), allProducts);
+            Product bestMatch = findBestProductMatch(rawItem.getName(), rawItem.getMrp(), allProducts);
             boolean isNewProduct = (bestMatch == null);
 
             boolean duplicateBatch = !isNewProduct && checkDuplicateBatch(bestMatch.getId(), rawItem.getBatchNumber());
@@ -151,7 +151,7 @@ public class StockMappingService {
 
                 builder.newProduct(false)
                         .productId(bestMatch.getId())
-                        .productName(bestMatch.getName())
+                        .productName(rawItem.getName()) // Keep raw invoice name
                         .brand(bestMatch.getBrand())
                         .category(bestMatch.getCategory() != null ? bestMatch.getCategory().name() : "SNACKS")
                         .primaryUnit(bestMatch.getPrimaryUnit() != null ? bestMatch.getPrimaryUnit() : "BOX")
@@ -228,7 +228,7 @@ public class StockMappingService {
         return jaro + 0.1 * prefix * (1.0 - jaro);
     }
 
-    private Product findBestProductMatch(String rawName, List<Product> allProducts) {
+    private Product findBestProductMatch(String rawName, BigDecimal rawMrp, List<Product> allProducts) {
         if (rawName == null || rawName.trim().isEmpty()) return null;
         String normalizedRaw = normalizeName(rawName);
         if (normalizedRaw.isEmpty()) return null;
@@ -237,6 +237,11 @@ public class StockMappingService {
         double bestScore = 0.0;
 
         for (Product product : allProducts) {
+            // Check for MRP mismatch
+            if (isMrpMismatch(rawMrp, product.getName())) {
+                continue;
+            }
+
             String dbNameLower = product.getName().toLowerCase();
             String normalizedDb = normalizeName(product.getName());
 
@@ -280,6 +285,48 @@ public class StockMappingService {
         }
 
         return null;
+    }
+
+    private boolean isMrpMismatch(BigDecimal rawMrp, String dbProductName) {
+        if (rawMrp == null) return false;
+        int rawMrpInt = rawMrp.setScale(0, RoundingMode.HALF_UP).intValue();
+        if (rawMrpInt <= 0) return false;
+
+        String nameLower = dbProductName.toLowerCase();
+        
+        // Match patterns like "rs-X", "rs X", "mrp X", "mrp-X", "wrp-X", "wrp X"
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile("(?:rs|mrp|wrp)[-\\s]*(\\d+)");
+        java.util.regex.Matcher m = p.matcher(nameLower);
+        if (m.find()) {
+            try {
+                String valStr = m.group(1);
+                // Clean OCR variations
+                if (valStr.startsWith("20") && valStr.length() > 2) {
+                    valStr = "20";
+                } else if (valStr.startsWith("5") && valStr.length() > 1) {
+                    valStr = "5";
+                } else if (valStr.startsWith("10") && valStr.length() > 2) {
+                    valStr = "10";
+                }
+                
+                int dbMrp = Integer.parseInt(valStr);
+                if (dbMrp != rawMrpInt) {
+                    return true; // Mismatch!
+                }
+            } catch (Exception e) {
+                // Ignore parse errors
+            }
+        }
+        
+        // Substring manual fallbacks
+        if (rawMrpInt == 20 && (nameLower.contains("rs-5") || nameLower.contains("rs 5") || nameLower.contains("mrp 5") || nameLower.contains("mrp-5"))) {
+            return true;
+        }
+        if (rawMrpInt == 5 && (nameLower.contains("rs-20") || nameLower.contains("rs 20") || nameLower.contains("mrp 20") || nameLower.contains("mrp-20"))) {
+            return true;
+        }
+
+        return false;
     }
 
     private boolean checkDuplicateBatch(UUID productId, String batchNumber) {
