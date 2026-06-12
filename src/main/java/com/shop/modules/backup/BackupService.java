@@ -46,6 +46,9 @@ public class BackupService {
     @Value("${app.backup.enabled:true}")
     private boolean backupEnabled;
 
+    @Value("${app.backup.apps-script-url:}")
+    private String appsScriptUrl;
+
     private static final String APPLICATION_NAME = "Lari Traders Backup";
     private static final DateTimeFormatter FILE_DATE_FMT = DateTimeFormatter.ofPattern("dd_MM_yyyy");
     private static final DateTimeFormatter TIMESTAMP_FMT = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm:ss");
@@ -61,8 +64,13 @@ public class BackupService {
             result.put("localFile", dumpFile.toString());
             result.put("localSizeMB", String.format("%.2f", Files.size(dumpFile) / (1024.0 * 1024.0)));
 
-            // Step 2: Upload to Google Drive
-            String driveFileId = uploadToDrive(dumpFile);
+            // Step 2: Upload to Google Drive (directly or via Apps Script Web App)
+            String driveFileId;
+            if (appsScriptUrl != null && !appsScriptUrl.isBlank()) {
+                driveFileId = uploadToAppsScript(dumpFile);
+            } else {
+                driveFileId = uploadToDrive(dumpFile);
+            }
             result.put("driveFileId", driveFileId);
             result.put("status", "SUCCESS");
             result.put("timestamp", LocalDateTime.now().format(TIMESTAMP_FMT));
@@ -88,7 +96,12 @@ public class BackupService {
         log.info("Starting scheduled database backup...");
         try {
             Path dumpFile = dumpDatabase();
-            String driveFileId = uploadToDrive(dumpFile);
+            String driveFileId;
+            if (appsScriptUrl != null && !appsScriptUrl.isBlank()) {
+                driveFileId = uploadToAppsScript(dumpFile);
+            } else {
+                driveFileId = uploadToDrive(dumpFile);
+            }
             log.info("Scheduled backup completed. Drive file ID: {}", driveFileId);
         } catch (Exception e) {
             log.error("Scheduled backup failed!", e);
@@ -224,5 +237,39 @@ public class BackupService {
         String afterProtocol = jdbcUrl.substring(jdbcUrl.indexOf("//") + 2);
         String hostPort = afterProtocol.split("/")[0];
         return hostPort.contains(":") ? hostPort.split(":")[1] : "5432";
+    }
+
+    private String uploadToAppsScript(Path filePath) throws Exception {
+        byte[] fileBytes = Files.readAllBytes(filePath);
+        String base64Bytes = java.util.Base64.getEncoder().encodeToString(fileBytes);
+
+        Map<String, String> payload = new java.util.HashMap<>();
+        payload.put("fileName", filePath.getFileName().toString());
+        payload.put("fileBytes", base64Bytes);
+
+        String jsonPayload = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(payload);
+
+        java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+                .followRedirects(java.net.http.HttpClient.Redirect.ALWAYS)
+                .build();
+
+        java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create(appsScriptUrl))
+                .header("Content-Type", "application/json")
+                .POST(java.net.http.HttpRequest.BodyPublishers.ofString(jsonPayload))
+                .build();
+
+        java.net.http.HttpResponse<String> response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+
+        if (response.statusCode() == 200) {
+            Map body = new com.fasterxml.jackson.databind.ObjectMapper().readValue(response.body(), Map.class);
+            if ("SUCCESS".equals(body.get("status"))) {
+                return (String) body.get("fileId");
+            } else {
+                throw new IOException("Apps Script error: " + body.get("error"));
+            }
+        } else {
+            throw new java.io.IOException("Failed to upload to Apps Script. Status code: " + response.statusCode());
+        }
     }
 }
