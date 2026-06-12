@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, IndianRupee, Edit2, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Plus, IndianRupee, Edit2, Trash2, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
 import api from '../services/api'
 import DataTable from '../components/DataTable'
 import Modal from '../components/Modal'
@@ -104,7 +104,7 @@ const computeRunningOutstandings = (paymentsList, billsList, customersList) => {
 }
 
 export default function Khata() {
-  const { isAdmin, isManager } = useAuth()
+  const { aiEnabled, isAdmin, isManager } = useAuth()
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
   useEffect(() => {
@@ -153,6 +153,87 @@ export default function Khata() {
   // Overpayment modal state
   const [overpaymentPreview, setOverpaymentPreview] = useState(null)
   const [pendingPaymentForm, setPendingPaymentForm] = useState(null)
+
+  // AI Reminder states
+  const [aiReminderCustomer, setAiReminderCustomer] = useState(null)
+  const [aiReminderText, setAiReminderText] = useState('')
+  const [aiReminderLoading, setAiReminderLoading] = useState(false)
+  const [showAiReminderModal, setShowAiReminderModal] = useState(false)
+  const [sendingAiReminder, setSendingAiReminder] = useState(false)
+  const [aiReminderLanguage, setAiReminderLanguage] = useState('HINGLISH')
+
+  const triggerAiReminder = async (customer, lang = 'HINGLISH') => {
+    setAiReminderCustomer(customer)
+    setAiReminderLanguage(lang)
+    setAiReminderText('')
+    setAiReminderLoading(true)
+    setShowAiReminderModal(true)
+    
+    try {
+      const res = await api.get(`/khata/ai/generate-reminder?customerId=${customer.id}&language=${lang}`)
+      if (res.data?.data?.draft) {
+        setAiReminderText(res.data.data.draft)
+      } else {
+        setAiReminderText('Failed to generate draft. Please check service connection.')
+      }
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to generate AI reminder draft.')
+      setAiReminderText('Failed to generate AI reminder draft.')
+    } finally {
+      setAiReminderLoading(false)
+    }
+  }
+
+  const handleLanguageChange = (newLang) => {
+    if (aiReminderCustomer) {
+      triggerAiReminder(aiReminderCustomer, newLang)
+    }
+  }
+
+  const sendAiReminder = async () => {
+    if (!aiReminderCustomer || !aiReminderText.trim()) return
+    setSendingAiReminder(true)
+    
+    const phone = aiReminderCustomer.phone ? aiReminderCustomer.phone.trim().replace(/\D/g, '') : ''
+    let phoneWithCountry = phone
+    if (phone.length === 10) {
+      phoneWithCountry = '91' + phone
+    }
+
+    try {
+      let isConnected = false
+      try {
+        const statusRes = await api.get('/customers/whatsapp/status')
+        isConnected = statusRes.data.data?.status === 'CONNECTED'
+      } catch (err) {
+        console.error('Failed to check WhatsApp status', err)
+      }
+
+      if (isConnected && (isAdmin || isManager)) {
+        await api.post('/customers/whatsapp/send-text', {
+          phone: phoneWithCountry,
+          message: aiReminderText
+        })
+        toast.success('AI Reminder sent successfully via WhatsApp!')
+      } else {
+        const encodedText = encodeURIComponent(aiReminderText)
+        const whatsappUrl = `https://api.whatsapp.com/send?phone=${phoneWithCountry}&text=${encodedText}`
+        window.open(whatsappUrl, '_blank')
+        toast.success('Redirecting to WhatsApp web...')
+      }
+      setShowAiReminderModal(false)
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to send WhatsApp message. Falling back to browser redirect...')
+      const encodedText = encodeURIComponent(aiReminderText)
+      const whatsappUrl = `https://api.whatsapp.com/send?phone=${phoneWithCountry}&text=${encodedText}`
+      window.open(whatsappUrl, '_blank')
+      setShowAiReminderModal(false)
+    } finally {
+      setSendingAiReminder(false)
+    }
+  }
 
   useEffect(() => { loadAll(true) }, [])
 
@@ -742,6 +823,19 @@ Please clear your outstanding balance as soon as possible. Thank you for doing b
                           <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.457L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.42 9.864-9.858.002-2.634-1.013-5.11-2.861-6.961C16.63 1.936 14.156.92 11.53.921c-5.445 0-9.871 4.42-9.875 9.86-.001 1.716.452 3.39 1.312 4.869l-1.02 3.733 3.825-.996zM18.067 14.7c-.33-.165-1.956-.967-2.285-1.086-.329-.12-.57-.179-.81.18-.24.359-.93 1.168-1.138 1.407-.21.239-.419.27-.75.105-.329-.165-1.39-.512-2.648-1.633-.978-.872-1.637-1.95-1.83-2.28-.192-.33-.02-.509.145-.673.149-.148.33-.389.495-.584.165-.195.22-.329.33-.548.11-.219.055-.41-.027-.575-.083-.165-.81-1.952-1.11-2.674-.29-.701-.586-.607-.81-.617-.21-.01-.45-.011-.69-.011-.24 0-.63.09-.96.449-.33.359-1.258 1.229-1.258 2.996 0 1.767 1.287 3.473 1.467 3.712.18.24 2.534 3.869 6.138 5.426.857.371 1.526.593 2.05.759.86.273 1.643.235 2.261.143.689-.103 1.956-.8 2.235-1.573.279-.773.279-1.436.195-1.573-.083-.137-.31-.219-.64-.384z"/>
                         </svg>
                       </button>
+                      {aiEnabled && (
+                        <button 
+                          className="btn btn-ghost btn-icon btn-sm" 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            triggerAiReminder(customer);
+                          }} 
+                          title="Generate AI Payment Reminder"
+                          style={{ color: '#c084fc' }}
+                        >
+                          <Sparkles size={14} />
+                        </button>
+                      )}
                       <button 
                         className="btn btn-secondary btn-sm" 
                         onClick={() => {
@@ -1242,6 +1336,87 @@ Please clear your outstanding balance as soon as possible. Thank you for doing b
             </div>
           </form>
         )}
+      </Modal>
+
+      {/* AI WhatsApp Reminder Modal */}
+      <Modal isOpen={showAiReminderModal} onClose={() => setShowAiReminderModal(false)} title="AI WhatsApp Reminder">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          {aiReminderLoading ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-8) 0', gap: 'var(--space-2)' }}>
+              <div className="spinner" style={{ width: '30px', height: '30px', borderTopColor: 'var(--color-accent)' }}></div>
+              <span className="text-muted text-xs">Generating reminder draft using Gemini AI...</span>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+              <div className="form-group">
+                <label className="form-label">Recipient Shop Name</label>
+                <input className="form-input" value={aiReminderCustomer ? `${aiReminderCustomer.name} (${aiReminderCustomer.shopName || 'No Shop Name'})` : ''} disabled style={{ opacity: 0.7 }} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Recipient Phone</label>
+                <input className="form-input" value={aiReminderCustomer ? aiReminderCustomer.phone || '—' : ''} disabled style={{ opacity: 0.7 }} />
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ marginBottom: '6px' }}>Reminder Language Template</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${aiReminderLanguage === 'HINGLISH' ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => handleLanguageChange('HINGLISH')}
+                    disabled={aiReminderLoading}
+                    style={{ flex: 1, height: '32px', fontSize: '12px' }}
+                  >
+                    ✨ Hinglish Template
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${aiReminderLanguage === 'ENGLISH' ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => handleLanguageChange('ENGLISH')}
+                    disabled={aiReminderLoading}
+                    style={{ flex: 1, height: '32px', fontSize: '12px' }}
+                  >
+                    🇬🇧 English Template
+                  </button>
+                </div>
+              </div>
+              <div className="form-group">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-1)' }}>
+                  <label className="form-label">Generated Message Draft (Edit if needed)</label>
+                  <span className="badge badge-accent" style={{ fontSize: '9px', textTransform: 'uppercase' }}>Gemini 2.5 Flash</span>
+                </div>
+                <textarea
+                  className="form-textarea"
+                  value={aiReminderText}
+                  onChange={(e) => setAiReminderText(e.target.value)}
+                  placeholder="Enter reminder message..."
+                  rows={6}
+                  style={{ fontSize: 'var(--font-size-sm)' }}
+                />
+              </div>
+              <div className="form-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowAiReminderModal(false)}>Cancel</button>
+                <button 
+                  type="button" 
+                  className="btn btn-primary" 
+                  onClick={sendAiReminder}
+                  disabled={sendingAiReminder || !aiReminderText.trim()}
+                  style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}
+                >
+                  {sendingAiReminder ? (
+                    'Sending...'
+                  ) : (
+                    <>
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                        <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.457L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.42 9.864-9.858.002-2.634-1.013-5.11-2.861-6.961C16.63 1.936 14.156.92 11.53.921c-5.445 0-9.871 4.42-9.875 9.86-.001 1.716.452 3.39 1.312 4.869l-1.02 3.733 3.825-.996zM18.067 14.7c-.33-.165-1.956-.967-2.285-1.086-.329-.12-.57-.179-.81.18-.24.359-.93 1.168-1.138 1.407-.21.239-.419.27-.75.105-.329-.165-1.39-.512-2.648-1.633-.978-.872-1.637-1.95-1.83-2.28-.192-.33-.02-.509.145-.673.149-.148.33-.389.495-.584.165-.195.22-.329.33-.548.11-.219.055-.41-.027-.575-.083-.165-.81-1.952-1.11-2.674-.29-.701-.586-.607-.81-.617-.21-.01-.45-.011-.69-.011-.24 0-.63.09-.96.449-.33.359-1.258 1.229-1.258 2.996 0 1.767 1.287 3.473 1.467 3.712.18.24 2.534 3.869 6.138 5.426.857.371 1.526.593 2.05.759.86.273 1.643.235 2.261.143.689-.103 1.956-.8 2.235-1.573.279-.773.279-1.436.195-1.573-.083-.137-.31-.219-.64-.384z"/>
+                      </svg>
+                      Send WhatsApp
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </Modal>
     </div>
   )

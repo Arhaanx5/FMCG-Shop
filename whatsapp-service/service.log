@@ -8445,3 +8445,28 @@ essage":"⚠️ Message failed, retry 2/3 in 15s","data":{"id":"7b8bff61-d1bf-4c
 {"ts":"2026-06-11T13:44:42.813Z","level":"INFO","module":"WA","message":"Loading 73%: WhatsApp"}
 {"ts":"2026-06-11T13:44:43.861Z","level":"INFO","module":"WA","message":"Loading 95%: WhatsApp"}
 {"ts":"2026-06-11T13:44:44.715Z","level":"INFO","module":"WA","message":"Loading 99%: WhatsApp"}
+{"ts":"2026-06-12T06:02:30.613Z","level":"INFO","module":"QUEUE","message":"Loaded 0 pending messages from disk"}
+{"ts":"2026-06-12T06:02:30.613Z","level":"INFO","module":"QUEUE","message":"Loaded 0 pending messages from disk"}
+{"ts":"2026-06-12T06:02:30.817Z","level":"INFO","module":"CHROME","message":"Using Chrome from env: C:\\Users\\arhaa\\.cache\\puppeteer\\chrome\\win64-146.0.7680.31\\chrome-win64\\chrome.exe"}
+{"ts":"2026-06-12T06:02:30.828Z","level":"INFO","module":"SYSTEM","message":"🚀 Lari Traders WhatsApp Service v2.0 starting..."}
+{"ts":"2026-06-12T06:02:30.829Z","level":"INFO","module":"SYSTEM","message":"Cleaning up any orphaned Chrome/Puppeteer processes..."}
+{"ts":"2026-06-12T06:02:30.803Z","level":"INFO","module":"CHROME","message":"Using Chrome from env: C:\\Users\\arhaa\\.cache\\puppeteer\\chrome\\win64-146.0.7680.31\\chrome-win64\\chrome.exe"}
+{"ts":"2026-06-12T06:02:31.717Z","level":"INFO","module":"SYSTEM","message":"Orphaned Chrome processes cleaned."}
+{"ts":"2026-06-12T06:02:30.820Z","level":"INFO","module":"SYSTEM","message":"🚀 Lari Traders WhatsApp Service v2.0 starting..."}
+{"ts":"2026-06-12T06:02:31.731Z","level":"WARN","module":"PORT","message":"Port 3000 busy, retrying in 3000ms (1/10)"}
+{"ts":"2026-06-12T06:02:30.820Z","level":"INFO","module":"SYSTEM","message":"Cleaning up any orphaned Chrome/Puppeteer processes..."}
+{"ts":"2026-06-12T06:02:31.715Z","level":"INFO","module":"SYSTEM","message":"Orphaned Chrome processes cleaned."}
+{"ts":"2026-06-12T06:02:31.733Z","level":"INFO","module":"SYSTEM","message":"✅ HTTP server listening on http://127.0.0.1:3000"}
+{"ts":"2026-06-12T06:02:31.733Z","level":"INFO","module":"SYSTEM","message":"📋 Endpoints: /health /status /qr /send /send-bulk /send-media /queue/stats"}
+{"ts":"2026-06-12T06:02:31.733Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-12T06:02:34.741Z","level":"WARN","module":"PORT","message":"Port 3000 busy, retrying in 3000ms (2/10)"}
+{"ts":"2026-06-12T06:02:37.753Z","level":"WARN","module":"PORT","message":"Port 3000 busy, retrying in 3000ms (3/10)"}
+{"ts":"2026-06-12T06:02:40.769Z","level":"WARN","module":"PORT","message":"Port 3000 busy, retrying in 3000ms (4/10)"}
+{"ts":"2026-06-12T06:02:41.000Z","level":"INFO","module":"WA","message":"QR code ready — scan with WhatsApp phone app"}
+{"ts":"2026-06-12T06:02:43.771Z","level":"WARN","module":"PORT","message":"Port 3000 busy, retrying in 3000ms (5/10)"}
+{"ts":"2026-06-12T06:02:46.780Z","level":"WARN","module":"PORT","message":"Port 3000 busy, retrying in 3000ms (6/10)"}
+{"ts":"2026-06-12T06:02:49.788Z","level":"WARN","module":"PORT","message":"Port 3000 busy, retrying in 3000ms (7/10)"}
+{"ts":"2026-06-12T06:02:52.800Z","level":"WARN","module":"PORT","message":"Port 3000 busy, retrying in 3000ms (8/10)"}
+{"ts":"2026-06-12T06:02:55.816Z","level":"WARN","module":"PORT","message":"Port 3000 busy, retrying in 3000ms (9/10)"}
+{"ts":"2026-06-12T06:02:58.831Z","level":"WARN","module":"PORT","message":"Port 3000 busy, retrying in 3000ms (10/10)"}
+{"ts":"2026-06-12T06:03:01.838Z","level":"ERROR","module":"SYSTEM","message":"Port 3000 still occupied after retries. Exiting."}

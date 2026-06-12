@@ -13,6 +13,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -170,6 +171,39 @@ public class StockController {
                 ApiResponse.success(
                         "Stock received successfully",
                         toBatchResponse(batch)));
+    }
+
+    @PostMapping("/receive-bulk")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<List<StockBatchResponse>>> receiveStockBulk(
+            @Valid @RequestBody List<ReceiveStockRequest> requests,
+            java.security.Principal principal) {
+
+        String username = principal != null ? principal.getName() : "System";
+        List<StockBatchResponse> responses = new ArrayList<>();
+
+        for (ReceiveStockRequest req : requests) {
+            if (req.getPrimaryReceived() == 0 && req.getExtraSecondaryReceived() == 0) {
+                continue; // Skip empty requests
+            }
+
+            StockService.ReceiveStockRequest serviceReq = new StockService.ReceiveStockRequest();
+            serviceReq.setProductId(req.getProductId());
+            serviceReq.setBatchNumber(req.getBatchNumber());
+            serviceReq.setPrimaryReceived(req.getPrimaryReceived());
+            serviceReq.setExtraSecondaryReceived(req.getExtraSecondaryReceived());
+            serviceReq.setBuyPriceWithoutTax(req.getBuyPriceWithoutTax());
+            serviceReq.setExpiryDate(req.getExpiryDate());
+            serviceReq.setSupplierName(req.getSupplierName());
+            serviceReq.setSellPricePrimary(req.getSellPricePrimary());
+            serviceReq.setSellPriceSecondary(req.getSellPriceSecondary());
+            serviceReq.setLogAsExpense(req.isLogAsExpense());
+
+            StockBatch batch = stockService.receiveStock(serviceReq, username);
+            responses.add(toBatchResponse(batch));
+        }
+
+        return ResponseEntity.ok(ApiResponse.success("Bulk stock received successfully", responses));
     }
 
     // ── Adjust Stock Batch Quantity (Admin & Manager only) ──

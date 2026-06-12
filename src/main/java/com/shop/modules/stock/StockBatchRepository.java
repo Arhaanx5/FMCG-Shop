@@ -32,4 +32,8 @@ public interface StockBatchRepository
             "ORDER BY b.expiryDate ASC")
     List<StockBatch> findExpiringBefore(
             @Param("date") LocalDate date);
+
+    boolean existsByBatchNumberIgnoreCase(String batchNumber);
+
+    boolean existsByProductIdAndBatchNumberIgnoreCase(UUID productId, String batchNumber);
 }

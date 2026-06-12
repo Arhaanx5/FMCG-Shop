@@ -1004,6 +1004,7 @@ Thank you for doing business with Lari Traders!`
               <span className="card-title">Add Products</span>
               <span className="text-sm text-muted">{cart.length} items in cart</span>
             </div>
+
             <div style={{ marginBottom: 'var(--space-4)' }}>
               <SearchSelect
                 options={products.filter(p => p.active !== false)}

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Plus, AlertTriangle, Clock, Package, Edit2, History, Trash2, Settings, PlayCircle, CheckCircle, XCircle } from 'lucide-react'
+import { Plus, AlertTriangle, Clock, Package, Edit2, History, Trash2, Settings, PlayCircle, CheckCircle, XCircle, Camera, Upload } from 'lucide-react'
 import api from '../services/api'
 import DataTable from '../components/DataTable'
 import Pagination from '../components/Pagination'
@@ -9,6 +9,7 @@ import SearchSelect from '../components/SearchSelect'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
 import ConfirmDialog from '../components/ConfirmDialog'
+const CATEGORIES = ['CHIPS', 'SNACKS', 'BEVERAGES', 'CIGARETTES', 'BISCUITS', 'NAMKEEN', 'OTHER']
 
 const emptyForm = { 
   productId: '', 
@@ -25,7 +26,7 @@ const emptyForm = {
 }
 
 export default function Stock() {
-  const { isAdmin, isManager } = useAuth()
+  const { isAdmin, isManager, aiEnabled } = useAuth()
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
   useEffect(() => {
@@ -33,6 +34,7 @@ export default function Stock() {
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
+
 
   const [stocks, setStocks] = useState([])
   const [products, setProducts] = useState([])
@@ -76,6 +78,27 @@ export default function Stock() {
   const [schedulerLoading, setSchedulerLoading] = useState(false)
   const [runNowLoading, setRunNowLoading] = useState(false)
   const [showRunNowConfirm, setShowRunNowConfirm] = useState(false)
+
+  // Scanner states
+  const [scannerFile, setScannerFile] = useState(null)
+  const [scannerLoading, setScannerLoading] = useState(false)
+  const [scannerPreview, setScannerPreview] = useState([])
+  const [scannerSupplier, setScannerSupplier] = useState('Saurabh Agency')
+  
+  // Quick Add Product states
+  const [showQuickProductModal, setShowQuickProductModal] = useState(false)
+  const [quickProductIndex, setQuickProductIndex] = useState(null)
+  const [quickProductForm, setQuickProductForm] = useState({
+    name: '', brand: '', category: 'SNACKS', gstPercent: '5',
+    primaryUnit: 'BOX', secondaryUnit: 'LADI', customSecondaryUnit: '', secondaryPerPrimary: '20',
+    buyPriceWithoutTax: '', sellPricePrimary: '', sellPriceSecondary: ''
+  })
+
+  useEffect(() => {
+    if (!aiEnabled && activeTab === 'scanner') {
+      setActiveTab('overview')
+    }
+  }, [aiEnabled, activeTab])
 
   const clearError = (field) => {
     setValidationErrors(prev => ({ ...prev, [field]: null }))
@@ -205,6 +228,268 @@ export default function Stock() {
       loadAll()
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to write off expired stock')
+    }
+  }
+
+  const openQuickProductModal = (index) => {
+    const item = scannerPreview[index]
+    if (!item) return
+
+    setQuickProductIndex(index)
+    
+    // Guess default values based on invoice item
+    const guessCategory = item.productName.toLowerCase().includes('chip') ? 'CHIPS' : 'SNACKS'
+    const guessSecUnit = item.packsPerCase === 72 || item.packsPerCase === 216 ? 'PACK' : 'LADI'
+    const guessSecPerPri = item.packsPerCase === 72 || item.packsPerCase === 216 ? 72 : 20
+
+    const knownSecondaryUnits = ['LADI', 'PACK', 'BOTTLE']
+    const cleanItemSecUnit = item.secondaryUnit ? item.secondaryUnit.trim().toUpperCase() : ''
+    const isKnown = knownSecondaryUnits.includes(cleanItemSecUnit)
+    
+    const initialSecUnit = isKnown ? cleanItemSecUnit : (cleanItemSecUnit ? 'OTHER' : guessSecUnit)
+    const initialCustomSecUnit = (!isKnown && cleanItemSecUnit) ? cleanItemSecUnit : ''
+
+    setQuickProductForm({
+      name: item.productName || '',
+      brand: "Haldiram's",
+      category: guessCategory,
+      gstPercent: item.gstPercent !== undefined ? item.gstPercent.toString() : '5',
+      primaryUnit: (item.primaryUnit && ['BOX', 'CRATE'].includes(item.primaryUnit.toUpperCase())) ? item.primaryUnit.toUpperCase() : 'BOX',
+      secondaryUnit: initialSecUnit,
+      customSecondaryUnit: initialCustomSecUnit,
+      secondaryPerPrimary: item.secondaryPerPrimary !== undefined ? item.secondaryPerPrimary.toString() : guessSecPerPri.toString(),
+      buyPriceWithoutTax: item.buyPriceWithoutTax !== undefined ? item.buyPriceWithoutTax.toString() : '',
+      sellPricePrimary: '',
+      sellPriceSecondary: ''
+    })
+    setShowQuickProductModal(true)
+  }
+
+  const handleQuickProductSubmit = async (e) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const payload = {
+        name: quickProductForm.name,
+        brand: quickProductForm.brand,
+        category: quickProductForm.category,
+        gstPercent: Number(quickProductForm.gstPercent),
+        cessPercent: 0,
+        primaryUnit: quickProductForm.primaryUnit,
+        secondaryUnit: quickProductForm.secondaryUnit === 'OTHER' ? (quickProductForm.customSecondaryUnit || 'PACK') : quickProductForm.secondaryUnit,
+        secondaryPerPrimary: Number(quickProductForm.secondaryPerPrimary),
+        buyPriceWithoutTax: Number(quickProductForm.buyPriceWithoutTax),
+        sellPricePrimary: Number(quickProductForm.sellPricePrimary),
+        sellPriceSecondary: Number(quickProductForm.sellPriceSecondary),
+        lowStockAlert: 10,
+        lowStockUnit: 'SECONDARY'
+      }
+
+      const res = await api.post('/products', payload)
+      const newProduct = res.data.data
+
+      // Add to local product list
+      setProducts(prev => [...prev, newProduct])
+
+      // Directly map this scanner row with fresh newProduct — avoids stale `products` closure bug
+      if (quickProductIndex !== null) {
+        setScannerPreview(prev => {
+          const updated = [...prev]
+          const item = updated[quickProductIndex]
+          if (!item) return prev
+          const ratio = newProduct.secondaryPerPrimary || 1
+          const secUnit = newProduct.secondaryUnit ? newProduct.secondaryUnit.toUpperCase() : 'PACK'
+          const packPerSecondary = (secUnit === 'LADI') ? 12 : 1
+          const totalPacks = (item.invoiceCases || 0) * (item.packsPerCase || 1)
+          const totalSecondaryUnits = Math.floor(totalPacks / packPerSecondary)
+          const primaryAdded = Math.floor(totalSecondaryUnits / ratio)
+          const openBoxAdded = totalSecondaryUnits % ratio
+          const buyPricePerPiece = Number(item.buyPricePerPiece || 0)
+          const buyPriceWithoutTax = buyPricePerPiece > 0
+            ? Number((buyPricePerPiece * ratio * packPerSecondary).toFixed(2))
+            : Number(item.buyPriceWithoutTax || 0)
+          updated[quickProductIndex] = {
+            ...item,
+            productId: newProduct.id,
+            productName: newProduct.name,
+            brand: newProduct.brand,
+            category: newProduct.category,
+            primaryUnit: newProduct.primaryUnit || 'BOX',
+            secondaryUnit: newProduct.secondaryUnit || 'LADI',
+            secondaryPerPrimary: ratio,
+            primaryAdded,
+            secondaryAdded: totalSecondaryUnits,
+            openBoxAdded,
+            buyPriceWithoutTax,
+            newProduct: false,
+            duplicateBatch: false
+          }
+          return updated
+        })
+      }
+
+      toast.success('Product created and mapped successfully!')
+      setShowQuickProductModal(false)
+    } catch (err) {
+      const errMsg = err.response?.data?.message || '';
+      if (errMsg.toLowerCase().includes('already exists') || errMsg.toLowerCase().includes('already exist')) {
+        try {
+          const pRes = await api.get('/products?size=500')
+          const latestProducts = pRes.data.data?.content || pRes.data.data || []
+          setProducts(latestProducts)
+          
+          const matchedProduct = latestProducts.find(p => 
+            p.name.trim().toLowerCase() === quickProductForm.name.trim().toLowerCase() && 
+            (p.brand || '').trim().toLowerCase() === (quickProductForm.brand || '').trim().toLowerCase()
+          )
+          
+          if (matchedProduct && quickProductIndex !== null) {
+            setScannerPreview(prev => {
+              const updated = [...prev]
+              const item = updated[quickProductIndex]
+              if (!item) return prev
+              const ratio = matchedProduct.secondaryPerPrimary || 1
+              const secUnit = matchedProduct.secondaryUnit ? matchedProduct.secondaryUnit.toUpperCase() : 'PACK'
+              const packPerSecondary = (secUnit === 'LADI') ? 12 : 1
+              const totalPacks = (item.invoiceCases || 0) * (item.packsPerCase || 1)
+              const totalSecondaryUnits = Math.floor(totalPacks / packPerSecondary)
+              const primaryAdded = Math.floor(totalSecondaryUnits / ratio)
+              const openBoxAdded = totalSecondaryUnits % ratio
+              const buyPricePerPiece = Number(item.buyPricePerPiece || 0)
+              const buyPriceWithoutTax = buyPricePerPiece > 0
+                ? Number((buyPricePerPiece * ratio * packPerSecondary).toFixed(2))
+                : Number(item.buyPriceWithoutTax || 0)
+              updated[quickProductIndex] = {
+                ...item,
+                productId: matchedProduct.id,
+                productName: matchedProduct.name,
+                brand: matchedProduct.brand,
+                category: matchedProduct.category,
+                primaryUnit: matchedProduct.primaryUnit || 'BOX',
+                secondaryUnit: matchedProduct.secondaryUnit || 'LADI',
+                secondaryPerPrimary: ratio,
+                primaryAdded,
+                secondaryAdded: totalSecondaryUnits,
+                openBoxAdded,
+                buyPriceWithoutTax,
+                newProduct: false,
+                duplicateBatch: false
+              }
+              return updated
+            })
+            toast.success('Product already exists! Row successfully mapped.')
+            setShowQuickProductModal(false)
+            return
+          }
+        } catch (fetchErr) {
+          console.error("Failed to recover and map existing product", fetchErr)
+        }
+      }
+      toast.error(err.response?.data?.message || 'Failed to quick create product')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleScanInvoice = async (e) => {
+    e.preventDefault()
+    if (!scannerFile) { toast.error('Koi file select karein'); return }
+    setScannerLoading(true)
+    setScannerPreview([])
+    try {
+      const formData = new FormData()
+      formData.append('file', scannerFile)
+      const res = await api.post('/stock/parse-invoice', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      setScannerPreview(res.data.data || [])
+      toast.success('Invoice successfully scan aur map ho gaya!')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Invoice scanning failed. Please try again.')
+    } finally {
+      setScannerLoading(false)
+    }
+  }
+
+  const handleScannerRowProductChange = (index, newProductId) => {
+    const updated = [...scannerPreview]
+    const item = updated[index]
+    const product = products.find(p => p.id === newProductId)
+    
+    if (product) {
+      const ratio = product.secondaryPerPrimary || 1
+      const secUnit = product.secondaryUnit ? product.secondaryUnit.toUpperCase() : 'PACK'
+      const packPerSecondary = (secUnit === 'LADI') ? 12 : 1
+      
+      const totalPacks = item.invoiceCases * item.packsPerCase
+      const totalSecondaryUnits = Math.floor(totalPacks / packPerSecondary)
+      
+      const primaryAdded = Math.floor(totalSecondaryUnits / ratio)
+      const openBoxAdded = totalSecondaryUnits % ratio
+      
+      const buyPriceWithoutTax = Number(item.buyPricePerPiece) * ratio * packPerSecondary
+      
+      updated[index] = {
+        ...item,
+        productId: product.id,
+        productName: product.name,
+        brand: product.brand,
+        category: product.category,
+        primaryUnit: product.primaryUnit || 'BOX',
+        secondaryUnit: product.secondaryUnit || 'LADI',
+        secondaryPerPrimary: ratio,
+        primaryAdded,
+        secondaryAdded: totalSecondaryUnits,
+        openBoxAdded,
+        buyPriceWithoutTax: Number(buyPriceWithoutTax.toFixed(2)),
+        newProduct: false
+      }
+    } else {
+      updated[index] = {
+        ...item,
+        productId: null,
+        newProduct: true
+      }
+    }
+    setScannerPreview(updated)
+  }
+
+  const handleScannerSubmit = async (e) => {
+    e.preventDefault()
+    
+    const unmapped = scannerPreview.filter(item => !item.productId)
+    if (unmapped.length > 0) {
+      toast.error('Kucch products mapped nahi hain. Pehle unhe sahi product se map karein.')
+      return
+    }
+    
+    setSaving(true)
+    try {
+      const payload = scannerPreview.map(item => {
+        const product = products.find(p => p.id === item.productId)
+        
+        return {
+          productId: item.productId,
+          batchNumber: item.batchNumber,
+          primaryReceived: item.primaryAdded,
+          extraSecondaryReceived: item.openBoxAdded,
+          buyPriceWithoutTax: item.buyPriceWithoutTax,
+          expiryDate: item.expiryDate,
+          supplierName: scannerSupplier,
+          logAsExpense: true
+        }
+      })
+      
+      await api.post('/stock/receive-bulk', payload)
+      toast.success('Sare items stock me successfully add ho gaye hain!')
+      setScannerPreview([])
+      setScannerFile(null)
+      loadAll()
+      setActiveTab('overview')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to save stock batches')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -427,6 +712,11 @@ export default function Stock() {
         <button className={`tab ${activeTab === 'expiring' ? 'active' : ''}`} onClick={() => setActiveTab('expiring')}>
           <Clock size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Expiring Soon ({expiring.length})
         </button>
+        {aiEnabled && (isAdmin || isManager) && (
+          <button className={`tab ${activeTab === 'scanner' ? 'active' : ''}`} onClick={() => setActiveTab('scanner')}>
+            <Camera size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Scan Invoice
+          </button>
+        )}
         {isAdmin && (
           <button className={`tab ${activeTab === 'audit' ? 'active' : ''}`} onClick={() => setActiveTab('audit')}>
             <History size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Stock Audit Logs
@@ -457,6 +747,250 @@ export default function Stock() {
             onPageChange={(p) => { setStockPage(p); loadAll(p) }}
           />
         </>
+      )}
+
+      {aiEnabled && activeTab === 'scanner' && (isAdmin || isManager) && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+          <div style={{
+            background: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-lg)',
+            padding: 'var(--space-6)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 'var(--space-5)',
+            maxWidth: '800px'
+          }}>
+            <h3 style={{ fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-semibold)', margin: 0 }}>
+              AI Invoice Scanner (₹0 Cost Gemini OCR)
+            </h3>
+            <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', margin: 0 }}>
+              Invoice ki photo upload karein. Gemini API automatically batch numbers, quantities aur prices extract karke database products se map kar dega.
+            </p>
+
+            <form onSubmit={handleScanInvoice} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+              <div className="form-row">
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label">Supplier Name *</label>
+                  <input
+                    className="form-input"
+                    value={scannerSupplier}
+                    onChange={e => setScannerSupplier(e.target.value)}
+                    required
+                    placeholder="e.g. Saurabh Agency"
+                  />
+                </div>
+                <div className="form-group" style={{ flex: 2 }}>
+                  <label className="form-label">Invoice Photo *</label>
+                  <div style={{
+                    border: '2px dashed var(--color-border)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: 'var(--space-4)',
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    background: 'var(--color-bg)',
+                    position: 'relative'
+                  }}>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={e => setScannerFile(e.target.files[0])}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        opacity: 0,
+                        cursor: 'pointer'
+                      }}
+                    />
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', color: 'var(--color-text-secondary)' }}>
+                      <Upload size={18} />
+                      <span style={{ fontSize: '13px', fontWeight: '500' }}>
+                        {scannerFile ? scannerFile.name : 'Invoice Photo Select / Camera Click Karein'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                <motion.button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={scannerLoading}
+                  whileTap={{ scale: 0.97 }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}
+                >
+                  <Camera size={18} />
+                  {scannerLoading ? 'Reading Invoice...' : 'Scan & Map Invoice'}
+                </motion.button>
+                {scannerFile && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => { setScannerFile(null); setScannerPreview([]); }}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+
+          {scannerLoading && (
+            <div style={{
+              textAlign: 'center',
+              padding: 'var(--space-12)',
+              background: 'var(--color-surface)',
+              border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius-lg)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '15px'
+            }}>
+              <div className="spinner" style={{
+                width: '40px',
+                height: '40px',
+                border: '4px solid var(--color-border)',
+                borderTopColor: 'var(--color-primary)',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite'
+              }} />
+              <style>{`
+                @keyframes spin {
+                  0% { transform: rotate(0deg); }
+                  100% { transform: rotate(360deg); }
+                }
+              `}</style>
+              <div>
+                <h4 style={{ margin: '0 0 5px 0', fontWeight: '600' }}>Reading Invoice Layout...</h4>
+                <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-text-muted)' }}>
+                  Extracting batch codes, validating expiry dates, and calculating unit conversions. Please wait 2 seconds.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {scannerPreview.length > 0 && !scannerLoading && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+              <div className="page-header" style={{ marginBottom: 0 }}>
+                <div>
+                  <h3 className="page-title" style={{ fontSize: 'var(--font-size-md)' }}>Scan Preview & Mapping Verification</h3>
+                  <p className="page-subtitle">Niche diye gaye data ko verify karke map karein.</p>
+                </div>
+              </div>
+
+              <div style={{ overflowX: 'auto', background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)', minHeight: '400px', paddingBottom: '160px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-secondary)', fontWeight: '600' }}>
+                      <th style={{ padding: '12px 16px' }}>Invoice Item</th>
+                      <th style={{ padding: '12px 16px' }}>Category</th>
+                      <th style={{ padding: '12px 16px' }}>Primary</th>
+                      <th style={{ padding: '12px 16px' }}>Secondary</th>
+                      <th style={{ padding: '12px 16px' }}>Open Box</th>
+                      <th style={{ padding: '12px 16px' }}>Batch No</th>
+                      <th style={{ padding: '12px 16px' }}>Expiry</th>
+                      <th style={{ padding: '12px 16px' }}>Buy (BOX)</th>
+                      <th style={{ padding: '12px 16px' }}>Status</th>
+                      <th style={{ padding: '12px 16px', minWidth: '220px' }}>Mapped DB Product</th>
+                      <th style={{ padding: '12px 16px', textAlign: 'center' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {scannerPreview.map((item, index) => (
+                      <tr key={index} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                        <td style={{ padding: '12px 16px', fontWeight: '500' }}>{item.productName}</td>
+                        <td style={{ padding: '12px 16px' }}>
+                          <span className="badge badge-accent">{item.category}</span>
+                        </td>
+                        <td style={{ padding: '12px 16px' }}>{item.primaryAdded} {item.primaryUnit}</td>
+                        <td style={{ padding: '12px 16px' }}>{item.secondaryAdded} {item.secondaryUnit}</td>
+                        <td style={{ padding: '12px 16px' }}>
+                          {item.openBoxAdded > 0 ? (
+                            <span className="badge badge-info">{item.openBoxAdded} left</span>
+                          ) : '—'}
+                        </td>
+                        <td style={{ padding: '12px 16px' }}><code>{item.batchNumber}</code></td>
+                        <td style={{ padding: '12px 16px' }}>{item.expiryDate}</td>
+                        <td style={{ padding: '12px 16px' }}>₹{Number(item.buyPriceWithoutTax || 0).toLocaleString('en-IN')}</td>
+                        <td style={{ padding: '12px 16px' }}>
+                          {item.duplicateBatch ? (
+                            <span className="badge badge-danger" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                              ⚠️ Duplicate
+                            </span>
+                          ) : item.newProduct ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                              <span className="badge badge-warning" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                ❓ New Product
+                              </span>
+                              <button
+                                type="button"
+                                className="btn btn-ghost"
+                                style={{ fontSize: '10px', padding: '2px 4px', color: 'var(--color-accent)', textDecoration: 'underline', height: 'auto', minHeight: 0, display: 'block' }}
+                                onClick={() => openQuickProductModal(index)}
+                              >
+                                + Create Product
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="badge badge-success">OK</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '12px 16px' }}>
+                          <SearchSelect
+                            options={products.filter(p => p.active !== false)}
+                            value={item.productId || ''}
+                            onChange={(val) => handleScannerRowProductChange(index, val)}
+                            labelKey="name" valueKey="id"
+                            placeholder="Map to existing product..."
+                          />
+                        </td>
+                        <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = [...scannerPreview]
+                              updated.splice(index, 1)
+                              setScannerPreview(updated)
+                              toast.info('Row removed from preview list')
+                            }}
+                            className="btn btn-ghost btn-icon btn-sm"
+                            style={{ color: 'var(--color-danger)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                            title="Exclude from scan list"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => { setScannerPreview([]); setScannerFile(null); }}
+                  disabled={saving}
+                >
+                  Cancel
+                </button>
+                <motion.button
+                  onClick={handleScannerSubmit}
+                  className="btn btn-primary"
+                  disabled={saving}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  {saving ? 'Saving Stock...' : 'Confirm & Save Stock to DB'}
+                </motion.button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {activeTab === 'expiring' && (
@@ -967,6 +1501,152 @@ export default function Stock() {
         confirmLabel="Write Off"
         danger={true}
       />
+
+      {/* Quick Add Product Modal */}
+      <Modal isOpen={showQuickProductModal} onClose={() => setShowQuickProductModal(false)} title="Quick Create New Product" wide>
+        <form onSubmit={handleQuickProductSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          <div className="form-group">
+            <label className="form-label">Product Name *</label>
+            <input
+              className="form-input"
+              value={quickProductForm.name}
+              onChange={e => setQuickProductForm(f => ({ ...f, name: e.target.value }))}
+              required
+              placeholder="Product name"
+            />
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Brand</label>
+              <input
+                className="form-input"
+                value={quickProductForm.brand}
+                onChange={e => setQuickProductForm(f => ({ ...f, brand: e.target.value }))}
+                placeholder="e.g. Haldiram's"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Category *</label>
+              <select
+                className="form-input"
+                value={quickProductForm.category}
+                onChange={e => setQuickProductForm(f => ({ ...f, category: e.target.value }))}
+                required
+              >
+                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">GST Percent *</label>
+              <input
+                className="form-input"
+                type="number"
+                min="0"
+                max="40"
+                step="0.1"
+                value={quickProductForm.gstPercent}
+                onChange={e => setQuickProductForm(f => ({ ...f, gstPercent: e.target.value }))}
+                required
+              />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Primary Unit *</label>
+              <select
+                className="form-select"
+                value={quickProductForm.primaryUnit}
+                onChange={e => setQuickProductForm(f => ({ ...f, primaryUnit: e.target.value }))}
+                required
+              >
+                <option value="BOX">BOX</option>
+                <option value="CRATE">CRATE</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Secondary Unit *</label>
+              <select
+                className="form-select"
+                value={quickProductForm.secondaryUnit}
+                onChange={e => setQuickProductForm(f => ({ ...f, secondaryUnit: e.target.value }))}
+                required
+              >
+                <option value="LADI">LADI</option>
+                <option value="PACK">PACKET / PACK</option>
+                <option value="BOTTLE">BOTTLE</option>
+                <option value="OTHER">OTHER (Custom)</option>
+              </select>
+              {quickProductForm.secondaryUnit === 'OTHER' && (
+                <input
+                  className="form-input"
+                  style={{ marginTop: 'var(--space-2)' }}
+                  value={quickProductForm.customSecondaryUnit || ''}
+                  onChange={e => setQuickProductForm(f => ({ ...f, customSecondaryUnit: e.target.value.toUpperCase() }))}
+                  placeholder="Specify Unit (e.g. PCS, TIN)"
+                  required
+                />
+              )}
+            </div>
+            <div className="form-group">
+              <label className="form-label">Packs Per Box (Ratio) *</label>
+              <input
+                className="form-input"
+                type="number"
+                min="1"
+                value={quickProductForm.secondaryPerPrimary}
+                onChange={e => setQuickProductForm(f => ({ ...f, secondaryPerPrimary: e.target.value }))}
+                required
+              />
+            </div>
+          </div>
+          <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-4)' }}>
+            <div className="form-group">
+              <label className="form-label">Buy Price per Box (Excl. Tax) *</label>
+              <input
+                className="form-input"
+                type="number"
+                min="0"
+                step="0.01"
+                value={quickProductForm.buyPriceWithoutTax}
+                onChange={e => setQuickProductForm(f => ({ ...f, buyPriceWithoutTax: e.target.value }))}
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Sell Price per Box (Incl. Tax) *</label>
+              <input
+                className="form-input"
+                type="number"
+                min="0"
+                step="0.01"
+                value={quickProductForm.sellPricePrimary}
+                onChange={e => setQuickProductForm(f => ({ ...f, sellPricePrimary: e.target.value }))}
+                required
+                placeholder="e.g. 500"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Sell Price per Ladi/Pack (Incl. Tax) *</label>
+              <input
+                className="form-input"
+                type="number"
+                min="0"
+                step="0.01"
+                value={quickProductForm.sellPriceSecondary}
+                onChange={e => setQuickProductForm(f => ({ ...f, sellPriceSecondary: e.target.value }))}
+                required
+                placeholder="e.g. 50"
+              />
+            </div>
+          </div>
+          <div className="form-actions" style={{ marginTop: 'var(--space-2)' }}>
+            <button type="button" className="btn btn-secondary" onClick={() => setShowQuickProductModal(false)}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? 'Creating Product...' : 'Create & Map Product'}
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       <ConfirmDialog
         isOpen={showRunNowConfirm}

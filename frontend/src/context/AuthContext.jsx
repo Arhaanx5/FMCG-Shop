@@ -7,6 +7,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [token, setToken] = useState(localStorage.getItem('token'))
   const [loading, setLoading] = useState(true)
+  const [aiEnabled, setAiEnabled] = useState(true)
 
   const checkAuth = useCallback(async () => {
     const storedToken = localStorage.getItem('token')
@@ -30,6 +31,19 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     checkAuth()
+    
+    // Fetch feature configuration
+    const fetchConfig = async () => {
+      try {
+        const res = await api.get('/config/features')
+        if (res.data?.data && typeof res.data.data.aiEnabled === 'boolean') {
+          setAiEnabled(res.data.data.aiEnabled)
+        }
+      } catch (err) {
+        console.error('Failed to load feature configuration', err)
+      }
+    }
+    fetchConfig()
   }, [checkAuth])
 
   const login = async (phone, password) => {
@@ -79,6 +93,7 @@ export function AuthProvider({ children }) {
         isDeliveryBoy,
         isSalesman,
         isAuthenticated: !!token && !!user,
+        aiEnabled,
       }}
     >
       {children}

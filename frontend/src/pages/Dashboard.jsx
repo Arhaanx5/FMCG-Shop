@@ -1,14 +1,15 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   IndianRupee, ShoppingCart, TrendingUp, TrendingDown,
-  AlertTriangle, Package, Users, Truck, Sparkles, Brain, Lightbulb, BookOpen
+  AlertTriangle, Package, Users, Truck, Sparkles, Brain, Lightbulb, BookOpen, Send, RefreshCw
 } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import api from '../services/api'
 import StatCard from '../components/StatCard'
 import { useToast } from '../context/ToastContext'
+import { useAuth } from '../context/AuthContext'
 
 const PIE_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899']
 const MODERN_PIE_COLORS = ['#8b5cf6', '#a78bfa', '#ec4899', '#f97316', '#f59e0b', '#10b981']
@@ -92,9 +93,230 @@ function LiveActivityWidget({ recentBills = [], lowStockList = [], pendingDelive
   )
 }
 
+function AiCopilotWidget({ year, month }) {
+  const [activeTab, setActiveTab] = useState('insights') // 'insights' | 'chat'
+  const [insights, setInsights] = useState('')
+  const [insightsLoading, setInsightsLoading] = useState(false)
+  const [chatInput, setChatInput] = useState('')
+  const [chatMessages, setChatMessages] = useState([
+    { role: 'assistant', content: 'Hello! Main aapka business copilot hoon. Poochein kuch bhi, jaise "low stock products kya hain?" ya "is month ka revenue analysis".' }
+  ])
+  const [chatLoading, setChatLoading] = useState(false)
+  const messagesEndRef = useRef(null)
+  const toast = useToast()
+
+  const fetchInsights = async () => {
+    setInsightsLoading(true)
+    try {
+      const res = await api.get(`/dashboard/ai/insights?year=${year}&month=${month}`)
+      if (res.data?.data?.insights) {
+        setInsights(res.data.data.insights)
+      } else {
+        setInsights('No insights generated.')
+      }
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to load AI Insights')
+    } finally {
+      setInsightsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab === 'insights' && !insights) {
+      fetchInsights()
+    }
+  }, [year, month, activeTab])
+
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [chatMessages])
+
+  const handleSendMessage = async (e) => {
+    if (e) e.preventDefault()
+    if (!chatInput.trim()) return
+    const userMsg = chatInput.trim()
+    setChatInput('')
+    setChatMessages(prev => [...prev, { role: 'user', content: userMsg }])
+    setChatLoading(true)
+
+    try {
+      const res = await api.post(`/dashboard/ai/chat?year=${year}&month=${month}`, { message: userMsg })
+      if (res.data?.data?.reply) {
+        setChatMessages(prev => [...prev, { role: 'assistant', content: res.data.data.reply }])
+      } else {
+        setChatMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, I could not generate a reply.' }])
+      }
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to send message')
+      setChatMessages(prev => [...prev, { role: 'assistant', content: 'Error connecting to AI assistant.' }])
+    } finally {
+      setChatLoading(false)
+    }
+  }
+
+  const handleChipClick = (msg) => {
+    setChatInput(msg)
+  }
+
+  const renderInsightsMarkdown = (text) => {
+    if (!text) return null
+    const lines = text.split('\n')
+    return (
+      <div className="flex flex-col gap-2">
+        {lines.map((line, idx) => {
+          if (line.startsWith('###')) {
+            return <h4 key={idx} className="font-semibold text-sm mt-3 text-purple-400">{line.replace('###', '').trim()}</h4>
+          }
+          if (line.trim().startsWith('-') || line.trim().startsWith('*')) {
+            const cleanLine = line.replace(/^[\s-*]+/, '').trim()
+            const parts = cleanLine.split('**')
+            return (
+              <li key={idx} className="ml-4 list-disc text-xs text-slate-300">
+                {parts.map((p, i) => i % 2 === 1 ? <strong key={i} className="text-white">{p}</strong> : p)}
+              </li>
+            )
+          }
+          if (line.trim()) {
+            const parts = line.split('**')
+            return (
+              <p key={idx} className="text-xs text-slate-300">
+                {parts.map((p, i) => i % 2 === 1 ? <strong key={i} className="text-white">{p}</strong> : p)}
+              </p>
+            )
+          }
+          return <div key={idx} className="h-1" />
+        })}
+      </div>
+    )
+  }
+
+  return (
+    <div className="card card-lift ai-insight-card relative overflow-hidden" style={{ minHeight: '380px', display: 'flex', flexDirection: 'column' }}>
+      <div className="card-header flex justify-between items-center" style={{ marginBottom: 'var(--space-3)', paddingBottom: 'var(--space-2)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+          <Brain size={20} style={{ color: '#c084fc' }} />
+          <span className="card-title">Lari AI Copilot</span>
+        </div>
+        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+          <button
+            onClick={() => setActiveTab('insights')}
+            className={`btn btn-sm ${activeTab === 'insights' ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ padding: '4px 10px', fontSize: '10px', height: 'auto' }}
+          >
+            Insights
+          </button>
+          <button
+            onClick={() => setActiveTab('chat')}
+            className={`btn btn-sm ${activeTab === 'chat' ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ padding: '4px 10px', fontSize: '10px', height: 'auto' }}
+          >
+            Chat Advisor
+          </button>
+        </div>
+      </div>
+
+      {activeTab === 'insights' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 'var(--space-3)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 'var(--font-size-xs)', color: 'rgba(248, 250, 252, 0.5)' }}>
+            <span>Monthly business intelligence suggestions</span>
+            <button 
+              onClick={fetchInsights} 
+              disabled={insightsLoading}
+              className="btn btn-sm btn-ghost btn-icon" 
+              style={{ width: '24px', height: '24px' }}
+            >
+              <RefreshCw size={12} className={insightsLoading ? 'animate-spin' : ''} />
+            </button>
+          </div>
+          
+          <div style={{ maxHeight: '280px', overflowY: 'auto', flex: 1 }} className="pr-1 text-xs">
+            {insightsLoading ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', padding: 'var(--space-4) 0' }}>
+                <div style={{ height: '16px', background: '#334155', borderRadius: 'var(--radius-sm)', width: '75%' }} className="animate-pulse"></div>
+                <div style={{ height: '12px', background: '#334155', borderRadius: 'var(--radius-sm)', width: '85%' }} className="animate-pulse"></div>
+                <div style={{ height: '12px', background: '#334155', borderRadius: 'var(--radius-sm)', width: '65%' }} className="animate-pulse"></div>
+                <div style={{ height: '12px', background: '#334155', borderRadius: 'var(--radius-sm)', width: '90%' }} className="animate-pulse"></div>
+              </div>
+            ) : insights ? (
+              renderInsightsMarkdown(insights)
+            ) : (
+              <p style={{ color: 'rgba(248, 250, 252, 0.5)', textAlign: 'center', padding: 'var(--space-8) 0' }}>Click refresh to load insights.</p>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', height: '300px', justifyContent: 'space-between' }}>
+          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }} className="pr-1 text-xs mb-2">
+            {chatMessages.map((msg, i) => (
+              <div 
+                key={i} 
+                style={{
+                  alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                  background: msg.role === 'user' ? 'var(--color-accent, #8b5cf6)' : 'rgba(255,255,255,0.1)',
+                  color: msg.role === 'user' ? '#ffffff' : '#f1f5f9',
+                  padding: 'var(--space-2) var(--space-3)',
+                  borderRadius: 'var(--radius-md)',
+                  maxWidth: '85%'
+                }}
+              >
+                {msg.content}
+              </div>
+            ))}
+            {chatLoading && (
+              <div style={{ alignSelf: 'flex-start', background: 'rgba(255,255,255,0.1)', color: '#f1f5f9', padding: 'var(--space-2) var(--space-3)', borderRadius: 'var(--radius-md)' }}>
+                <span className="animate-pulse">Thinking...</span>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-1)', marginBottom: 'var(--space-1)' }}>
+              {['Low stock plan?', 'Expiry clearing?', 'Collection tips?'].map((q, idx) => (
+                <button 
+                  key={idx} 
+                  onClick={() => handleChipClick(q)}
+                  className="btn btn-sm btn-secondary" 
+                  style={{ padding: '2px 8px', fontSize: '9px', height: 'auto', borderRadius: 'var(--radius-sm)' }}
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+
+            <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: 'var(--space-2)' }}>
+              <input
+                type="text"
+                placeholder="Ask business advisor..."
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                className="form-input"
+                style={{ height: '32px', fontSize: 'var(--font-size-xs)', padding: '0 var(--space-3)', flex: 1 }}
+              />
+              <button 
+                type="submit" 
+                className="btn btn-sm btn-primary btn-icon" 
+                style={{ width: '32px', height: '32px' }}
+                disabled={chatLoading}
+              >
+                <Send size={12} />
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const [uiTheme] = useOutletContext()
+  const { aiEnabled, isAdmin, isManager } = useAuth()
   const [today, setToday] = useState(null)
   const [monthly, setMonthly] = useState(null)
   const [yearly, setYearly] = useState(null)
@@ -651,96 +873,17 @@ export default function Dashboard() {
             />
 
             {/* Lari AI Copilot */}
-            <motion.div
-              className="card card-lift ai-insight-card"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.65 }}
-            >
-              <div className="card-header flex justify-between items-center" style={{ marginBottom: 'var(--space-4)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                  <Brain size={20} style={{ color: '#c084fc' }} />
-                  <span className="card-title">Lari AI Copilot</span>
-                </div>
-                <span className="ai-insight-badge">
-                  <Sparkles size={10} style={{ marginRight: '2px' }} /> Smart Insights
-                </span>
+            {aiEnabled && (isAdmin || isManager) ? (
+              <AiCopilotWidget year={selectedYear} month={selectedMonth} />
+            ) : (
+              <div className="card card-lift ai-insight-card" style={{ minHeight: '150px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: 'var(--space-6)', textAlign: 'center' }}>
+                <Brain size={32} style={{ color: '#c084fc', marginBottom: 'var(--space-2)' }} />
+                <span className="card-title" style={{ fontSize: 'var(--font-size-md)' }}>AI Copilot Offline</span>
+                <p style={{ color: 'var(--color-text-muted)', fontSize: '11px', marginTop: 'var(--space-2)' }}>
+                  {!aiEnabled ? "AI Copilot feature is currently disabled in system settings." : "AI Advisor is restricted to Administrator and Manager roles."}
+                </p>
               </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                {pendingDeliveriesList.length > 0 ? (
-                  <div 
-                    className="ai-insight-item cursor-pointer" 
-                    style={{ borderLeft: '3px solid #c084fc', cursor: 'pointer' }}
-                    onClick={() => navigate('/deliveries')}
-                  >
-                    <div style={{ color: '#c084fc', marginTop: '2px' }}><Truck size={16} /></div>
-                    <div style={{ fontSize: '11px' }}>
-                      <strong style={{ color: 'var(--color-text)' }}>AI Route Dispatch Planner:</strong> Grouped <strong>{pendingDeliveriesList.length}</strong> pending deliveries into optimal clustering zones. Transit mileage reduced by <strong>{Math.min(12 + pendingDeliveriesList.length * 3, 30)}%</strong>. <span style={{ color: '#c084fc', textDecoration: 'underline', fontWeight: 'bold' }}>👉 Click to launch optimized route dispatch map!</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div 
-                    className="ai-insight-item cursor-pointer" 
-                    style={{ borderLeft: '3px solid var(--color-success)', cursor: 'pointer' }}
-                    onClick={() => navigate('/deliveries')}
-                  >
-                    <div style={{ color: 'var(--color-success)', marginTop: '2px' }}><Truck size={16} /></div>
-                    <div style={{ fontSize: '11px' }}>
-                      <strong style={{ color: 'var(--color-text)' }}>AI Dispatch Planner:</strong> Logistics are highly efficient today! 100% of deliveries are cleared. <span className="text-secondary" style={{ textDecoration: 'underline' }}>👉 Click to view deliveries logs.</span>
-                    </div>
-                  </div>
-                )}
-
-                {allInactive.length > 0 ? (
-                  <div 
-                    className="ai-insight-item cursor-pointer" 
-                    style={{ borderLeft: '3px solid var(--color-danger)', cursor: 'pointer' }}
-                    onClick={() => navigate('/customers')}
-                  >
-                    <div style={{ color: 'var(--color-danger)', marginTop: '2px' }}><Users size={16} /></div>
-                    <div style={{ fontSize: '11px' }}>
-                      <strong style={{ color: 'var(--color-text)' }}>AI Churn Risk Engine:</strong> Identified <strong>{allInactive.length}</strong> accounts with ordering gaps (e.g. <strong>{allInactive[0]?.customerName || 'Multiple'}</strong>). <span style={{ color: 'var(--color-danger)', textDecoration: 'underline', fontWeight: 'bold' }}>👉 Click to assign Vikram for check-in!</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div 
-                    className="ai-insight-item cursor-pointer" 
-                    style={{ borderLeft: '3px solid var(--color-success)', cursor: 'pointer' }}
-                    onClick={() => navigate('/customers')}
-                  >
-                    <div style={{ color: 'var(--color-success)', marginTop: '2px' }}><Users size={16} /></div>
-                    <div style={{ fontSize: '11px' }}>
-                      <strong style={{ color: 'var(--color-text)' }}>AI Churn Classifier:</strong> Customer base is exceptionally healthy! 100% of active retailers are ordering in cycle. <span className="text-secondary" style={{ textDecoration: 'underline' }}>👉 Click to manage accounts.</span>
-                    </div>
-                  </div>
-                )}
-
-                {allExpiring.length > 0 ? (
-                  <div 
-                    className="ai-insight-item cursor-pointer" 
-                    style={{ borderLeft: '3px solid var(--color-warning)', cursor: 'pointer' }}
-                    onClick={() => navigate('/stock')}
-                  >
-                    <div style={{ color: 'var(--color-warning)', marginTop: '2px' }}><Lightbulb size={16} /></div>
-                    <div style={{ fontSize: '11px' }}>
-                      <strong style={{ color: 'var(--color-text)' }}>AI Stock Expiry Advisor:</strong> Detected <strong>{allExpiring.length}</strong> batches expiring within 30 days. Value at risk: <strong className="text-warning">₹{Number(expiringValue).toLocaleString('en-IN')}</strong>. <span style={{ color: 'var(--color-warning)', textDecoration: 'underline', fontWeight: 'bold' }}>👉 Click to clear stock in Inventory!</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div 
-                    className="ai-insight-item cursor-pointer" 
-                    style={{ borderLeft: '3px solid var(--color-success)', cursor: 'pointer' }}
-                    onClick={() => navigate('/stock')}
-                  >
-                    <div style={{ color: 'var(--color-success)', marginTop: '2px' }}><Lightbulb size={16} /></div>
-                    <div style={{ fontSize: '11px' }}>
-                      <strong style={{ color: 'var(--color-text)' }}>AI Inventory Health:</strong> Exceptional stock rotation! 0 batches are expiring within 30 days. <span className="text-secondary" style={{ textDecoration: 'underline' }}>👉 Click to check inventory levels.</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </motion.div>
+            )}
 
             {/* Alerts Panel */}
             <motion.div
@@ -1087,96 +1230,17 @@ export default function Dashboard() {
               </motion.div>
 
               {/* AI Copilot Insights Panel */}
-              <motion.div
-                className="card ai-insight-card"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.65 }}
-              >
-                <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                    <Brain size={20} style={{ color: '#c084fc' }} />
-                    <span className="card-title">Lari AI Copilot</span>
-                  </div>
-                  <span className="ai-insight-badge">
-                    <Sparkles size={10} style={{ marginRight: '2px' }} /> Smart Insights
-                  </span>
+              {aiEnabled && (isAdmin || isManager) ? (
+                <AiCopilotWidget year={selectedYear} month={selectedMonth} />
+              ) : (
+                <div className="card ai-insight-card" style={{ minHeight: '150px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: 'var(--space-6)', textAlign: 'center' }}>
+                  <Brain size={32} style={{ color: '#c084fc', marginBottom: 'var(--space-2)' }} />
+                  <span className="card-title" style={{ fontSize: 'var(--font-size-md)' }}>AI Copilot Offline</span>
+                  <p style={{ color: 'var(--color-text-muted)', fontSize: '11px', marginTop: 'var(--space-2)' }}>
+                    {!aiEnabled ? "AI Copilot feature is currently disabled in system settings." : "AI Advisor is restricted to Administrator and Manager roles."}
+                  </p>
                 </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                  {pendingDeliveriesList.length > 0 ? (
-                    <div 
-                      className="ai-insight-item cursor-pointer" 
-                      style={{ borderLeft: '3px solid #c084fc', cursor: 'pointer' }}
-                      onClick={() => navigate('/deliveries')}
-                    >
-                      <div style={{ color: '#c084fc', marginTop: '2px' }}><Truck size={16} /></div>
-                      <div style={{ fontSize: 'var(--font-size-xs)' }}>
-                        <strong style={{ color: 'var(--color-text)' }}>AI Route Dispatch Planner:</strong> Grouped <strong>{pendingDeliveriesList.length}</strong> pending deliveries into optimal clustering zones. Transit mileage reduced by <strong>{Math.min(12 + pendingDeliveriesList.length * 3, 30)}%</strong>. <span style={{ color: '#c084fc', textDecoration: 'underline', fontWeight: 'bold' }}>👉 Click to launch optimized route dispatch map!</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div 
-                      className="ai-insight-item cursor-pointer" 
-                      style={{ borderLeft: '3px solid var(--color-success)', cursor: 'pointer' }}
-                      onClick={() => navigate('/deliveries')}
-                    >
-                      <div style={{ color: 'var(--color-success)', marginTop: '2px' }}><Truck size={16} /></div>
-                      <div style={{ fontSize: 'var(--font-size-xs)' }}>
-                        <strong style={{ color: 'var(--color-text)' }}>AI Dispatch Planner:</strong> Logistics are highly efficient today! 100% of deliveries are cleared. <span className="text-secondary" style={{ textDecoration: 'underline' }}>👉 Click to view deliveries logs.</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {allInactive.length > 0 ? (
-                    <div 
-                      className="ai-insight-item cursor-pointer" 
-                      style={{ borderLeft: '3px solid var(--color-danger)', cursor: 'pointer' }}
-                      onClick={() => navigate('/customers')}
-                    >
-                      <div style={{ color: 'var(--color-danger)', marginTop: '2px' }}><Users size={16} /></div>
-                      <div style={{ fontSize: 'var(--font-size-xs)' }}>
-                        <strong style={{ color: 'var(--color-text)' }}>AI Churn Risk Engine:</strong> Identified <strong>{allInactive.length}</strong> accounts with ordering gaps (e.g. <strong>{allInactive[0]?.customerName || 'Multiple'}</strong>). <span style={{ color: 'var(--color-danger)', textDecoration: 'underline', fontWeight: 'bold' }}>👉 Click to assign Vikram for check-in!</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div 
-                      className="ai-insight-item cursor-pointer" 
-                      style={{ borderLeft: '3px solid var(--color-success)', cursor: 'pointer' }}
-                      onClick={() => navigate('/customers')}
-                    >
-                      <div style={{ color: 'var(--color-success)', marginTop: '2px' }}><Users size={16} /></div>
-                      <div style={{ fontSize: 'var(--font-size-xs)' }}>
-                        <strong style={{ color: 'var(--color-text)' }}>AI Churn Classifier:</strong> Customer base is exceptionally healthy! 100% of active retailers are ordering in cycle. <span className="text-secondary" style={{ textDecoration: 'underline' }}>👉 Click to manage accounts.</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {allExpiring.length > 0 ? (
-                    <div 
-                      className="ai-insight-item cursor-pointer" 
-                      style={{ borderLeft: '3px solid var(--color-warning)', cursor: 'pointer' }}
-                      onClick={() => navigate('/stock')}
-                    >
-                      <div style={{ color: 'var(--color-warning)', marginTop: '2px' }}><Lightbulb size={16} /></div>
-                      <div style={{ fontSize: 'var(--font-size-xs)' }}>
-                        <strong style={{ color: 'var(--color-text)' }}>AI Stock Expiry Advisor:</strong> Detected <strong>{allExpiring.length}</strong> batches expiring within 30 days. Value at risk: <strong className="text-warning">₹{Number(expiringValue).toLocaleString('en-IN')}</strong>. <span style={{ color: 'var(--color-warning)', textDecoration: 'underline', fontWeight: 'bold' }}>👉 Click to clear stock in Inventory!</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div 
-                      className="ai-insight-item cursor-pointer" 
-                      style={{ borderLeft: '3px solid var(--color-success)', cursor: 'pointer' }}
-                      onClick={() => navigate('/stock')}
-                    >
-                      <div style={{ color: 'var(--color-success)', marginTop: '2px' }}><Lightbulb size={16} /></div>
-                      <div style={{ fontSize: 'var(--font-size-xs)' }}>
-                        <strong style={{ color: 'var(--color-text)' }}>AI Inventory Health:</strong> Exceptional stock rotation! 0 batches are expiring within 30 days. <span className="text-secondary" style={{ textDecoration: 'underline' }}>👉 Click to check inventory levels.</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </motion.div>
+              )}
             </div>
           </div>
 

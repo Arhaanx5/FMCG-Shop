@@ -37,6 +37,8 @@ export default function Expenses() {
   const [deleteTarget, setDeleteTarget] = useState(null)
   const toast = useToast()
 
+
+
   useEffect(() => { loadExpenses() }, [selectedYear, selectedMonth])
 
   useEffect(() => {
@@ -138,6 +140,7 @@ export default function Expenses() {
         </div>
       </div>
 
+
       {/* KPI + Pie */}
       <div className="expenses-layout" style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 'var(--space-6)', marginBottom: 'var(--space-6)' }}>
         <div className="grid-3">
@@ -206,6 +209,7 @@ export default function Expenses() {
           </div>
         </form>
       </Modal>
+
 
       <ConfirmDialog isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDelete} title="Delete Expense" message="Are you sure you want to delete this expense?" />
     </div>

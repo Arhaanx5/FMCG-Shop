@@ -247,7 +247,7 @@ export default function WhatsAppSetup() {
 
     for (let i = 0; i < selectedCustomers.length; i++) {
       if (stopSignalRef.current) {
-        toast.warning('Broadcast stopped by user.')
+        toast.info('Broadcast stopped by user.')
         break
       }
 
@@ -333,7 +333,7 @@ export default function WhatsAppSetup() {
 
   const handleStartBroadcastClick = () => {
     if (selectedIds.length === 0) {
-      toast.warning('Please select at least one customer.')
+      toast.info('Please select at least one customer.')
       return
     }
     setShowBroadcastConfirm(true)

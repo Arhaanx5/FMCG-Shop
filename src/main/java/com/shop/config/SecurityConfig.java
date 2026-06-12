@@ -73,6 +73,7 @@ public class SecurityConfig {
                                 "/deliveries",
                                 "/users",
                                 "/api/auth/**",
+                                "/api/config/**",
                                 "/ws/**",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
