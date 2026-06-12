@@ -68,6 +68,15 @@ Please extract:
 8. "taxable_value": The total taxable value of the row after discount but before GST tax. Read this strictly from the 'Taxable Value' column (numeric float). If the 'Taxable Value' column is missing or empty, use the 'Net Amt' minus any discount, or raw row total before tax.
 9. "gst_percent": The GST tax percentage applied to this item from the 'GST (%)' column (numeric float, e.g., 5.0, 12.0, 18.0).
 
+CRITICAL MATHEMATICAL CHECK FOR ACCURACY:
+Before outputting, you MUST mathematically verify each row.
+For every row, ensure that:
+`taxable_value` is approximately equal to `invoice_cases * packs_per_case * buy_price_per_piece` (minus any GST discount if applicable).
+For example:
+- S No 1 (All In One): cases = 2, packs_per_case = 100, buy_price = 14.5407. Verification: 2 * 100 * 14.5407 = 2908.14. This matches the row's Taxable Value of 2,908.14. So cases MUST be 2 (NOT 3).
+- S No 2 (Aloo Bhujia): cases = 3, packs_per_case = 100, buy_price = 14.5407. Verification: 3 * 100 * 14.5407 = 4362.21. This matches the row's Taxable Value of 4,362.21. So cases MUST be 3 (NOT 2).
+If you find a mathematical mismatch (e.g. if you wrote cases = 3 for S No 1, but its Taxable Value is 2,908.14), you have mixed up adjacent row values. Re-scan the image, align the columns correctly for that row, and fix it.
+
 Return ONLY the raw JSON list inside a code block. Do not write any markdown descriptions or introductory text.
 """
 
