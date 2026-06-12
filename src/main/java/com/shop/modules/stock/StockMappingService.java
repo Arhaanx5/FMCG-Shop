@@ -293,36 +293,40 @@ public class StockMappingService {
         if (rawMrpInt <= 0) return false;
 
         String nameLower = dbProductName.toLowerCase();
-        
-        // Match patterns like "rs-X", "rs X", "mrp X", "mrp-X", "wrp-X", "wrp X"
-        java.util.regex.Pattern p = java.util.regex.Pattern.compile("(?:rs|mrp|wrp)[-\\s]*(\\d+)");
+        boolean foundPriceIndicator = false;
+        String rawMrpStr = String.valueOf(rawMrpInt);
+
+        // 1. Match patterns like "rs-X", "rs X", "mrp X", "mrp-X", "wrp-X", "wrp X"
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile("(?:rs|mrp|wrp)[-\\s.]*(\\d+)");
         java.util.regex.Matcher m = p.matcher(nameLower);
-        if (m.find()) {
-            try {
-                String valStr = m.group(1);
-                // Clean OCR variations
-                if (valStr.startsWith("20") && valStr.length() > 2) {
-                    valStr = "20";
-                } else if (valStr.startsWith("5") && valStr.length() > 1) {
-                    valStr = "5";
-                } else if (valStr.startsWith("10") && valStr.length() > 2) {
-                    valStr = "10";
-                }
-                
-                int dbMrp = Integer.parseInt(valStr);
-                if (dbMrp != rawMrpInt) {
-                    return true; // Mismatch!
-                }
-            } catch (Exception e) {
-                // Ignore parse errors
+        while (m.find()) {
+            foundPriceIndicator = true;
+            String valStr = m.group(1);
+            if (valStr.equals(rawMrpStr)) {
+                return false; // Exact match found
+            }
+            // Handle OCR noise (e.g. "20155" matches raw "20", "513" matches raw "5")
+            if (valStr.startsWith(rawMrpStr) || rawMrpStr.startsWith(valStr)) {
+                return false; // Valid prefix/suffix match under OCR noise
             }
         }
-        
-        // Substring manual fallbacks
-        if (rawMrpInt == 20 && (nameLower.contains("rs-5") || nameLower.contains("rs 5") || nameLower.contains("mrp 5") || nameLower.contains("mrp-5"))) {
-            return true;
+
+        // 2. Match patterns like "/X" or "-X" at the end of the name or before word boundaries (e.g. "/5" or "-20")
+        java.util.regex.Pattern pEnd = java.util.regex.Pattern.compile("[/-]\\s*(\\d+)(?:\\s|$|gm|kg)");
+        java.util.regex.Matcher mEnd = pEnd.matcher(nameLower);
+        while (mEnd.find()) {
+            foundPriceIndicator = true;
+            String valStr = mEnd.group(1);
+            if (valStr.equals(rawMrpStr)) {
+                return false; // Exact match found
+            }
+            if (valStr.startsWith(rawMrpStr) || rawMrpStr.startsWith(valStr)) {
+                return false; // Valid prefix/suffix match under OCR noise
+            }
         }
-        if (rawMrpInt == 5 && (nameLower.contains("rs-20") || nameLower.contains("rs 20") || nameLower.contains("mrp 20") || nameLower.contains("mrp-20"))) {
+
+        // If database product name has a price indicator but none of them matched our raw invoice MRP, it is a mismatch
+        if (foundPriceIndicator) {
             return true;
         }
 
