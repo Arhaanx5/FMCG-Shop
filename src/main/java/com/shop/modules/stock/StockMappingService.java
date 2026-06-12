@@ -96,7 +96,18 @@ public class StockMappingService {
                 // Map based on existing product's DB configurations
                 int ratio = bestMatch.getSecondaryPerPrimary() != null ? bestMatch.getSecondaryPerPrimary() : 1;
                 String secUnit = bestMatch.getSecondaryUnit() != null ? bestMatch.getSecondaryUnit().toUpperCase() : "PACK";
-                int packPerSecondary = "LADI".equals(secUnit) ? 12 : 1;
+                
+                int packPerSecondary = 1;
+                if ("LADI".equals(secUnit)) {
+                    if (ratio > 0) {
+                        packPerSecondary = rawItem.getPacksPerCase() / ratio;
+                    } else {
+                        packPerSecondary = 12;
+                    }
+                }
+                if (packPerSecondary <= 0) {
+                    packPerSecondary = 1;
+                }
 
                 int totalPacks = rawItem.getInvoiceCases() * rawItem.getPacksPerCase();
                 int totalSecondaryUnits = totalPacks / packPerSecondary;

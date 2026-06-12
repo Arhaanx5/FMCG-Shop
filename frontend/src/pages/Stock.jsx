@@ -299,7 +299,11 @@ export default function Stock() {
           if (!item) return prev
           const ratio = newProduct.secondaryPerPrimary || 1
           const secUnit = newProduct.secondaryUnit ? newProduct.secondaryUnit.toUpperCase() : 'PACK'
-          const packPerSecondary = (secUnit === 'LADI') ? 12 : 1
+          let packPerSecondary = 1
+          if (secUnit === 'LADI') {
+            packPerSecondary = ratio > 0 ? Math.floor((item.packsPerCase || 1) / ratio) : 12
+          }
+          if (packPerSecondary <= 0) packPerSecondary = 1
           const totalPacks = (item.invoiceCases || 0) * (item.packsPerCase || 1)
           const totalSecondaryUnits = Math.floor(totalPacks / packPerSecondary)
           const primaryAdded = Math.floor(totalSecondaryUnits / ratio)
@@ -350,7 +354,11 @@ export default function Stock() {
               if (!item) return prev
               const ratio = matchedProduct.secondaryPerPrimary || 1
               const secUnit = matchedProduct.secondaryUnit ? matchedProduct.secondaryUnit.toUpperCase() : 'PACK'
-              const packPerSecondary = (secUnit === 'LADI') ? 12 : 1
+              let packPerSecondary = 1
+              if (secUnit === 'LADI') {
+                packPerSecondary = ratio > 0 ? Math.floor((item.packsPerCase || 1) / ratio) : 12
+              }
+              if (packPerSecondary <= 0) packPerSecondary = 1
               const totalPacks = (item.invoiceCases || 0) * (item.packsPerCase || 1)
               const totalSecondaryUnits = Math.floor(totalPacks / packPerSecondary)
               const primaryAdded = Math.floor(totalSecondaryUnits / ratio)
@@ -419,7 +427,11 @@ export default function Stock() {
     if (product) {
       const ratio = product.secondaryPerPrimary || 1
       const secUnit = product.secondaryUnit ? product.secondaryUnit.toUpperCase() : 'PACK'
-      const packPerSecondary = (secUnit === 'LADI') ? 12 : 1
+      let packPerSecondary = 1
+      if (secUnit === 'LADI') {
+        packPerSecondary = ratio > 0 ? Math.floor((item.packsPerCase || 1) / ratio) : 12
+      }
+      if (packPerSecondary <= 0) packPerSecondary = 1
       
       const totalPacks = item.invoiceCases * item.packsPerCase
       const totalSecondaryUnits = Math.floor(totalPacks / packPerSecondary)
