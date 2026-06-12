@@ -3,7 +3,7 @@ import { useNavigate, useOutletContext } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   IndianRupee, ShoppingCart, TrendingUp, TrendingDown,
-  AlertTriangle, Package, Users, Truck, Sparkles, Brain, Lightbulb, BookOpen, Send, RefreshCw
+  AlertTriangle, Package, Users, Truck, Sparkles, Brain, Lightbulb, BookOpen, Send, RefreshCw, Cloud
 } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import api from '../services/api'
@@ -326,6 +326,24 @@ export default function Dashboard() {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
   const [alertScope, setAlertScope] = useState('urgent')
   const toast = useToast()
+  const [backupLoading, setBackupLoading] = useState(false)
+
+  const handleBackupToDrive = async () => {
+    setBackupLoading(true)
+    try {
+      const res = await api.post('/backup/run')
+      if (res.data?.success || res.data?.data?.status === 'SUCCESS') {
+        toast.success('Database backup uploaded to Google Drive successfully!')
+      } else {
+        toast.error('Backup failed: ' + (res.data?.message || 'Unknown error'))
+      }
+    } catch (err) {
+      console.error(err)
+      toast.error('Backup failed: ' + (err.response?.data?.message || err.message))
+    } finally {
+      setBackupLoading(false)
+    }
+  }
 
   const [recentBills, setRecentBills] = useState([])
 
@@ -591,6 +609,26 @@ export default function Dashboard() {
           </div>
 
           <div className="page-actions" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+            {isAdmin && (
+              <button
+                onClick={handleBackupToDrive}
+                disabled={backupLoading}
+                className="btn btn-secondary rounded-theme-md flex items-center gap-2"
+                style={{ 
+                  height: '38px', 
+                  fontSize: 'var(--font-size-sm)', 
+                  display: 'inline-flex', 
+                  alignItems: 'center', 
+                  gap: '6px',
+                  background: 'var(--color-surface-2)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-text)'
+                }}
+              >
+                {backupLoading ? <RefreshCw size={14} className="animate-spin" /> : <Cloud size={14} />}
+                {backupLoading ? 'Backing up...' : 'Backup to Drive'}
+              </button>
+            )}
             {viewMode === 'day' && (
               <span style={{ 
                 display: 'inline-flex', 
