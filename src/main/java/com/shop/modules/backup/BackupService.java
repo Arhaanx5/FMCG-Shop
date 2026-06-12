@@ -183,6 +183,7 @@ public class BackupService {
 
         com.google.api.services.drive.model.File uploadedFile = driveService.files()
                 .create(fileMetadata, mediaContent)
+                .setSupportsAllDrives(true)
                 .setFields("id, name, size")
                 .execute();
 
