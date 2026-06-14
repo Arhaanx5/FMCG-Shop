@@ -35,6 +35,10 @@ public class JwtFilter extends OncePerRequestFilter {
         if (header != null && header.startsWith("Bearer ")) {
             String token = header.substring(7);
             if (jwtUtil.isValid(token)) {
+                if (jwtUtil.isMfaToken(token)) {
+                    chain.doFilter(req, res);
+                    return;
+                }
                 String phone = jwtUtil.getPhone(token);
                 String role  = jwtUtil.getRole(token);
                 String userId = jwtUtil.getUserId(token);

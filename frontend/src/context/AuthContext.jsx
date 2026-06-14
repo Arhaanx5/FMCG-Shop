@@ -49,6 +49,25 @@ export function AuthProvider({ children }) {
   const login = async (phone, password) => {
     const res = await api.post('/auth/login', { phone, password })
     const data = res.data
+    if (data.mfaRequired) {
+      return data
+    }
+    localStorage.setItem('token', data.token)
+    localStorage.setItem('user', JSON.stringify(data))
+    setToken(data.token)
+    setUser({
+      id: data.userId,
+      name: data.name,
+      role: data.role,
+      phone,
+      mustChangePassword: data.mustChangePassword,
+    })
+    return data
+  }
+
+  const verifyMfaLogin = async (mfaToken, code, phone) => {
+    const res = await api.post('/auth/login/verify-mfa', { mfaToken, code })
+    const data = res.data
     localStorage.setItem('token', data.token)
     localStorage.setItem('user', JSON.stringify(data))
     setToken(data.token)
@@ -86,6 +105,7 @@ export function AuthProvider({ children }) {
         token,
         loading,
         login,
+        verifyMfaLogin,
         logout,
         changePassword,
         isAdmin,

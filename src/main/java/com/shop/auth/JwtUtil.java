@@ -31,6 +31,17 @@ public class JwtUtil {
                 .compact();
     }
 
+    public String generateMfaToken(String phone, String userId) {
+        return Jwts.builder()
+                .setSubject(phone)
+                .claim("userId", userId)
+                .claim("mfaRequired", true)
+                .setIssuedAt(new Date())
+                .setExpiration(new Date(System.currentTimeMillis() + 5 * 60 * 1000L)) // 5 minutes
+                .signWith(getKey(), SignatureAlgorithm.HS256)
+                .compact();
+    }
+
     public String getPhone(String token) {
         return getClaims(token).getSubject();
     }
@@ -41,6 +52,15 @@ public class JwtUtil {
 
     public String getUserId(String token) {
         return (String) getClaims(token).get("userId");
+    }
+
+    public boolean isMfaToken(String token) {
+        try {
+            Boolean mfa = (Boolean) getClaims(token).get("mfaRequired");
+            return mfa != null && mfa;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     public boolean isValid(String token) {

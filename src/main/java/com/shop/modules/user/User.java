@@ -52,6 +52,13 @@ public class User {
     @Column(name = "last_location_time")
     private LocalDateTime lastLocationTime;
 
+    @Column(name = "mfa_secret")
+    private String mfaSecret;
+
+    @Column(name = "mfa_enabled")
+    @Builder.Default
+    private Boolean mfaEnabled = false;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Plus, Edit2, Trash2, ToggleLeft, ToggleRight, MapPin } from 'lucide-react'
+import { QRCodeSVG } from 'qrcode.react'
 import api from '../services/api'
 import DataTable from '../components/DataTable'
 import Modal from '../components/Modal'
@@ -54,7 +55,69 @@ export default function Users() {
   const [deleteTarget, setDeleteTarget] = useState(null)
   const toast = useToast()
 
-  useEffect(() => { loadUsers() }, [])
+  // MFA states
+  const [mfaEnabled, setMfaEnabled] = useState(false)
+  const [mfaSetupData, setMfaSetupData] = useState(null) // { secret, qrCodeUrl }
+  const [mfaCode, setMfaCode] = useState('')
+  const [verifyingMfa, setVerifyingMfa] = useState(false)
+  const [showDisableForm, setShowDisableForm] = useState(false)
+
+  useEffect(() => {
+    loadUsers()
+    loadMfaStatus()
+  }, [])
+
+  const loadMfaStatus = async () => {
+    try {
+      const res = await api.get('/auth/me')
+      setMfaEnabled(res.data.mfaEnabled || false)
+    } catch (err) {
+      console.error('Failed to load MFA status', err)
+    }
+  }
+
+  const handleSetupMfa = async () => {
+    try {
+      const res = await api.post('/auth/mfa/setup')
+      setMfaSetupData(res.data)
+      setMfaCode('')
+      setShowDisableForm(false)
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to start MFA setup')
+    }
+  }
+
+  const handleEnableMfa = async (e) => {
+    e.preventDefault()
+    setVerifyingMfa(true)
+    try {
+      await api.post('/auth/mfa/enable', { code: mfaCode })
+      toast.success('MFA enabled successfully!')
+      setMfaEnabled(true)
+      setMfaSetupData(null)
+      setMfaCode('')
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Verification failed')
+    } finally {
+      setVerifyingMfa(false)
+    }
+  }
+
+  const handleDisableMfa = async (e) => {
+    e.preventDefault()
+    setVerifyingMfa(true)
+    try {
+      await api.post('/auth/mfa/disable', { code: mfaCode })
+      toast.success('MFA disabled successfully!')
+      setMfaEnabled(false)
+      setShowDisableForm(false)
+      setMfaCode('')
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Verification failed')
+    } finally {
+      setVerifyingMfa(false)
+    }
+  }
 
   const loadUsers = async () => {
     setLoading(true)
@@ -243,6 +306,136 @@ export default function Users() {
             <Plus size={18} /> Add User
           </motion.button>
         </div>
+      </div>
+
+      {/* 2FA Settings Card */}
+      <div style={{
+        marginBottom: 'var(--space-6)',
+        background: 'var(--color-bg-alt)',
+        padding: 'var(--space-6)',
+        borderRadius: 'var(--radius-lg)',
+        border: '1px solid var(--color-border)',
+      }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-4)' }}>
+          <div>
+            <h3 className="page-title" style={{ fontSize: 'var(--font-size-md)', margin: 0, display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+              <span>🛡️ Multi-Factor Authentication (2FA)</span>
+              <span className={`badge ${mfaEnabled ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '10px' }}>
+                {mfaEnabled ? 'ENABLED' : 'DISABLED'}
+              </span>
+            </h3>
+            <p className="page-subtitle" style={{ margin: 'var(--space-1) 0 0 0', fontSize: 'var(--font-size-xs)' }}>
+              Secure the Admin account by requiring a 6-digit verification code from Google Authenticator on login.
+            </p>
+          </div>
+          <div>
+            {!mfaEnabled ? (
+              !mfaSetupData ? (
+                <button className="btn btn-primary" onClick={handleSetupMfa}>
+                  Enable 2FA
+                </button>
+              ) : (
+                <button className="btn btn-secondary" onClick={() => setMfaSetupData(null)}>
+                  Cancel Setup
+                </button>
+              )
+            ) : (
+              !showDisableForm ? (
+                <button className="btn btn-danger" onClick={() => { setShowDisableForm(true); setMfaCode(''); }}>
+                  Disable 2FA
+                </button>
+              ) : (
+                <button className="btn btn-secondary" onClick={() => setShowDisableForm(false)}>
+                  Cancel
+                </button>
+              )
+            )}
+          </div>
+        </div>
+
+        {/* 2FA Setup Form */}
+        {mfaSetupData && (
+          <div style={{
+            marginTop: 'var(--space-5)',
+            paddingTop: 'var(--space-5)',
+            borderTop: '1px solid var(--color-border)',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 'var(--space-6)',
+            alignItems: 'flex-start'
+          }}>
+            <div style={{ background: '#fff', padding: '10px', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', flexShrink: 0 }}>
+              <QRCodeSVG
+                value={decodeURIComponent(mfaSetupData.qrCodeUrl.split('chl=')[1])}
+                size={180}
+                level="M"
+              />
+            </div>
+            <div style={{ flex: 1, minWidth: 260 }}>
+              <h4 style={{ fontSize: 'var(--font-size-sm)', fontWeight: 'bold', marginBottom: 'var(--space-2)' }}>
+                1. Scan this QR Code
+              </h4>
+              <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-3)' }}>
+                Open Google Authenticator on your phone, click the "+" button, and scan the QR code above.
+                If you cannot scan, you can manually type this key: <strong style={{ color: 'var(--color-accent)' }}>{mfaSetupData.secret}</strong>
+              </p>
+              <h4 style={{ fontSize: 'var(--font-size-sm)', fontWeight: 'bold', marginBottom: 'var(--space-2)' }}>
+                2. Enter Verification Code
+              </h4>
+              <form onSubmit={handleEnableMfa} style={{ display: 'flex', gap: 'var(--space-2)', maxWidth: 320 }}>
+                <input
+                  type="text"
+                  pattern="[0-9]*"
+                  inputMode="numeric"
+                  placeholder="6-digit code"
+                  className="form-input"
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  maxLength={6}
+                  required
+                  style={{ textAlign: 'center', letterSpacing: '0.1em', fontWeight: 'bold' }}
+                />
+                <button type="submit" className="btn btn-primary" disabled={verifyingMfa || mfaCode.length !== 6}>
+                  {verifyingMfa ? 'Verifying...' : 'Verify & Enable'}
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* 2FA Disable Form */}
+        {showDisableForm && (
+          <div style={{
+            marginTop: 'var(--space-5)',
+            paddingTop: 'var(--space-5)',
+            borderTop: '1px solid var(--color-border)',
+            maxWidth: 400
+          }}>
+            <h4 style={{ fontSize: 'var(--font-size-sm)', fontWeight: 'bold', marginBottom: 'var(--space-2)' }}>
+              Confirm Disabling 2FA
+            </h4>
+            <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-3)' }}>
+              Enter the 6-digit verification code from your Authenticator app to confirm disabling Multi-Factor Authentication.
+            </p>
+            <form onSubmit={handleDisableMfa} style={{ display: 'flex', gap: 'var(--space-2)' }}>
+              <input
+                type="text"
+                pattern="[0-9]*"
+                inputMode="numeric"
+                placeholder="6-digit code"
+                className="form-input"
+                value={mfaCode}
+                onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                maxLength={6}
+                required
+                style={{ textAlign: 'center', letterSpacing: '0.1em', fontWeight: 'bold' }}
+              />
+              <button type="submit" className="btn btn-danger" disabled={verifyingMfa || mfaCode.length !== 6}>
+                {verifyingMfa ? 'Verifying...' : 'Disable'}
+              </button>
+            </form>
+          </div>
+        )}
       </div>
 
       <DataTable columns={columns} data={users} loading={loading} searchPlaceholder="Search users..." emptyMessage="No users found"

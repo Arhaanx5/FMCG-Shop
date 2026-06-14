@@ -25,6 +25,7 @@ public class AuthController {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final TotpUtil totpUtil;
 
     // ── Simple in-memory rate limiter (no external dep needed) ──
     // Tracks failed attempts per phone number
@@ -96,6 +97,16 @@ public class AuthController {
         clearFailedAttempts(req.getPhone());
         log.info("SECURITY: Successful login for: {} (role: {})", req.getPhone(), user.getRole());
 
+        // Check if MFA is enabled
+        if (Boolean.TRUE.equals(user.getMfaEnabled()) && user.getRole() == com.shop.modules.user.UserRole.ADMIN) {
+            String mfaToken = jwtUtil.generateMfaToken(user.getPhone(), user.getId().toString());
+            return ResponseEntity.ok(Map.of(
+                    "mfaRequired", true,
+                    "mfaToken", mfaToken,
+                    "phone", user.getPhone()
+            ));
+        }
+
         String token = jwtUtil.generateToken(
                 user.getPhone(),
                 user.getRole().name(),
@@ -121,7 +132,8 @@ public class AuthController {
                 "name", user.getName(),
                 "phone", user.getPhone(),
                 "role", user.getRole(),
-                "mustChangePassword", user.getMustChangePassword()
+                "mustChangePassword", user.getMustChangePassword(),
+                "mfaEnabled", Boolean.TRUE.equals(user.getMfaEnabled())
         ));
     }
 
@@ -156,6 +168,138 @@ public class AuthController {
         userRepository.save(user);
         log.info("SECURITY: Password changed for: {}", phone);
         return ResponseEntity.ok(Map.of("message", "Password changed"));
+    }
+
+    @PostMapping("/mfa/setup")
+    public ResponseEntity<?> setupMfa(@RequestHeader("Authorization") String header) {
+        String token = header.substring(7);
+        String phone = jwtUtil.getPhone(token);
+        User user = userRepository.findByPhone(phone)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (Boolean.TRUE.equals(user.getMfaEnabled())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "MFA is already enabled"));
+        }
+
+        String secret = totpUtil.generateSecretKey();
+        user.setMfaSecret(secret);
+        userRepository.save(user);
+
+        String qrCodeUrl = totpUtil.getQrCodeUrl(secret, user.getPhone());
+        return ResponseEntity.ok(Map.of(
+                "secret", secret,
+                "qrCodeUrl", qrCodeUrl
+        ));
+    }
+
+    @PostMapping("/mfa/enable")
+    public ResponseEntity<?> enableMfa(
+            @RequestHeader("Authorization") String header,
+            @RequestBody Map<String, String> body) {
+        String token = header.substring(7);
+        String phone = jwtUtil.getPhone(token);
+        User user = userRepository.findByPhone(phone)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        String codeStr = body.get("code");
+        if (codeStr == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "MFA code is required"));
+        }
+
+        int code;
+        try {
+            code = Integer.parseInt(codeStr.trim());
+        } catch (NumberFormatException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "MFA code must be numeric"));
+        }
+
+        boolean verified = totpUtil.verifyCode(user.getMfaSecret(), code);
+        if (!verified) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid verification code"));
+        }
+
+        user.setMfaEnabled(true);
+        userRepository.save(user);
+        log.info("SECURITY: MFA enabled for user: {}", phone);
+        return ResponseEntity.ok(Map.of("message", "MFA enabled successfully"));
+    }
+
+    @PostMapping("/mfa/disable")
+    public ResponseEntity<?> disableMfa(
+            @RequestHeader("Authorization") String header,
+            @RequestBody Map<String, String> body) {
+        String token = header.substring(7);
+        String phone = jwtUtil.getPhone(token);
+        User user = userRepository.findByPhone(phone)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        String codeStr = body.get("code");
+        if (codeStr == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "MFA code is required"));
+        }
+
+        int code;
+        try {
+            code = Integer.parseInt(codeStr.trim());
+        } catch (NumberFormatException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "MFA code must be numeric"));
+        }
+
+        boolean verified = totpUtil.verifyCode(user.getMfaSecret(), code);
+        if (!verified) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid verification code"));
+        }
+
+        user.setMfaEnabled(false);
+        user.setMfaSecret(null);
+        userRepository.save(user);
+        log.info("SECURITY: MFA disabled for user: {}", phone);
+        return ResponseEntity.ok(Map.of("message", "MFA disabled successfully"));
+    }
+
+    @PostMapping("/login/verify-mfa")
+    public ResponseEntity<?> verifyMfaLogin(@RequestBody Map<String, String> body) {
+        String mfaToken = body.get("mfaToken");
+        String codeStr = body.get("code");
+
+        if (mfaToken == null || codeStr == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "mfaToken and code are required"));
+        }
+
+        if (!jwtUtil.isValid(mfaToken) || !jwtUtil.isMfaToken(mfaToken)) {
+            return ResponseEntity.status(401).body(Map.of("error", "MFA session expired or invalid"));
+        }
+
+        String phone = jwtUtil.getPhone(mfaToken);
+        User user = userRepository.findByPhone(phone)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        int code;
+        try {
+            code = Integer.parseInt(codeStr.trim());
+        } catch (NumberFormatException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "MFA code must be numeric"));
+        }
+
+        boolean verified = totpUtil.verifyCode(user.getMfaSecret(), code);
+        if (!verified) {
+            return ResponseEntity.status(401).body(Map.of("error", "Invalid verification code"));
+        }
+
+        String token = jwtUtil.generateToken(
+                user.getPhone(),
+                user.getRole().name(),
+                user.getId().toString()
+        );
+
+        log.info("SECURITY: Successful MFA login verification for: {}", phone);
+        return ResponseEntity.ok(Map.of(
+                "token", token,
+                "role", user.getRole(),
+                "name", user.getName(),
+                "userId", user.getId(),
+                "mustChangePassword", user.getMustChangePassword()
+        ));
     }
 
     // ── Inner DTOs ───────────────────────────────────────────────

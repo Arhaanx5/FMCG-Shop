@@ -15,13 +15,18 @@ export default function Login() {
   const [error, setError] = useState('')
   const [shake, setShake] = useState(false)
 
+  // MFA states
+  const [mfaRequired, setMfaRequired] = useState(false)
+  const [mfaToken, setMfaToken] = useState('')
+  const [mfaCode, setMfaCode] = useState('')
+
   // Change password modal
   const [showChangePassword, setShowChangePassword] = useState(false)
   const [currentPwd, setCurrentPwd] = useState('')
   const [newPwd, setNewPwd] = useState('')
   const [changingPwd, setChangingPwd] = useState(false)
 
-  const { login, changePassword } = useAuth()
+  const { login, verifyMfaLogin, changePassword } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
 
@@ -30,13 +35,28 @@ export default function Login() {
     setError('')
     setLoading(true)
     try {
-      const data = await login(phone, password)
-      if (data.mustChangePassword) {
-        setShowChangePassword(true)
-        setCurrentPwd(password)
+      if (mfaRequired) {
+        const data = await verifyMfaLogin(mfaToken, mfaCode, phone)
+        if (data.mustChangePassword) {
+          setShowChangePassword(true)
+          setCurrentPwd(password)
+        } else {
+          toast.success(`Welcome back, ${data.name}!`)
+          navigate('/')
+        }
       } else {
-        toast.success(`Welcome back, ${data.name}!`)
-        navigate('/')
+        const data = await login(phone, password)
+        if (data.mfaRequired) {
+          setMfaRequired(true)
+          setMfaToken(data.mfaToken)
+          setMfaCode('')
+        } else if (data.mustChangePassword) {
+          setShowChangePassword(true)
+          setCurrentPwd(password)
+        } else {
+          toast.success(`Welcome back, ${data.name}!`)
+          navigate('/')
+        }
       }
     } catch (err) {
       const msg = err.response?.data?.error || err.message || 'Invalid credentials'
@@ -125,56 +145,84 @@ export default function Login() {
           style={{ padding: 'var(--space-8)' }}
         >
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
-            {/* Phone */}
-            <div className="form-group">
-              <label className="form-label">Phone Number</label>
-              <div style={{ position: 'relative' }}>
-                <Phone size={18} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
-                <input
-                  id="login-phone"
-                  className="form-input"
-                  type="tel"
-                  placeholder="Enter 10-digit phone"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                  maxLength={10}
-                  required
-                  autoComplete="tel"
-                  style={{ paddingLeft: 40 }}
-                />
-              </div>
-            </div>
+            {!mfaRequired ? (
+              <>
+                {/* Phone */}
+                <div className="form-group">
+                  <label className="form-label">Phone Number</label>
+                  <div style={{ position: 'relative' }}>
+                    <Phone size={18} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
+                    <input
+                      id="login-phone"
+                      className="form-input"
+                      type="tel"
+                      placeholder="Enter 10-digit phone"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                      maxLength={10}
+                      required
+                      autoComplete="tel"
+                      style={{ paddingLeft: 40 }}
+                    />
+                  </div>
+                </div>
 
-            {/* Password */}
-            <div className="form-group">
-              <label className="form-label">Password</label>
-              <div style={{ position: 'relative' }}>
-                <Lock size={18} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
-                <input
-                  id="login-password"
-                  className="form-input"
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  maxLength={72}
-                  autoComplete="current-password"
-                  style={{ paddingLeft: 40, paddingRight: 44 }}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  style={{
-                    position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    color: 'var(--color-text-muted)', padding: 4,
-                  }}
-                >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
-            </div>
+                {/* Password */}
+                <div className="form-group">
+                  <label className="form-label">Password</label>
+                  <div style={{ position: 'relative' }}>
+                    <Lock size={18} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
+                    <input
+                      id="login-password"
+                      className="form-input"
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder="Enter your password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      maxLength={72}
+                      autoComplete="current-password"
+                      style={{ paddingLeft: 40, paddingRight: 44 }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      style={{
+                        position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: 'var(--color-text-muted)', padding: 4,
+                      }}
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* MFA Code */}
+                <div className="form-group">
+                  <label className="form-label">Google Authenticator OTP</label>
+                  <div style={{ position: 'relative' }}>
+                    <Lock size={18} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
+                    <input
+                      id="login-mfa-code"
+                      className="form-input"
+                      type="text"
+                      pattern="[0-9]*"
+                      inputMode="numeric"
+                      placeholder="Enter 6-digit Authenticator Code"
+                      value={mfaCode}
+                      onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      maxLength={6}
+                      required
+                      autoFocus
+                      style={{ paddingLeft: 40, letterSpacing: '0.1em', textAlign: 'center', fontSize: '1.2rem', fontWeight: 'bold' }}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
 
             {/* Error */}
             {error && (
@@ -198,19 +246,35 @@ export default function Login() {
             <motion.button
               type="submit"
               className="btn btn-primary btn-lg w-full"
-              disabled={loading || phone.length !== 10 || !password}
+              disabled={loading || (!mfaRequired && (phone.length !== 10 || !password)) || (mfaRequired && mfaCode.length !== 6)}
               whileTap={{ scale: 0.97 }}
               style={{ marginTop: 'var(--space-2)' }}
             >
               {loading ? (
                 <>
                   <Loader2 size={20} className="spinner" style={{ borderColor: 'transparent', borderTopColor: 'var(--color-text-inverse)' }} />
-                  Signing in...
+                  {mfaRequired ? 'Verifying Code...' : 'Signing in...'}
                 </>
               ) : (
-                'Sign In'
+                mfaRequired ? 'Verify Code' : 'Sign In'
               )}
             </motion.button>
+
+            {mfaRequired && (
+              <button
+                type="button"
+                className="btn btn-secondary w-full"
+                onClick={() => {
+                  setMfaRequired(false)
+                  setMfaToken('')
+                  setMfaCode('')
+                  setError('')
+                }}
+                style={{ marginTop: '-4px' }}
+              >
+                Back to Login
+              </button>
+            )}
           </form>
         </motion.div>
 
