@@ -94,7 +94,7 @@ public class BackupService {
         } catch (Exception e) {
             log.error("Manual backup failed", e);
             result.put("status", "FAILED");
-            result.put("error", e.getMessage());
+            result.put("error", cleanErrorMessage(e));
         }
         return result;
     }
@@ -358,5 +358,53 @@ public class BackupService {
         } else {
             throw new java.io.IOException("Failed to upload to Apps Script. Status code: " + response.statusCode());
         }
+    }
+
+    private String cleanErrorMessage(Throwable t) {
+        if (t == null) {
+            return "Unknown error";
+        }
+        String msg = t.getMessage();
+        if (msg == null) {
+            msg = t.toString();
+        }
+
+        if (msg.contains("storageQuotaExceeded") || msg.contains("Service Accounts do not have storage quota")) {
+            return "Google Drive storage quota exceeded. Google Service Accounts have 0 bytes storage by default. Please configure a Shared Drive folder or set up app.backup.apps-script-url in application.properties.";
+        }
+        if (msg.contains("403 Forbidden") || msg.contains("insufficientPermissions")) {
+            return "Google Drive access denied (403). Please share the target backup folder with the Service Account email address in your google-drive-key.json.";
+        }
+        if (msg.contains("404 Not Found")) {
+            return "Google Drive folder not found (404). Please verify that the folder ID in application.properties is correct.";
+        }
+        if (msg.contains("invalid_grant") || msg.contains("credentials") || msg.contains("FileNotFoundException")) {
+            return "Invalid or missing Google Drive API credentials. Please ensure google-drive-key.json is present and valid.";
+        }
+
+        if (msg.contains("https://www.googleapis.com/upload/drive")) {
+            int jsonStart = msg.indexOf('{');
+            if (jsonStart != -1) {
+                String jsonPart = msg.substring(jsonStart);
+                try {
+                    int msgIndex = jsonPart.indexOf("\"message\":");
+                    if (msgIndex != -1) {
+                        int quoteStart = jsonPart.indexOf("\"", msgIndex + 10);
+                        if (quoteStart != -1) {
+                            int quoteEnd = jsonPart.indexOf("\"", quoteStart + 1);
+                            if (quoteEnd != -1) {
+                                return "Google Drive API Error: " + jsonPart.substring(quoteStart + 1, quoteEnd);
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {}
+            }
+            int queryStart = msg.indexOf('?');
+            if (queryStart != -1) {
+                return "Google Drive Upload Error: " + msg.substring(0, queryStart) + " (Error details in logs)";
+            }
+        }
+
+        return msg;
     }
 }
