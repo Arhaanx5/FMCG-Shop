@@ -198,8 +198,8 @@ export default function DataTable({
                     }`}
                     onClick={() => col.sortable !== false && handleSort(col.key || col.accessor)}
                     style={{
-                      ...(col.width ? { width: col.width } : {}),
-                      ...(sticky.isSticky ? { left: sticky.left, minWidth: sticky.width, maxWidth: sticky.width } : {})
+                      ...(col.width ? { width: col.width, minWidth: col.width } : {}),
+                      ...(sticky.isSticky ? { left: sticky.left, minWidth: sticky.width || col.width, maxWidth: sticky.width || col.width } : {})
                     }}
                   >
                     <span className="inline-flex items-center gap-1">
@@ -238,13 +238,17 @@ export default function DataTable({
                 >
                   {columns.map((col, colIdx) => {
                     const sticky = stickyOffsets[colIdx]
+                    const shouldWrap = col.wrap ?? (col.accessor === 'description' || col.accessor === 'details' || col.accessor === 'productName' || col.accessor === 'notes' || col.accessor === 'address' || col.accessor === 'remarks' || col.accessor === 'message');
                     return (
                       <td
                         key={col.key || col.accessor}
-                        className={`px-4 py-3 align-middle whitespace-nowrap ${
+                        className={`px-4 py-3 align-middle ${shouldWrap ? 'wrap-cell' : 'whitespace-nowrap'} ${
                           sticky.isSticky ? 'sticky z-10 bg-white dark:bg-slate-800 group-hover:bg-slate-50 dark:group-hover:bg-slate-700/30 border-r border-slate-200 dark:border-slate-700 transition-colors duration-150' : ''
                         }`}
-                        style={sticky.isSticky ? { left: sticky.left, minWidth: sticky.width, maxWidth: sticky.width, overflow: 'hidden', textOverflow: 'ellipsis' } : {}}
+                        style={{
+                          ...(col.width ? { width: col.width, minWidth: col.width } : {}),
+                          ...(sticky.isSticky ? { left: sticky.left, minWidth: sticky.width || col.width, maxWidth: sticky.width || col.width, overflow: 'hidden', textOverflow: 'ellipsis' } : {})
+                        }}
                       >
                         {col.render
                           ? col.render(row)

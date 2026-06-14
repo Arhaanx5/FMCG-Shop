@@ -436,7 +436,7 @@ export default function Layout() {
         }}
       >
         {/* Top bar */}
-        <header className={`sticky top-0 h-16 ${
+        <header className={`app-header sticky top-0 h-16 ${
           uiTheme !== 'classic' ? 'glass-panel border-b' : 'bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700'
         } flex items-center px-4 md:px-8 z-[200] gap-4`}>
           <button

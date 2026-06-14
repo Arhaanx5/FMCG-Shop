@@ -90,6 +90,9 @@ export default function StatCard({ icon, label, value, prefix = '', suffix = '',
       style={{ position: 'relative' }}
     >
       <style>{`
+        .stat-card:hover {
+          z-index: 210;
+        }
         .stat-card-desc-tooltip {
           position: absolute;
           bottom: 105%;
@@ -105,7 +108,7 @@ export default function StatCard({ icon, label, value, prefix = '', suffix = '',
           opacity: 0;
           visibility: hidden;
           transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-          z-index: 100;
+          z-index: var(--z-tooltip, 500);
           pointer-events: none;
           box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
           color: #fff;
