@@ -24,7 +24,7 @@ public class TotpUtilTest {
         String url = totpUtil.getQrCodeUrl(secret, phone);
         assertNotNull(url);
         assertTrue(url.contains("https://chart.googleapis.com/chart"));
-        assertTrue(url.contains("FMCG-Shop%3A9450821033"));
+        assertTrue(url.contains("LariTraders%3A9450821033"));
         assertTrue(url.contains("secret%3DABCDEF2345677890"));
     }
 

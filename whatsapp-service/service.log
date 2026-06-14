@@ -8507,3 +8507,15 @@ essage":"⚠️ Message failed, retry 2/3 in 15s","data":{"id":"7b8bff61-d1bf-4c
 {"ts":"2026-06-14T16:16:44.314Z","level":"INFO","module":"WA","message":"Loading 99%: WhatsApp"}
 {"ts":"2026-06-14T16:16:44.458Z","level":"INFO","module":"WA","message":"WhatsApp READY ✅ — Queue processor started"}
 {"ts":"2026-06-14T16:16:44.458Z","level":"INFO","module":"QUEUE","message":"Message processor started"}
+{"ts":"2026-06-14T16:22:18.180Z","level":"INFO","module":"QUEUE","message":"Loaded 0 pending messages from disk"}
+{"ts":"2026-06-14T16:22:18.275Z","level":"INFO","module":"CHROME","message":"Using Chrome from env: C:\\Users\\arhaa\\.cache\\puppeteer\\chrome\\win64-146.0.7680.31\\chrome-win64\\chrome.exe"}
+{"ts":"2026-06-14T16:22:18.282Z","level":"INFO","module":"SYSTEM","message":"🚀 Lari Traders WhatsApp Service v2.0 starting..."}
+{"ts":"2026-06-14T16:22:18.283Z","level":"INFO","module":"SYSTEM","message":"Cleaning up any orphaned Chrome/Puppeteer processes..."}
+{"ts":"2026-06-14T16:22:19.490Z","level":"INFO","module":"SYSTEM","message":"Orphaned Chrome processes cleaned."}
+{"ts":"2026-06-14T16:22:19.528Z","level":"INFO","module":"SYSTEM","message":"✅ HTTP server listening on http://127.0.0.1:3000"}
+{"ts":"2026-06-14T16:22:19.528Z","level":"INFO","module":"SYSTEM","message":"📋 Endpoints: /health /status /qr /send /send-bulk /send-media /queue/stats"}
+{"ts":"2026-06-14T16:22:19.529Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-14T16:22:35.756Z","level":"INFO","module":"WA","message":"Authenticated ✅"}
+{"ts":"2026-06-14T16:22:35.856Z","level":"INFO","module":"WA","message":"Loading 100%: WhatsApp"}
+{"ts":"2026-06-14T16:22:46.647Z","level":"INFO","module":"WA","message":"WhatsApp READY ✅ — Queue processor started"}
+{"ts":"2026-06-14T16:22:46.648Z","level":"INFO","module":"QUEUE","message":"Message processor started"}

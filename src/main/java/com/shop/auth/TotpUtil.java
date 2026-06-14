@@ -27,8 +27,8 @@ public class TotpUtil {
      * Get Google Charts QR Code URL for the TOTP setup.
      */
     public String getQrCodeUrl(String secret, String phone) {
-        String label = "FMCG-Shop:" + phone;
-        String issuer = "FMCG-Shop";
+        String label = "LariTraders:" + phone;
+        String issuer = "LariTraders";
         String uri = String.format("otpauth://totp/%s?secret=%s&issuer=%s", label, secret, issuer);
         try {
             return "https://chart.googleapis.com/chart?chs=200x200&chld=M|0&cht=qr&chl=" 
