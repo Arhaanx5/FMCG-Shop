@@ -1,6 +1,7 @@
 package com.shop.modules.user;
 
 import com.shop.modules.user.dto.CreateUserRequest;
+import com.shop.modules.user.dto.UpdateUserRequest;
 import com.shop.modules.user.dto.UserResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -96,7 +97,7 @@ public class UserService {
     }
 
     public UserResponse updateUser(
-            UUID id, CreateUserRequest req) {
+            UUID id, UpdateUserRequest req) {
 
         User user = userRepository.findById(id)
                 .orElseThrow(() ->
@@ -125,12 +126,17 @@ public class UserService {
         user.setRole(req.getRole());
         user.setMonthlySalary(req.getMonthlySalary());
 
+        // Update password only if provided and non-blank.
+        // Also enforce max length to prevent BCrypt DoS.
         if (req.getPassword() != null
-                && !req.getPassword().isBlank()
-                && !req.getPassword().equals("unchanged123")) {
+                && !req.getPassword().isBlank()) {
+            if (req.getPassword().length() > 72) {
+                throw new RuntimeException("Password must not exceed 72 characters");
+            }
             user.setPasswordHash(
                     passwordEncoder.encode(req.getPassword()));
         }
+        // If password is null or blank → keep existing hash unchanged
 
         return toResponse(userRepository.save(user));
     }
@@ -172,9 +178,15 @@ public class UserService {
                     "New password cannot be blank");
         }
 
-        if (newPassword.length() < 6) {
+        if (newPassword.length() < 8 || newPassword.length() > 72) {
             throw new RuntimeException(
-                    "Password must be at least 6 characters");
+                    "Password must be between 8 and 72 characters");
+        }
+
+        String regex = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]{8,72}$";
+        if (!newPassword.matches(regex)) {
+            throw new RuntimeException(
+                    "Password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character");
         }
 
         user.setPasswordHash(

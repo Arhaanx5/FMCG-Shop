@@ -16,6 +16,7 @@ import com.shop.modules.stock.StockRepository;
 import com.shop.modules.stock.StockService;
 import com.shop.modules.user.User;
 import com.shop.modules.user.UserRepository;
+import com.shop.modules.user.UserRole;
 import com.shop.modules.khata.PaymentRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -228,6 +229,27 @@ public class BillService {
                         new RuntimeException(
                                 "User not found"));
 
+        // Validate discount for Salesman and Delivery Boy
+        if (user.getRole() == UserRole.SALESMAN || user.getRole() == UserRole.DELIVERY_BOY) {
+            BigDecimal discount = req.getDiscount() != null ? req.getDiscount() : BigDecimal.ZERO;
+            if (discount.compareTo(BigDecimal.ZERO) > 0) {
+                throw new RuntimeException("Discounts are not allowed for Salesman and Delivery Boy roles");
+            }
+        }
+
+        // Prevent duplicate bill creation (within last 5 seconds)
+        LocalDateTime fiveSecondsAgo = LocalDateTime.now().minusSeconds(5);
+        List<Bill> recentBills = billRepository.findByCustomerIdOrderByCreatedAtDesc(customer.getId());
+        for (Bill rb : recentBills) {
+            if (rb.getCreatedAt() != null && rb.getCreatedAt().isAfter(fiveSecondsAgo)) {
+                if (rb.getCreatedBy() != null && rb.getCreatedBy().getId().equals(user.getId())
+                        && rb.getPaymentMode() == req.getPaymentMode()
+                        && rb.getItems().size() == req.getItems().size()) {
+                    throw new RuntimeException("Duplicate bill submission detected. Please wait 5 seconds before retrying.");
+                }
+            }
+        }
+
         // Validate items not empty
         if (req.getItems() == null
                 || req.getItems().isEmpty()) {
@@ -295,8 +317,8 @@ public class BillService {
                     product,
                     itemReq.getUnitType().name());
 
-            BigDecimal itemGstPercent = itemReq.getGstPercent() != null ? itemReq.getGstPercent() : product.getGstPercent();
-            BigDecimal itemCessPercent = itemReq.getCessPercent() != null ? itemReq.getCessPercent() : (product.getCessPercent() != null ? product.getCessPercent() : BigDecimal.ZERO);
+            BigDecimal itemGstPercent = product.getGstPercent();
+            BigDecimal itemCessPercent = product.getCessPercent() != null ? product.getCessPercent() : BigDecimal.ZERO;
 
             // taxDivisor = 1 + (gstPercent + cessPercent) / 100
             BigDecimal taxDivisor = BigDecimal.ONE.add(
@@ -587,7 +609,7 @@ public class BillService {
     public void cancelBill(UUID id) {
         Bill bill = billRepository.findById(id)
                 .orElseThrow(() ->
-                        new RuntimeException(
+                        new jakarta.persistence.EntityNotFoundException(
                                 "Bill not found: " + id));
 
         if (bill.getStatus()
@@ -791,6 +813,10 @@ public class BillService {
     // ── Update bill details (ADMIN/MANAGER only) ──
     @Transactional(rollbackFor = RuntimeException.class)
     public BillResponse updateBillDetails(UUID id, PaymentMode paymentMode, String notes, BillStatus status, BigDecimal paidAmount) {
+        if (paidAmount != null && paidAmount.compareTo(BigDecimal.ZERO) < 0) {
+            throw new RuntimeException("Paid amount cannot be negative");
+        }
+
         Bill bill = billRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Bill not found: " + id));
 

@@ -20,16 +20,26 @@ Write-Host "App ID:   $appId"
 Write-Host "App Name: $appName"
 Write-Host "URL:      $url"
 
-# 1. Update capacitor.config.json
-if (Test-Path "frontend/capacitor.config.json") {
-    (Get-Content "frontend/capacitor.config.json" -Raw) `
-      -replace '"appId":\s*"[^"]*"', "`"appId`": `"$appId`"" `
-      -replace '"appName":\s*"[^"]*"', "`"appName`": `"$appName`"" `
-      -replace '"url":\s*"[^"]*"', "`"url`": `"$url`"" `
-      | Set-Content "frontend/capacitor.config.json"
-}
+# 1. Update capacitor.config.json (local assets loading, using secure https scheme)
+$configJson = @{
+    appId = $appId
+    appName = $appName
+    webDir = "dist"
+    server = @{
+        androidScheme = "https"
+    }
+} | ConvertTo-Json
+$configJson | Set-Content "frontend/capacitor.config.json"
 
-# 2. Update strings.xml
+# 2. Generate env.js inside the frontend src/config directory
+$configDir = "frontend/src/config"
+if (!(Test-Path $configDir)) {
+    New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+}
+$envContent = "export const ENV = { apiUrl: '$url/api' }"
+$envContent | Set-Content "$configDir/env.js" -Encoding utf8
+
+# 3. Update strings.xml
 $stringsPath = "frontend/android/app/src/main/res/values/strings.xml"
 if (Test-Path $stringsPath) {
     (Get-Content $stringsPath -Raw) `
@@ -40,7 +50,7 @@ if (Test-Path $stringsPath) {
       | Set-Content $stringsPath
 }
 
-# 3. Update build.gradle
+# 4. Update build.gradle
 $gradlePath = "frontend/android/app/build.gradle"
 if (Test-Path $gradlePath) {
     (Get-Content $gradlePath -Raw) `
@@ -48,14 +58,10 @@ if (Test-Path $gradlePath) {
       | Set-Content $gradlePath
 }
 
-# 4. Update Android native assets capacitor.config.json copy
+# 5. Update Android native assets capacitor.config.json copy
 $androidConfigPath = "frontend/android/app/src/main/assets/capacitor.config.json"
 if (Test-Path $androidConfigPath) {
-    (Get-Content $androidConfigPath -Raw) `
-      -replace '"appId":\s*"[^"]*"', "`"appId`": `"$appId`"" `
-      -replace '"appName":\s*"[^"]*"', "`"appName`": `"$appName`"" `
-      -replace '"url":\s*"[^"]*"', "`"url`": `"$url`"" `
-      | Set-Content $androidConfigPath
+    $configJson | Set-Content $androidConfigPath
 }
 
 Write-Host "Android environment configuration completed successfully!"

@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { Plus, Minus, ShoppingCart, Trash2, Eye, X as XIcon, RotateCcw, Printer, Edit2, Check, ArrowLeft } from 'lucide-react'
 import { Filesystem, Directory } from '@capacitor/filesystem'
@@ -1181,8 +1181,9 @@ Thank you for doing business with Lari Traders!`
                                 className="form-input"
                                 type="number"
                                 min="0"
+                                max="9999"
                                 value={item.quantityPrimary}
-                                onChange={e => updateCartItem(item.productId, 'quantityPrimary', e.target.value)}
+                                onChange={e => updateCartItem(item.productId, 'quantityPrimary', Math.min(9999, Math.max(0, Number(e.target.value) || 0)))}
                                 style={{ width: 44, textAlign: 'center', padding: '4px', fontSize: 'var(--font-size-sm)', height: 32 }}
                               />
                               <button className="btn btn-ghost btn-icon btn-sm" onClick={() => updateCartItem(item.productId, 'quantityPrimary', Number(item.quantityPrimary || 0) + 1)}>
@@ -1203,8 +1204,9 @@ Thank you for doing business with Lari Traders!`
                                 className="form-input"
                                 type="number"
                                 min="0"
+                                max="9999"
                                 value={item.quantitySecondary}
-                                onChange={e => updateCartItem(item.productId, 'quantitySecondary', e.target.value)}
+                                onChange={e => updateCartItem(item.productId, 'quantitySecondary', Math.min(9999, Math.max(0, Number(e.target.value) || 0)))}
                                 style={{ width: 44, textAlign: 'center', padding: '4px', fontSize: 'var(--font-size-sm)', height: 32 }}
                               />
                               <button className="btn btn-ghost btn-icon btn-sm" onClick={() => updateCartItem(item.productId, 'quantitySecondary', Number(item.quantitySecondary || 0) + 1)}>

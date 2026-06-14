@@ -451,6 +451,27 @@ async function waitForPort(port, retries = 10, delayMs = 3000) {
 // ═══════════════════════════════════════════════════
 app.use(express.json({ limit: '20mb' }));
 
+// ── Internal Secret Auth Middleware ──────────────────
+// Protects sensitive endpoints from SSRF / unauthorized access
+const INTERNAL_SECRET = process.env.WA_INTERNAL_SECRET || null;
+
+function requireInternalSecret(req, res, next) {
+    if (!INTERNAL_SECRET) {
+        // If no secret configured, only allow localhost
+        const ip = req.ip || req.connection.remoteAddress || '';
+        if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') {
+            return next();
+        }
+        return res.status(403).json({ error: 'Forbidden' });
+    }
+    const provided = req.headers['x-internal-secret'];
+    if (provided !== INTERNAL_SECRET) {
+        log('WARN', 'AUTH', `Rejected request — invalid internal secret from ${req.ip}`);
+        return res.status(403).json({ error: 'Forbidden' });
+    }
+    next();
+}
+
 // Request logger middleware
 app.use((req, _res, next) => {
     log('INFO', 'API', `${req.method} ${req.path}`);
@@ -483,7 +504,7 @@ app.get('/qr', (_req, res) => {
 });
 
 // ── Send Single Text ─────────────────────────────
-app.post('/send', (req, res) => {
+app.post('/send', requireInternalSecret, (req, res) => {
     const { phone, message, priority = 'normal' } = req.body;
     if (!phone || !message) return res.status(400).json({ error: 'Missing phone or message' });
 
@@ -492,7 +513,7 @@ app.post('/send', (req, res) => {
 });
 
 // ── Send Single Media ────────────────────────────
-app.post('/send-media', (req, res) => {
+app.post('/send-media', requireInternalSecret, (req, res) => {
     const { phone, media, filename, caption, priority = 'normal' } = req.body;
     if (!phone || !media || !filename) return res.status(400).json({ error: 'Missing phone, media, or filename' });
 
@@ -501,7 +522,7 @@ app.post('/send-media', (req, res) => {
 });
 
 // ── Bulk Send ─────────────────────────────────────
-app.post('/send-bulk', (req, res) => {
+app.post('/send-bulk', requireInternalSecret, (req, res) => {
     const { messages, priority = 'normal' } = req.body;
     if (!Array.isArray(messages) || messages.length === 0) {
         return res.status(400).json({ error: 'messages must be a non-empty array' });
@@ -529,7 +550,7 @@ app.get('/queue/stats', (_req, res) => {
 });
 
 // ── Clear Queue ───────────────────────────────────
-app.delete('/queue', (req, res) => {
+app.delete('/queue', requireInternalSecret, (req, res) => {
     const type = req.query.type || 'pending';
     const cleared = messageQueue.clear(type);
     log('WARN', 'API', `Queue cleared`, { type, cleared });
@@ -576,9 +597,16 @@ app.post('/logout', async (_req, res) => {
 });
 
 // ── Generate Invoice PDF (Puppeteer) ─────────────────
-app.post('/generate-pdf', express.json({ limit: '10mb' }), async (req, res) => {
+app.post('/generate-pdf', requireInternalSecret, express.json({ limit: '10mb' }), async (req, res) => {
     const { html } = req.body;
     if (!html) return res.status(400).json({ success: false, error: 'HTML content required' });
+
+    // Basic HTML sanitization — strip script tags and dangerous event handlers
+    // This prevents HTML injection via customer data from executing arbitrary code
+    const sanitizedHtml = html
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // remove <script> blocks
+        .replace(/<iframe[^>]*>.*?<\/iframe>/gi, '')   // remove iframes
+        .replace(/\bon\w+\s*=/gi, 'data-removed=');    // strip event handlers (onclick, onerror, etc.)
 
     let browser = null;
     let page = null;
@@ -594,8 +622,17 @@ app.post('/generate-pdf', express.json({ limit: '10mb' }), async (req, res) => {
             ]
         });
         page = await browser.newPage();
+        await page.setJavaScriptEnabled(false);
+        await page.setRequestInterception(true);
+        page.on('request', request => {
+            if (request.url().startsWith('file://')) {
+                request.abort();
+            } else {
+                request.continue();
+            }
+        });
         await page.setViewport({ width: 794, height: 1123 }); // A4 at 96dpi
-        await page.setContent(html, { waitUntil: 'networkidle0', timeout: 15000 });
+        await page.setContent(sanitizedHtml, { waitUntil: 'networkidle0', timeout: 15000 });
         const pdfBuffer = await page.pdf({
             format: 'A4',
             printBackground: true,

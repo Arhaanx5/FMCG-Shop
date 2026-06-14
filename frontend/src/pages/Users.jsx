@@ -77,11 +77,30 @@ export default function Users() {
     setSaving(true)
     try {
       const payload = {
-        ...form,
-        monthlySalary: form.monthlySalary ? Number(form.monthlySalary) : null
+        name: form.name,
+        phone: form.phone,
+        role: form.role,
+        monthlySalary: form.monthlySalary ? Number(form.monthlySalary) : null,
+        // Send password only if user typed something; null means "keep existing"
+        password: form.password && form.password.trim() ? form.password : null
       }
+
+      // Frontend password strength check for new users
+      if (!editingId && !payload.password) {
+        toast.error('Password is required for new users')
+        setSaving(false)
+        return
+      }
+      if (!editingId && payload.password) {
+        const pwRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,72}$/
+        if (!pwRegex.test(payload.password)) {
+          toast.error('Password must be 8-72 characters and contain uppercase, lowercase, digit, and special character (@$!%*?&)')
+          setSaving(false)
+          return
+        }
+      }
+
       if (editingId) {
-        if (!payload.password) payload.password = 'unchanged123' // backend should handle
         await api.put(`/users/${editingId}`, payload)
         toast.success('User updated!')
       } else {
@@ -90,8 +109,18 @@ export default function Users() {
       }
       setShowModal(false)
       loadUsers()
-    } catch (err) { toast.error(err.response?.data?.message || 'Save failed') }
-    finally { setSaving(false) }
+    } catch (err) {
+      const errorData = err.response?.data;
+      if (errorData?.message === 'Validation failed' && errorData?.data) {
+        // Show each field validation error clearly
+        const valMsg = Object.entries(errorData.data)
+          .map(([field, msg]) => `• ${msg}`)
+          .join('\n');
+        toast.error(valMsg || 'Validation failed');
+      } else {
+        toast.error(errorData?.message || 'Save failed');
+      }
+    } finally { setSaving(false) }
   }
 
   const toggleActive = async (id) => {
@@ -276,8 +305,20 @@ export default function Users() {
             <input className="form-input" type="number" min="0" value={form.monthlySalary} onChange={e => setForm({ ...form, monthlySalary: e.target.value })} placeholder="Enter fixed monthly salary" />
           </div>
           <div className="form-group">
-            <label className="form-label">{editingId ? 'Password (leave blank to keep)' : 'Password *'}</label>
-            <input className="form-input" type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} required={!editingId} minLength={editingId ? 0 : 6} placeholder="Min 6 characters" />
+            <label className="form-label">{editingId ? 'Password (leave blank to keep current)' : 'Password *'}</label>
+            <input
+              className="form-input"
+              type="password"
+              value={form.password}
+              onChange={e => setForm({ ...form, password: e.target.value })}
+              placeholder={editingId ? 'Leave blank to keep current password' : 'Min 8 chars: Upper, Lower, Digit & Special (@$!%*?&)'}
+              autoComplete="new-password"
+            />
+            {!editingId && (
+              <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: 'var(--space-1)' }}>
+                Must contain uppercase, lowercase, digit, and special character (@$!%*?&)
+              </p>
+            )}
           </div>
           <div className="form-actions">
             <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>

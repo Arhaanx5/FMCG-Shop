@@ -1,7 +1,9 @@
 import axios from 'axios'
+import { Capacitor } from '@capacitor/core'
+import { ENV } from '../config/env'
 
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: Capacitor.isNativePlatform() ? ENV.apiUrl : '/api',
   headers: {
     'Content-Type': 'application/json',
   },

@@ -58,7 +58,7 @@ echo ==========================================
 echo ==========================================
 echo 4. PACKAGING BACKEND JAR...
 echo ==========================================
-call mvnw.cmd package -DskipTests
+call mvnw.cmd clean package -DskipTests
 if %errorLevel% neq 0 goto package_fail
 goto package_ok
 

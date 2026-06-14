@@ -140,25 +140,35 @@ public class DataInitializer implements CommandLineRunner {
         });
 
 
-        // Create admin if not exists
+        // Create admin ONLY in non-prod environments.
+        // In PROD: admin must be created manually or via a secure setup process.
         User admin = null;
-        if (!userRepository.existsByPhone("9999999999")) {
-            admin = User.builder()
-                    .name("Admin")
-                    .phone("9999999999")
-                    .role(UserRole.ADMIN)
-                    .passwordHash(passwordEncoder.encode("admin123"))
-                    .active(true)
-                    .mustChangePassword(false)
-                    .build();
-            admin = userRepository.save(admin);
-            if (isDev) {
-                System.out.println("✅ Admin user created successfully");
+        if (!isProd) {
+            if (!userRepository.existsByPhone("9999999999")) {
+                admin = User.builder()
+                        .name("Admin")
+                        .phone("9999999999")
+                        .role(UserRole.ADMIN)
+                        .passwordHash(passwordEncoder.encode("admin123"))
+                        .active(true)
+                        .mustChangePassword(true)  // Force password change on first login!
+                        .build();
+                admin = userRepository.save(admin);
+                if (isDev) {
+                    System.out.println("✅ Admin user created (must change password on first login)");
+                }
+            } else {
+                admin = userRepository.findByPhone("9999999999").orElse(null);
+                if (isDev) {
+                    System.out.println("✅ Admin user already exists");
+                }
             }
         } else {
+            // In PROD: just look up the existing admin (do NOT create with defaults)
             admin = userRepository.findByPhone("9999999999").orElse(null);
-            if (isDev) {
-                System.out.println("✅ Admin user already exists");
+            if (admin == null) {
+                System.out.println("⚠️ WARNING: No admin user found in production! " +
+                    "Please create one manually via database or a secure setup script.");
             }
         }
 

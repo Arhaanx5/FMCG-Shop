@@ -39,7 +39,7 @@ export default function Login() {
         navigate('/')
       }
     } catch (err) {
-      const msg = err.response?.data?.error || 'Invalid credentials'
+      const msg = err.response?.data?.error || err.message || 'Invalid credentials'
       setError(msg)
       setShake(true)
       setTimeout(() => setShake(false), 600)
@@ -50,9 +50,10 @@ export default function Login() {
 
   const handleChangePassword = async (e) => {
     e.preventDefault()
-    if (newPwd.length < 6) {
-      toast.error('Password must be at least 6 characters')
-      return
+    const pwdRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,72}$/;
+    if (!pwdRegex.test(newPwd)) {
+      toast.error('Password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character, and be between 8 and 72 characters.');
+      return;
     }
     setChangingPwd(true)
     try {
@@ -157,6 +158,7 @@ export default function Login() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  maxLength={72}
                   autoComplete="current-password"
                   style={{ paddingLeft: 40, paddingRight: 44 }}
                 />
@@ -229,18 +231,19 @@ export default function Login() {
               id="new-password"
               className="form-input"
               type="password"
-              placeholder="Minimum 6 characters"
+              placeholder="Min 8 chars, Upper, Lower, Digit, Special"
               value={newPwd}
               onChange={(e) => setNewPwd(e.target.value)}
               required
-              minLength={6}
+              minLength={8}
+              maxLength={72}
             />
           </div>
           <div className="form-actions" style={{ borderTop: 'none', marginTop: 0, paddingTop: 0 }}>
             <motion.button
               type="submit"
               className="btn btn-primary"
-              disabled={changingPwd || newPwd.length < 6}
+              disabled={changingPwd || newPwd.length < 8}
               whileTap={{ scale: 0.97 }}
             >
               {changingPwd ? 'Changing...' : 'Change Password'}

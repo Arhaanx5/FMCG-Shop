@@ -24,13 +24,16 @@ public class AiReminderGenerator {
     public String generateReminderMessage(UUID customerId, BigDecimal pendingAmount, String currentDate, String name, String shopName) {
         log.info("Cache miss for customer {}. Generating fresh AI Hinglish reminder from Gemini API.", customerId);
         
+        String sanitizedName = name.replaceAll("[\\[\\]<>{}]", "").trim();
+        String sanitizedShopName = shopName != null ? shopName.replaceAll("[\\[\\]<>{}]", "").trim() : "";
+
         String prompt = "You are a friendly and polite Indian FMCG distributor assistant for Lari Traders. " +
                 "Generate a payment reminder message in Hinglish (Hindi written in English script) " +
-                "for the customer named: " + name + (shopName != null && !shopName.isBlank() ? " of shop: " + shopName : "") + ". " +
+                "for the customer named: " + sanitizedName + (!sanitizedShopName.isEmpty() ? " of shop: " + sanitizedShopName : "") + ". " +
                 "Their outstanding pending balance is ₹" + formatAmount(pendingAmount) + ". " +
                 "You MUST output the reminder message EXACTLY in the following format (substituting the placeholders, and using exact wording):" +
                 "\n\n" +
-                name + " Ji" + (shopName != null && !shopName.isBlank() ? " (" + shopName + ")" : "") + ",\n\n" +
+                sanitizedName + " Ji" + (!sanitizedShopName.isEmpty() ? " (" + sanitizedShopName + ")" : "") + ",\n\n" +
                 "Lari Traders ki taraf se namaskar.\n\n" +
                 "Hamare records ke anusaar aapka outstanding balance ₹" + formatAmount(pendingAmount) + " hai. Kripya is baki rashi ka bhugtan jald se jald karne ka kasht karein, taaki vyavsayik len-den sughar roop se jaari rahe.\n\n" +
                 "Yadi payment kar diya gaya hai, kripya is sandesh ko nazarandaaz karein. Kisi bhi prakar ki jankari ya sahayata ke liye hume sampark karein.\n\n" +
@@ -80,7 +83,7 @@ public class AiReminderGenerator {
         } catch (Exception e) {
             log.warn("Gemini API call failed, falling back to local Hinglish template. Error: {}", e.getMessage());
         }
-        return generateLocalFallback(name, shopName, pendingAmount);
+        return generateLocalFallback(sanitizedName, sanitizedShopName, pendingAmount);
     }
 
     protected String generateLocalFallback(String name, String shopName, BigDecimal pendingAmount) {

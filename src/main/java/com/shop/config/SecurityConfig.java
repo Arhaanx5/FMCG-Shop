@@ -16,6 +16,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -53,6 +55,30 @@ public class SecurityConfig {
                 .sessionManagement(sm -> sm
                         .sessionCreationPolicy(
                                 SessionCreationPolicy.STATELESS))
+                // ── Security Headers ─────────────────────────────────────
+                .headers(headers -> {
+                    headers.frameOptions(frame -> frame.deny());
+                    headers.contentTypeOptions(cto -> {}); // X-Content-Type-Options: nosniff
+                    headers.httpStrictTransportSecurity(hsts -> hsts
+                            .maxAgeInSeconds(31536000)
+                            .includeSubDomains(true));
+                    headers.referrerPolicy(ref -> ref
+                            .policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN));
+                    headers.permissionsPolicy(permissions -> permissions.policy("geolocation=(), camera=(), microphone=()"));
+                    headers.addHeaderWriter(new org.springframework.security.web.header.writers.StaticHeadersWriter("Cross-Origin-Opener-Policy", "same-origin"));
+                    headers.addHeaderWriter(new org.springframework.security.web.header.writers.StaticHeadersWriter("Cross-Origin-Resource-Policy", "same-origin"));
+                    headers.addHeaderWriter(new org.springframework.security.web.header.writers.StaticHeadersWriter("Cross-Origin-Embedder-Policy", "require-corp"));
+                    headers.contentSecurityPolicy(csp -> csp.policyDirectives(
+                            "default-src 'self'; " +
+                            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+                            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+                            "font-src 'self' https://fonts.gstatic.com data:; " +
+                            "img-src 'self' data: blob: https:; " +
+                            "connect-src 'self' https://generativelanguage.googleapis.com wss: ws:; " +
+                            "frame-ancestors 'none';"
+                    ));
+                })
+                // ── Authorization ────────────────────────────────────────
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
                                 "/",
@@ -75,6 +101,11 @@ public class SecurityConfig {
                                 "/api/auth/**",
                                 "/api/config/**",
                                 "/ws/**",
+                                "/actuator/health",   // Only health check is public
+                                "/error"
+                        ).permitAll()
+                        // Swagger — accessible only when not on prod profile, or by ADMIN
+                        .requestMatchers(
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/swagger-ui/index.html",
@@ -83,16 +114,28 @@ public class SecurityConfig {
                                 "/v3/api-docs.yaml",
                                 "/swagger-resources/**",
                                 "/swagger-resources",
-                                "/webjars/**",
-                                "/actuator/**",
-                                "/error"
-                        ).permitAll()
+                                "/webjars/**"
+                        ).hasRole("ADMIN")
+                        // Actuator restricted to ADMIN only
+                        .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtFilter,
-                        UsernamePasswordAuthenticationFilter.class);
+                        UsernamePasswordAuthenticationFilter.class)
+                // ── Return 401 (not 403) when no token is provided ───────
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(
+                                (request, response, authException) -> {
+                                    response.setStatus(
+                                            jakarta.servlet.http.HttpServletResponse.SC_UNAUTHORIZED);
+                                    response.setContentType("application/json");
+                                    response.getWriter().write(
+                                            "{\"success\":false,\"message\":\"Authentication required. Please login.\",\"data\":null}");
+                                })
+                );
         return http.build();
     }
+
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -106,7 +149,18 @@ public class SecurityConfig {
                 "http://localhost:8085",
                 "http://localhost:8086",
                 "http://localhost:5173",
-                "https://*.trycloudflare.com"
+                "http://localhost",
+                "http://localhost:*",
+                "https://localhost",
+                "https://localhost:*",
+                "capacitor://localhost",
+                "capacitor://*",
+                "app://localhost",
+                "app://*",
+                "https://*.trycloudflare.com",
+                "https://uat.laritraders.store",
+                "https://app.laritraders.store",
+                "https://*.laritraders.store"
         ));
         config.setAllowedMethods(List.of("GET","POST","PUT","DELETE","OPTIONS"));
         config.setAllowedHeaders(List.of("*"));

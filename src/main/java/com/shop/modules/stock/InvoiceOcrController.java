@@ -69,6 +69,14 @@ public class InvoiceOcrController {
             return ResponseEntity.badRequest().body(ApiResponse.error("Uploaded file is empty"));
         }
 
+        String contentType = file.getContentType();
+        if (contentType == null || !(contentType.equalsIgnoreCase("image/jpeg") 
+                || contentType.equalsIgnoreCase("image/png") 
+                || contentType.equalsIgnoreCase("image/webp")
+                || contentType.equalsIgnoreCase("application/pdf"))) {
+            return ResponseEntity.badRequest().body(ApiResponse.error("Only JPEG, PNG, WEBP images, and PDF documents are allowed"));
+        }
+
         try {
             // 1. Forward the image to the Python FastAPI microservice
             RestTemplate restTemplate = new RestTemplate();

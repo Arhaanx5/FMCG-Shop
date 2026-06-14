@@ -9,17 +9,18 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:8085',
+        target: 'http://localhost:8090',
         changeOrigin: true,
       },
       '/ws': {
-        target: 'http://localhost:8085',
+        target: 'http://localhost:8090',
         changeOrigin: true,
         ws: true,
       }
     }
   },
   build: {
+    target: 'es2018',
     chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {

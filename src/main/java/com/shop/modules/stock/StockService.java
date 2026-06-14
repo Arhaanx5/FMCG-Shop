@@ -53,7 +53,7 @@ public class StockService {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new RuntimeException("Product not found: " + productId));
 
-        Stock stock = stockRepository.findByProductId(productId).orElse(null);
+        Stock stock = stockRepository.findByProductIdWithLock(productId).orElse(null);
         if (stock == null) {
             stock = Stock.builder()
                     .product(product)
@@ -124,6 +124,14 @@ public class StockService {
             throw new RuntimeException(
                     "Product unit config missing — "
                              + "set secondaryPerPrimary first");
+        }
+
+        // Check duplicate batch
+        if (req.getBatchNumber() != null && !req.getBatchNumber().isBlank()) {
+            boolean batchExists = batchRepository.existsByProductIdAndBatchNumberIgnoreCase(product.getId(), req.getBatchNumber().trim());
+            if (batchExists) {
+                throw new RuntimeException("Batch number '" + req.getBatchNumber().trim() + "' already exists for this product.");
+            }
         }
 
         // Update product master prices
@@ -228,14 +236,26 @@ public class StockService {
                     qtyDesc = req.getExtraSecondaryReceived() + " " + (product.getSecondaryUnit() != null ? product.getSecondaryUnit() : "LADI");
                 }
 
-                String desc = String.format("Stock Purchase: %s of %s from %s (Batch: %s)", 
-                        qtyDesc,
-                        product.getName(), 
-                        req.getSupplierName(), 
-                        req.getBatchNumber());
+                ExpenseCategory category = ExpenseCategory.STOCK_PURCHASE;
+                String desc;
+                if (req.getBatchNumber() != null && 
+                    (req.getBatchNumber().toUpperCase().contains("OPENING") || 
+                     req.getBatchNumber().toUpperCase().contains("INITIAL"))) {
+                    category = ExpenseCategory.OPENING_STOCK;
+                    desc = String.format("Opening Stock: %s of %s (Batch: %s)", 
+                            qtyDesc,
+                            product.getName(), 
+                            req.getBatchNumber());
+                } else {
+                    desc = String.format("Stock Purchase: %s of %s from %s (Batch: %s)", 
+                            qtyDesc,
+                            product.getName(), 
+                            req.getSupplierName(), 
+                            req.getBatchNumber());
+                }
 
                 Expense expense = Expense.builder()
-                        .category(ExpenseCategory.STOCK_PURCHASE)
+                        .category(category)
                         .amount(totalPurchaseCost)
                         .description(desc)
                         .expenseDate(LocalDate.now())
@@ -361,12 +381,7 @@ public class StockService {
             int primaryQty,
             int secondaryQty) {
 
-        Stock stock = stockRepository
-                .findByProductId(productId)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "Stock not found for: "
-                                        + productId));
+        Stock stock = getOrCreateStock(productId);
 
         // Use totalSecondaryUnits as the absolute source of truth
         stock.setTotalSecondaryUnits(

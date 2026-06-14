@@ -40,8 +40,12 @@ public class DashboardAiService {
     }
 
     public String chatWithDashboard(String message, int year, int month) {
+        String sanitizedMessage = message.replaceAll("[\\[\\]<>{}]", "").trim();
+        if (sanitizedMessage.length() > 500) {
+            sanitizedMessage = sanitizedMessage.substring(0, 500);
+        }
         DashboardSummaryResponse summary = dashboardService.getDashboardSummary(year, month);
-        String prompt = buildPromptForChat(summary, message);
+        String prompt = buildPromptForChat(summary, sanitizedMessage);
         return callPythonTextGen(prompt);
     }
 
@@ -67,7 +71,7 @@ public class DashboardAiService {
             if (today.getLowStockAlerts() != null && !today.getLowStockAlerts().isEmpty()) {
                 sb.append("  Low Stock Items: ").append(
                     today.getLowStockAlerts().stream()
-                        .map(a -> a.getProductName() + " (current: " + a.getCurrentStock() + ", min: " + a.getThreshold() + ")")
+                        .map(a -> (a.getProductName() != null ? a.getProductName().replaceAll("[\\[\\]<>{}]", "") : "") + " (current: " + a.getCurrentStock() + ", min: " + a.getThreshold() + ")")
                         .collect(Collectors.joining(", "))
                 ).append("\n");
             }
@@ -76,7 +80,7 @@ public class DashboardAiService {
             if (today.getExpiringBatches() != null && !today.getExpiringBatches().isEmpty()) {
                 sb.append("  Expiring Batches Details: ").append(
                     today.getExpiringBatches().stream()
-                        .map(b -> b.getProductName() + " (Batch: " + b.getBatchNo() + ", Expiry: " + b.getExpiryDate() + ", stock remaining: " + b.getStockCount() + ")")
+                        .map(b -> (b.getProductName() != null ? b.getProductName().replaceAll("[\\[\\]<>{}]", "") : "") + " (Batch: " + b.getBatchNo() + ", Expiry: " + b.getExpiryDate() + ", stock remaining: " + b.getStockCount() + ")")
                         .collect(Collectors.joining(", "))
                 ).append("\n");
             }
@@ -85,7 +89,7 @@ public class DashboardAiService {
             if (today.getInactiveCustomers() != null && !today.getInactiveCustomers().isEmpty()) {
                 sb.append("  Inactive Shops: ").append(
                     today.getInactiveCustomers().stream()
-                        .map(c -> c.getCustomerName() + " (" + c.getShopName() + ")")
+                        .map(c -> (c.getCustomerName() != null ? c.getCustomerName().replaceAll("[\\[\\]<>{}]", "") : "") + " (" + (c.getShopName() != null ? c.getShopName().replaceAll("[\\[\\]<>{}]", "") : "") + ")")
                         .collect(Collectors.joining(", "))
                 ).append("\n");
             }

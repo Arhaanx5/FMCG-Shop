@@ -182,7 +182,7 @@ public class FmcgShopBusinessTests {
                 .build();
 
         when(productRepository.findById(productId)).thenReturn(Optional.of(product));
-        when(stockRepository.findByProductId(productId)).thenReturn(Optional.of(stock));
+        when(stockRepository.findByProductIdWithLock(productId)).thenReturn(Optional.of(stock));
 
         // Deduct 2 secondary units (loose bottles)
         stockService.deductBySecondary(productId, 2);
@@ -248,7 +248,7 @@ public class FmcgShopBusinessTests {
         when(userRepository.findByPhone("9450821033")).thenReturn(Optional.of(user));
         when(productServiceMock.findProductByIdentifier(productId.toString())).thenReturn(product);
         when(productRepository.findById(productId)).thenReturn(Optional.of(product));
-        when(stockRepository.findByProductId(productId)).thenReturn(Optional.of(stock));
+        when(stockRepository.findByProductIdWithLock(productId)).thenReturn(Optional.of(stock));
         when(batchRepository.findActiveBatchesFIFO(productId)).thenReturn(Collections.singletonList(batch));
         when(batchRepository.findByProductId(productId)).thenReturn(Collections.singletonList(batch));
         when(billRepository.findMaxBillSequence()).thenReturn(0);
@@ -321,7 +321,7 @@ public class FmcgShopBusinessTests {
                 .product(product)
                 .totalSecondaryUnits(100)
                 .build();
-        when(stockRepository.findByProductId(productId)).thenReturn(Optional.of(stock));
+        when(stockRepository.findByProductIdWithLock(productId)).thenReturn(Optional.of(stock));
         when(productServiceMock.findProductByIdentifier(productId.toString())).thenReturn(product);
         when(productRepository.findById(productId)).thenReturn(Optional.of(product));
         when(userRepository.findByPhone("9450821033")).thenReturn(Optional.of(user));
@@ -360,7 +360,7 @@ public class FmcgShopBusinessTests {
                 .product(product)
                 .totalSecondaryUnits(100)
                 .build();
-        when(stockRepository.findByProductId(productId)).thenReturn(Optional.of(stock));
+        when(stockRepository.findByProductIdWithLock(productId)).thenReturn(Optional.of(stock));
         when(productServiceMock.findProductByIdentifier(productId.toString())).thenReturn(product);
         when(productRepository.findById(productId)).thenReturn(Optional.of(product));
         when(userRepository.findByPhone("9450821033")).thenReturn(Optional.of(user));
@@ -423,7 +423,7 @@ public class FmcgShopBusinessTests {
         when(userRepository.findByPhone("9450821033")).thenReturn(Optional.of(user));
         when(productServiceMock.findProductByIdentifier(productId.toString())).thenReturn(product);
         when(productRepository.findById(productId)).thenReturn(Optional.of(product));
-        when(stockRepository.findByProductId(productId)).thenReturn(Optional.of(stock));
+        when(stockRepository.findByProductIdWithLock(productId)).thenReturn(Optional.of(stock));
         when(stockRepository.save(any(Stock.class))).thenReturn(stock);
         when(batchRepository.findById(batchId)).thenReturn(Optional.of(batch));
         when(batchRepository.findByProductId(productId)).thenReturn(Collections.singletonList(batch));
@@ -503,7 +503,8 @@ public class FmcgShopBusinessTests {
 
         when(billRepository.findById(billId)).thenReturn(Optional.of(bill));
         when(billRepository.findByCustomerIdOrderByCreatedAtDesc(customerId)).thenReturn(Collections.singletonList(bill));
-        when(stockRepository.findByProductId(productId)).thenReturn(Optional.of(stock));
+        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+        when(stockRepository.findByProductIdWithLock(productId)).thenReturn(Optional.of(stock));
         when(batchRepository.findById(batchId)).thenReturn(Optional.of(batch));
         when(billRepository.save(any(Bill.class))).thenReturn(bill);
 
@@ -712,7 +713,7 @@ public class FmcgShopBusinessTests {
         when(userRepository.findByPhone("9450821033")).thenReturn(Optional.of(user));
         when(productServiceMock.findProductByIdentifier(productId.toString())).thenReturn(product);
         when(productRepository.findById(productId)).thenReturn(Optional.of(product));
-        when(stockRepository.findByProductId(productId)).thenReturn(Optional.of(stock));
+        when(stockRepository.findByProductIdWithLock(productId)).thenReturn(Optional.of(stock));
         when(batchRepository.findActiveBatchesFIFO(productId)).thenReturn(Collections.singletonList(batch));
         when(batchRepository.findByProductId(productId)).thenReturn(Collections.singletonList(batch));
         

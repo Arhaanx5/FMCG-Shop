@@ -30,4 +30,20 @@ public class BackupController {
                     .body(ApiResponse.error("Backup failed: " + result.get("error")));
         }
     }
+
+    /**
+     * Decrypt a database backup file locally for restore testing.
+     * Only ADMIN users can trigger this.
+     */
+    @PostMapping("/decrypt")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<String>> decryptBackup(@RequestParam String fileName) {
+        try {
+            String decryptedPath = backupService.decryptBackupFile(fileName);
+            return ResponseEntity.ok(ApiResponse.success("Backup decrypted successfully: " + decryptedPath, decryptedPath));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .body(ApiResponse.error("Decryption failed: " + e.getMessage()));
+        }
+    }
 }

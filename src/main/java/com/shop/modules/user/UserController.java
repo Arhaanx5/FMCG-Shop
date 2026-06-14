@@ -3,6 +3,7 @@ package com.shop.modules.user;
 import com.shop.common.ApiResponse;
 import com.shop.config.LocationBroadcastService;
 import com.shop.modules.user.dto.CreateUserRequest;
+import com.shop.modules.user.dto.UpdateUserRequest;
 import com.shop.modules.user.dto.UserResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -39,7 +40,7 @@ public class UserController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','DELIVERY_BOY','SALESMAN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER') or #id.toString() == authentication.details")
     public ResponseEntity<ApiResponse<UserResponse>>
     getById(@PathVariable UUID id) {
         return ResponseEntity.ok(
@@ -61,7 +62,7 @@ public class UserController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<UserResponse>>
     update(@PathVariable UUID id,
-           @Valid @RequestBody CreateUserRequest req) {
+           @Valid @RequestBody UpdateUserRequest req) {
         return ResponseEntity.ok(
                 ApiResponse.success(
                         "User updated successfully",

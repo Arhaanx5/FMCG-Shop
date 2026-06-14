@@ -94,7 +94,20 @@ public class DeliveryController {
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','DELIVERY_BOY','SALESMAN')")
     public ResponseEntity<ApiResponse<DeliveryResponse>> updateStatus(
             @PathVariable UUID id,
-            @RequestBody StatusUpdateRequest req) {
+            @RequestBody StatusUpdateRequest req,
+            Authentication auth) {
+        boolean isRestricted = auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_DELIVERY_BOY") || a.getAuthority().equals("ROLE_SALESMAN"));
+        if (isRestricted) {
+            UUID userId = UUID.fromString(auth.getDetails().toString());
+            Delivery d = deliveryRepository.findById(id).orElse(null);
+            if (d == null) {
+                return ResponseEntity.status(404).body(ApiResponse.error("Delivery not found"));
+            }
+            if (d.getDeliveryBoy() == null || !d.getDeliveryBoy().getId().equals(userId)) {
+                return ResponseEntity.status(403).body(ApiResponse.error("Access denied: You are not assigned to this delivery"));
+            }
+        }
         Delivery d = deliveryService.updateStatus(id, req.getStatus());
         return ResponseEntity.ok(ApiResponse.success("Status updated", toResponse(d)));
     }

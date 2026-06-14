@@ -9,9 +9,10 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import StatCard from '../components/StatCard'
 import { useToast } from '../context/ToastContext'
 
-const CATEGORIES = ['STOCK_PURCHASE', 'SALARY', 'VEHICLE_MAINTENANCE', 'FUEL', 'RENT', 'ELECTRICITY', 'PACKAGING', 'OTHER']
+const CATEGORIES = ['STOCK_PURCHASE', 'OPENING_STOCK', 'SALARY', 'VEHICLE_MAINTENANCE', 'FUEL', 'RENT', 'ELECTRICITY', 'PACKAGING', 'OTHER']
 const CATEGORY_LABELS = {
   STOCK_PURCHASE: 'Stock Purchase (Maal Khareedi)',
+  OPENING_STOCK: 'Opening Stock (Shuruati Maal)',
   SALARY: 'Salary (Vetan)',
   VEHICLE_MAINTENANCE: 'Vehicle Maintenance (Gaadi Kharch)',
   FUEL: 'Fuel (Indhan)',
@@ -20,7 +21,7 @@ const CATEGORY_LABELS = {
   PACKAGING: 'Packaging Material',
   OTHER: 'Other Expense (Baki Kharch)'
 }
-const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#6b7280']
+const PIE_COLORS = ['#3b82f6', '#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#6b7280']
 
 const emptyForm = { category: 'STOCK_PURCHASE', amount: '', description: '', expenseDate: new Date().toISOString().split('T')[0], recipientId: '' }
 

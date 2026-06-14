@@ -8470,3 +8470,19 @@ essage":"⚠️ Message failed, retry 2/3 in 15s","data":{"id":"7b8bff61-d1bf-4c
 {"ts":"2026-06-12T06:02:55.816Z","level":"WARN","module":"PORT","message":"Port 3000 busy, retrying in 3000ms (9/10)"}
 {"ts":"2026-06-12T06:02:58.831Z","level":"WARN","module":"PORT","message":"Port 3000 busy, retrying in 3000ms (10/10)"}
 {"ts":"2026-06-12T06:03:01.838Z","level":"ERROR","module":"SYSTEM","message":"Port 3000 still occupied after retries. Exiting."}
+{"ts":"2026-06-13T07:18:13.577Z","level":"INFO","module":"QUEUE","message":"Loaded 0 pending messages from disk"}
+{"ts":"2026-06-13T07:18:13.706Z","level":"INFO","module":"CHROME","message":"Using Chrome from env: C:\\Users\\arhaa\\.cache\\puppeteer\\chrome\\win64-146.0.7680.31\\chrome-win64\\chrome.exe"}
+{"ts":"2026-06-13T07:18:13.710Z","level":"INFO","module":"SYSTEM","message":"🚀 Lari Traders WhatsApp Service v2.0 starting..."}
+{"ts":"2026-06-13T07:18:13.710Z","level":"INFO","module":"SYSTEM","message":"Cleaning up any orphaned Chrome/Puppeteer processes..."}
+{"ts":"2026-06-13T07:18:14.107Z","level":"INFO","module":"SYSTEM","message":"Orphaned Chrome processes cleaned."}
+{"ts":"2026-06-13T07:18:14.121Z","level":"INFO","module":"SYSTEM","message":"✅ HTTP server listening on http://127.0.0.1:3000"}
+{"ts":"2026-06-13T07:18:14.121Z","level":"INFO","module":"SYSTEM","message":"📋 Endpoints: /health /status /qr /send /send-bulk /send-media /queue/stats"}
+{"ts":"2026-06-13T07:18:14.121Z","level":"INFO","module":"WA","message":"Initializing WhatsApp client..."}
+{"ts":"2026-06-13T07:18:22.618Z","level":"INFO","module":"WA","message":"Loading 0%: WhatsApp"}
+{"ts":"2026-06-13T07:18:29.103Z","level":"INFO","module":"WA","message":"Authenticated ✅"}
+{"ts":"2026-06-13T07:18:30.517Z","level":"INFO","module":"WA","message":"WhatsApp READY ✅ — Queue processor started"}
+{"ts":"2026-06-13T07:18:30.518Z","level":"INFO","module":"QUEUE","message":"Message processor started"}
+{"ts":"2026-06-13T07:18:31.361Z","level":"INFO","module":"WA","message":"Loading 95%: WhatsApp"}
+{"ts":"2026-06-13T07:18:31.959Z","level":"INFO","module":"WA","message":"Loading 99%: WhatsApp"}
+{"ts":"2026-06-13T09:39:21.730Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-13T09:39:27.079Z","level":"INFO","module":"API","message":"GET /status"}

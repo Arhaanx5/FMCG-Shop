@@ -1,40 +1,8 @@
 {
-  "appId": "com.laritraders.app.uat",
-  "appName": "Lari Traders UAT",
-  "webDir": "dist",
-  "server": {
-    "url": "https://uat.laritraders.store",
-    "cleartext": true
-  }
+    "appId":  "com.laritraders.app.uat",
+    "webDir":  "dist",
+    "appName":  "Lari Traders UAT",
+    "server":  {
+                   "androidScheme":  "https"
+               }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

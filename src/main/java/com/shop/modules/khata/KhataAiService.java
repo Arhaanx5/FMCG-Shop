@@ -25,6 +25,9 @@ public class KhataAiService {
         Customer customer = customerRepository.findById(customerId)
                 .orElseThrow(() -> new IllegalArgumentException("Customer not found"));
 
+        String sanitizedName = customer.getName().replaceAll("[\\[\\]<>{}]", "").trim();
+        String sanitizedShopName = customer.getShopName() != null ? customer.getShopName().replaceAll("[\\[\\]<>{}]", "").trim() : "Retail Store";
+
         boolean isEnglish = "ENGLISH".equalsIgnoreCase(language);
 
         StringBuilder sb = new StringBuilder();
@@ -37,8 +40,8 @@ public class KhataAiService {
         }
 
         sb.append("CUSTOMER DETAILS:\n")
-          .append("- Name: ").append(customer.getName()).append("\n")
-          .append("- Shop Name: ").append(customer.getShopName() != null ? customer.getShopName() : "Retail Store").append("\n")
+          .append("- Name: ").append(sanitizedName).append("\n")
+          .append("- Shop Name: ").append(sanitizedShopName).append("\n")
           .append("- Pending Amount: Rs. ").append(customer.getTotalPending()).append("\n\n")
           .append("Draft message showing clear outstanding balance, mentioning online modes (UPI, QR) or cash collection options, and wishing them good business. Do not add placeholders. Write the final text directly.");
 

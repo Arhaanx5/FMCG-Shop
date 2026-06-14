@@ -49,6 +49,9 @@ public class BackupService {
     @Value("${app.backup.apps-script-url:}")
     private String appsScriptUrl;
 
+    @Value("${app.backup.encryption-password:}")
+    private String encryptionPassword;
+
     private static final String APPLICATION_NAME = "Lari Traders Backup";
     private static final DateTimeFormatter FILE_DATE_FMT = DateTimeFormatter.ofPattern("dd_MM_yyyy");
     private static final DateTimeFormatter TIMESTAMP_FMT = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm:ss");
@@ -61,21 +64,33 @@ public class BackupService {
         try {
             // Step 1: pg_dump
             Path dumpFile = dumpDatabase();
-            result.put("localFile", dumpFile.toString());
-            result.put("localSizeMB", String.format("%.2f", Files.size(dumpFile) / (1024.0 * 1024.0)));
+
+            Path finalFile = dumpFile;
+            boolean encrypted = false;
+            if (encryptionPassword != null && !encryptionPassword.isBlank()) {
+                Path encFile = dumpFile.resolveSibling(dumpFile.getFileName().toString() + ".enc");
+                encryptFile(dumpFile, encFile, encryptionPassword);
+                Files.deleteIfExists(dumpFile);
+                finalFile = encFile;
+                encrypted = true;
+            }
+
+            result.put("localFile", finalFile.toString());
+            result.put("localSizeMB", String.format("%.2f", Files.size(finalFile) / (1024.0 * 1024.0)));
+            result.put("encrypted", String.valueOf(encrypted));
 
             // Step 2: Upload to Google Drive (directly or via Apps Script Web App)
             String driveFileId;
             if (appsScriptUrl != null && !appsScriptUrl.isBlank()) {
-                driveFileId = uploadToAppsScript(dumpFile);
+                driveFileId = uploadToAppsScript(finalFile);
             } else {
-                driveFileId = uploadToDrive(dumpFile);
+                driveFileId = uploadToDrive(finalFile);
             }
             result.put("driveFileId", driveFileId);
             result.put("status", "SUCCESS");
             result.put("timestamp", LocalDateTime.now().format(TIMESTAMP_FMT));
 
-            log.info("Manual backup completed successfully: {}", dumpFile.getFileName());
+            log.info("Manual backup completed successfully: {}", finalFile.getFileName());
         } catch (Exception e) {
             log.error("Manual backup failed", e);
             result.put("status", "FAILED");
@@ -96,11 +111,18 @@ public class BackupService {
         log.info("Starting scheduled database backup...");
         try {
             Path dumpFile = dumpDatabase();
+            Path finalFile = dumpFile;
+            if (encryptionPassword != null && !encryptionPassword.isBlank()) {
+                Path encFile = dumpFile.resolveSibling(dumpFile.getFileName().toString() + ".enc");
+                encryptFile(dumpFile, encFile, encryptionPassword);
+                Files.deleteIfExists(dumpFile);
+                finalFile = encFile;
+            }
             String driveFileId;
             if (appsScriptUrl != null && !appsScriptUrl.isBlank()) {
-                driveFileId = uploadToAppsScript(dumpFile);
+                driveFileId = uploadToAppsScript(finalFile);
             } else {
-                driveFileId = uploadToDrive(dumpFile);
+                driveFileId = uploadToDrive(finalFile);
             }
             log.info("Scheduled backup completed. Drive file ID: {}", driveFileId);
         } catch (Exception e) {
@@ -192,7 +214,8 @@ public class BackupService {
             fileMetadata.setParents(Collections.singletonList(driveFolderId));
         }
 
-        FileContent mediaContent = new FileContent("application/sql", filePath.toFile());
+        String contentType = filePath.getFileName().toString().endsWith(".enc") ? "application/octet-stream" : "application/sql";
+        FileContent mediaContent = new FileContent(contentType, filePath.toFile());
 
         com.google.api.services.drive.model.File uploadedFile = driveService.files()
                 .create(fileMetadata, mediaContent)
@@ -202,6 +225,70 @@ public class BackupService {
 
         log.info("Uploaded to Google Drive: name={}, id={}, size={}", uploadedFile.getName(), uploadedFile.getId(), uploadedFile.getSize());
         return uploadedFile.getId();
+    }
+
+    // ==================== Encryption / Decryption Helpers ====================
+
+    private void encryptFile(Path source, Path target, String password) throws Exception {
+        byte[] key = deriveKey(password);
+        byte[] iv = new byte[12];
+        new java.security.SecureRandom().nextBytes(iv);
+        javax.crypto.Cipher cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding");
+        javax.crypto.spec.GCMParameterSpec spec = new javax.crypto.spec.GCMParameterSpec(128, iv);
+        cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, new javax.crypto.spec.SecretKeySpec(key, "AES"), spec);
+        byte[] plainTextBytes = Files.readAllBytes(source);
+        byte[] cipherTextBytes = cipher.doFinal(plainTextBytes);
+        try (DataOutputStream dos = new DataOutputStream(Files.newOutputStream(target))) {
+            dos.writeInt(iv.length);
+            dos.write(iv);
+            dos.writeInt(cipherTextBytes.length);
+            dos.write(cipherTextBytes);
+        }
+    }
+
+    private void decryptFile(Path source, Path target, String password) throws Exception {
+        byte[] key = deriveKey(password);
+        try (DataInputStream dis = new DataInputStream(Files.newInputStream(source))) {
+            int ivLen = dis.readInt();
+            byte[] iv = new byte[ivLen];
+            dis.readFully(iv);
+            int cipherTextLen = dis.readInt();
+            byte[] cipherTextBytes = new byte[cipherTextLen];
+            dis.readFully(cipherTextBytes);
+
+            javax.crypto.Cipher cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding");
+            javax.crypto.spec.GCMParameterSpec spec = new javax.crypto.spec.GCMParameterSpec(128, iv);
+            cipher.init(javax.crypto.Cipher.DECRYPT_MODE, new javax.crypto.spec.SecretKeySpec(key, "AES"), spec);
+            byte[] plainTextBytes = cipher.doFinal(cipherTextBytes);
+            Files.write(target, plainTextBytes);
+        }
+    }
+
+    private byte[] deriveKey(String password) throws Exception {
+        java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+        return digest.digest(password.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    public String decryptBackupFile(String fileName) throws Exception {
+        if (fileName == null || fileName.contains("..") || fileName.contains("/") || fileName.contains("\\")) {
+            throw new IllegalArgumentException("Invalid backup filename");
+        }
+        if (encryptionPassword == null || encryptionPassword.isBlank()) {
+            throw new IllegalStateException("Backup encryption password is not configured.");
+        }
+        Path backupDir = Paths.get(System.getProperty("user.dir"), "backups");
+        Path encFile = backupDir.resolve(fileName);
+        if (!Files.exists(encFile)) {
+            throw new FileNotFoundException("Encrypted backup file not found: " + fileName);
+        }
+        if (!fileName.endsWith(".enc")) {
+            throw new IllegalArgumentException("File must have .enc extension to be decrypted.");
+        }
+        String decFileName = fileName.substring(0, fileName.length() - 4); // Remove .enc
+        Path decFile = backupDir.resolve(decFileName);
+        decryptFile(encFile, decFile, encryptionPassword);
+        log.info("Successfully decrypted backup file: {} -> {}", fileName, decFileName);
+        return decFile.toString();
     }
 
     // ==================== Utility Methods ====================

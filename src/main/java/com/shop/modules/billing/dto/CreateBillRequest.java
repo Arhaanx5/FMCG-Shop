@@ -46,10 +46,14 @@ public class CreateBillRequest {
 
         @Min(value = 1,
                 message = "Quantity must be at least 1")
+        @jakarta.validation.constraints.Max(value = 1000000,
+                message = "Quantity cannot exceed 1,000,000")
         private int quantity;
 
         @Min(value = 0,
                 message = "Free quantity cannot be negative")
+        @jakarta.validation.constraints.Max(value = 1000000,
+                message = "Free quantity cannot exceed 1,000,000")
         private int freeQuantity = 0;
 
         private java.math.BigDecimal gstPercent;

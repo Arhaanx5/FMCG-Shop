@@ -1758,6 +1758,36 @@ export default function Stock() {
                   </span>
                 )}
               </div>
+
+              {/* Mark as Opening Stock Checkbox */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', background: 'var(--color-surface-2, #f1f5f9)', borderRadius: 'var(--radius-md, 6px)', border: '1px solid var(--color-border, #e2e8f0)', marginBottom: 'var(--space-1)' }}>
+                <input
+                  type="checkbox"
+                  id="isOpeningStockCheckbox"
+                  checked={form.batchNumber?.toUpperCase() === 'OPENING'}
+                  onChange={e => {
+                    if (e.target.checked) {
+                      setForm(f => ({
+                        ...f,
+                        batchNumber: 'OPENING',
+                        supplierName: 'Self',
+                        invoiceNumber: 'INITIAL'
+                      }))
+                    } else {
+                      setForm(f => ({
+                        ...f,
+                        batchNumber: '',
+                        supplierName: '',
+                        invoiceNumber: ''
+                      }))
+                    }
+                  }}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                />
+                <label htmlFor="isOpeningStockCheckbox" style={{ fontSize: '13px', fontWeight: '600', cursor: 'pointer', margin: 0, color: 'var(--color-text)' }}>
+                  Mark as Opening Stock (Shuruati Maal ke roop mein darj karein)
+                </label>
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-4)' }}>
                 <div className="form-group">
                   <label className="form-label">Batch Number *</label>

@@ -231,6 +231,21 @@ public class KhataService {
         User collector = userRepository.findByPhone(collectedByPhone)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
+        // Prevent duplicate payment recording (within last 5 seconds)
+        LocalDateTime fiveSecondsAgo = LocalDateTime.now().minusSeconds(5);
+        List<Payment> recentPayments = paymentRepository.findByCustomerIdOrderByPaidAtDesc(customer.getId());
+        for (Payment rp : recentPayments) {
+            if (rp.getPaidAt() != null && rp.getPaidAt().isAfter(fiveSecondsAgo)) {
+                boolean sameBill = (req.getBillId() == null && rp.getBill() == null) 
+                        || (req.getBillId() != null && rp.getBill() != null && req.getBillId().equals(rp.getBill().getId()));
+                if (sameBill && rp.getAmount().compareTo(req.getAmount()) == 0 
+                        && rp.getPaymentMode().equalsIgnoreCase(req.getPaymentMode())
+                        && rp.getCollectedBy() != null && rp.getCollectedBy().getId().equals(collector.getId())) {
+                    throw new RuntimeException("Duplicate payment detected. Please wait 5 seconds before retrying.");
+                }
+            }
+        }
+
         Bill bill = null;
         if (req.getBillId() != null) {
             bill = billRepository.findById(req.getBillId()).orElse(null);

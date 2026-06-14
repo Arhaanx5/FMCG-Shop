@@ -20,6 +20,19 @@ public class WhatsAppService {
     private final RestTemplate restTemplate = new RestTemplate();
     private final String nodeServiceUrl = "http://127.0.0.1:3000";
 
+    @org.springframework.beans.factory.annotation.Value("${app.whatsapp.internal-secret:}")
+    private String internalSecret;
+
+    @jakarta.annotation.PostConstruct
+    public void init() {
+        if (internalSecret != null && !internalSecret.isEmpty()) {
+            restTemplate.getInterceptors().add((request, body, execution) -> {
+                request.getHeaders().add("x-internal-secret", internalSecret);
+                return execution.execute(request, body);
+            });
+        }
+    }
+
     // Progress State
     private final Map<String, Object> progress = new ConcurrentHashMap<>();
 
