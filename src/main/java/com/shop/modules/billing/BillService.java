@@ -325,14 +325,15 @@ public class BillService {
                     itemGstPercent.add(itemCessPercent).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)
             );
 
-            // Back-calculate the base rate (excluding tax)
-            BigDecimal rate = inclusivePrice.divide(taxDivisor, 4, RoundingMode.HALF_UP);
-
-            // Calculate item subtotal based on base rate
-            BigDecimal itemSubtotal = rate
+            // 1. Calculate line total inclusive of tax (exact expected sum)
+            BigDecimal itemTotal = inclusivePrice
                     .multiply(BigDecimal.valueOf(itemReq.getQuantity()))
                     .setScale(2, RoundingMode.HALF_UP);
 
+            // 2. Back-calculate line subtotal (excluding tax)
+            BigDecimal itemSubtotal = itemTotal.divide(taxDivisor, 2, RoundingMode.HALF_UP);
+
+            // 3. Calculate GST and Cess at line level
             BigDecimal gstRate = itemGstPercent.divide(BigDecimal.valueOf(100));
             BigDecimal gstAmount = itemSubtotal
                     .multiply(gstRate)
@@ -343,7 +344,15 @@ public class BillService {
                     .multiply(cessRate)
                     .setScale(2, RoundingMode.HALF_UP);
 
-            BigDecimal itemTotal = itemSubtotal.add(gstAmount).add(cessAmount);
+            // 4. Adjust rounding discrepancy to match itemTotal exactly
+            BigDecimal calculatedTotal = itemSubtotal.add(gstAmount).add(cessAmount);
+            if (calculatedTotal.compareTo(itemTotal) != 0) {
+                BigDecimal diff = itemTotal.subtract(calculatedTotal);
+                gstAmount = gstAmount.add(diff);
+            }
+
+            // 5. Back-calculate the base unit rate for display / storage
+            BigDecimal rate = itemSubtotal.divide(BigDecimal.valueOf(itemReq.getQuantity()), 4, RoundingMode.HALF_UP);
 
             // Get source batch
             StockBatch linkedBatch = null;

@@ -46,4 +46,14 @@ public class BackupController {
                     .body(ApiResponse.error("Decryption failed: " + e.getMessage()));
         }
     }
+
+    /**
+     * Get list of all available local backup files.
+     * Only ADMIN users can view this.
+     */
+    @GetMapping("/list")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> getBackupList() {
+        return ResponseEntity.ok(ApiResponse.success("Available backup files retrieved", backupService.getAvailableBackups()));
+    }
 }

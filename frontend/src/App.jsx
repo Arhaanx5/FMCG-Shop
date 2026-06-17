@@ -21,6 +21,8 @@ import Users from './pages/Users'
 import Salesmen from './pages/Salesmen'
 import Deliveries from './pages/Deliveries'
 import WhatsAppSetup from './pages/WhatsAppSetup'
+import SchedulerManager from './pages/SchedulerManager'
+import HealthReport from './pages/HealthReport'
 
 function ProtectedRoute({ children, roles }) {
   const { isAuthenticated, user } = useAuth()
@@ -83,6 +85,8 @@ export default function App() {
         <Route path="areas" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><Areas /></ProtectedRoute>} />
         <Route path="deliveries" element={<ProtectedRoute roles={['ADMIN', 'MANAGER', 'DELIVERY_BOY', 'SALESMAN']}><Deliveries /></ProtectedRoute>} />
         <Route path="users" element={<ProtectedRoute roles={['ADMIN']}><Users /></ProtectedRoute>} />
+        <Route path="schedulers" element={<ProtectedRoute roles={['ADMIN']}><SchedulerManager /></ProtectedRoute>} />
+        <Route path="health-report" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><HealthReport /></ProtectedRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

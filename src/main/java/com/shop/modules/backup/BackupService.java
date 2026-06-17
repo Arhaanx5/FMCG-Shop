@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import com.shop.modules.stock.ExpiryScheduler;
 
 import java.io.*;
 import java.nio.file.Files;
@@ -37,8 +38,8 @@ public class BackupService {
     @Value("${spring.datasource.password}")
     private String dbPassword;
 
-    @Value("${app.backup.drive-folder-id:}")
-    private String driveFolderId;
+    @Value("${app.backup.encryption-password:}")
+    private String encryptionPassword;
 
     @Value("${app.backup.key-path:google-drive-key.json}")
     private String keyPath;
@@ -49,12 +50,74 @@ public class BackupService {
     @Value("${app.backup.apps-script-url:}")
     private String appsScriptUrl;
 
-    @Value("${app.backup.encryption-password:}")
-    private String encryptionPassword;
+    @lombok.Getter
+    private String driveFolderId;
+
+    @Value("${app.backup.drive-folder-id:}")
+    private String defaultFolderId;
+
+    private File getConfigFile() {
+        String userDir = System.getProperty("user.dir");
+        File f = new File(userDir, "backup-config.properties");
+        if (new File(userDir).getName().equalsIgnoreCase("target")) {
+            f = new File(new File(userDir).getParentFile(), "backup-config.properties");
+        }
+        return f;
+    }
+
+    @jakarta.annotation.PostConstruct
+    public void init() {
+        // Fallback to default
+        this.driveFolderId = defaultFolderId;
+        File f = getConfigFile();
+        if (f.exists()) {
+            try (InputStream is = new FileInputStream(f)) {
+                java.util.Properties props = new java.util.Properties();
+                props.load(is);
+                String customId = props.getProperty("drive-folder-id");
+                if (customId != null && !customId.isBlank()) {
+                    this.driveFolderId = customId.trim();
+                    log.info("Loaded custom Google Drive folder ID from backup-config.properties: {}", this.driveFolderId);
+                }
+                String customUrl = props.getProperty("apps-script-url");
+                if (customUrl != null && !customUrl.isBlank()) {
+                    this.appsScriptUrl = customUrl.trim();
+                    log.info("Loaded custom Apps Script URL from backup-config.properties: {}", this.appsScriptUrl);
+                }
+            } catch (Exception e) {
+                log.error("Failed to load custom backup configurations", e);
+            }
+        }
+    }
+
+    public void saveCustomDriveFolderId(String folderId) throws IOException {
+        String trimmedId = folderId == null ? "" : folderId.trim();
+        if (!trimmedId.isEmpty() && !trimmedId.matches("^[a-zA-Z0-9-_]{5,100}$")) {
+            throw new IllegalArgumentException("Invalid Google Drive Folder ID format");
+        }
+
+        java.util.Properties props = new java.util.Properties();
+        File f = getConfigFile();
+        if (f.exists()) {
+            try (InputStream is = new FileInputStream(f)) {
+                props.load(is);
+            }
+        }
+        props.setProperty("drive-folder-id", trimmedId);
+        try (OutputStream os = new FileOutputStream(f)) {
+            props.store(os, "Lari Traders Custom Backup Config");
+        }
+        this.driveFolderId = trimmedId;
+        log.info("Updated Google Drive folder ID to: {}", this.driveFolderId);
+    }
 
     private static final String APPLICATION_NAME = "Lari Traders Backup";
     private static final DateTimeFormatter FILE_DATE_FMT = DateTimeFormatter.ofPattern("dd_MM_yyyy");
     private static final DateTimeFormatter TIMESTAMP_FMT = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm:ss");
+
+    @lombok.Getter private LocalDateTime lastRunTime;
+    @lombok.Getter private String lastRunStatus = "Never run";
+    @lombok.Getter private String lastBackupPath;
 
     /**
      * Manually triggered backup — returns status map for the controller.
@@ -90,11 +153,18 @@ public class BackupService {
             result.put("status", "SUCCESS");
             result.put("timestamp", LocalDateTime.now().format(TIMESTAMP_FMT));
 
+            lastRunTime = LocalDateTime.now();
+            lastBackupPath = finalFile.toString();
+            lastRunStatus = "Success (Google Drive File ID: " + driveFileId + ")";
+
             log.info("Manual backup completed successfully: {}", finalFile.getFileName());
         } catch (Exception e) {
             log.error("Manual backup failed", e);
             result.put("status", "FAILED");
             result.put("error", cleanErrorMessage(e));
+            
+            lastRunTime = LocalDateTime.now();
+            lastRunStatus = "Failed: " + result.get("error");
         }
         return result;
     }
@@ -124,13 +194,38 @@ public class BackupService {
             } else {
                 driveFileId = uploadToDrive(finalFile);
             }
+            
+            lastRunTime = LocalDateTime.now();
+            lastBackupPath = finalFile.toString();
+            lastRunStatus = "Success (Google Drive File ID: " + driveFileId + ")";
+            
             log.info("Scheduled backup completed. Drive file ID: {}", driveFileId);
         } catch (Exception e) {
+            lastRunTime = LocalDateTime.now();
+            lastRunStatus = "Failed: " + e.getMessage();
             log.error("Scheduled backup failed!", e);
         }
     }
 
-    // ==================== Internal Methods ====================
+    // ── Status info for centralized scheduler panel ──
+    public ExpiryScheduler.SchedulerStatus getStatus() {
+        return new ExpiryScheduler.SchedulerStatus(
+            backupEnabled, 
+            "0 59 23 * * *", 
+            lastRunTime, 
+            0, // batches processed not applicable
+            lastRunStatus
+        );
+    }
+
+    public Path getBackupDirectory() {
+        String userDir = System.getProperty("user.dir");
+        Path backupDir = Paths.get(userDir, "backups");
+        if (new File(userDir).getName().equalsIgnoreCase("target")) {
+            backupDir = new File(userDir).getParentFile().toPath().resolve("backups");
+        }
+        return backupDir;
+    }
 
     /**
      * Runs pg_dump and returns the path to the generated .sql file.
@@ -141,8 +236,8 @@ public class BackupService {
         String port = extractPort(dbUrl);
         String fileName = dbName + "_backup_" + LocalDate.now().format(FILE_DATE_FMT) + ".sql";
 
-        // Store backups in a dedicated folder next to the JAR
-        Path backupDir = Paths.get(System.getProperty("user.dir"), "backups");
+        // Store backups in a dedicated folder next to the JAR (outside target/ if running as service)
+        Path backupDir = getBackupDirectory();
         Files.createDirectories(backupDir);
         Path outputFile = backupDir.resolve(fileName);
 
@@ -276,7 +371,7 @@ public class BackupService {
         if (encryptionPassword == null || encryptionPassword.isBlank()) {
             throw new IllegalStateException("Backup encryption password is not configured.");
         }
-        Path backupDir = Paths.get(System.getProperty("user.dir"), "backups");
+        Path backupDir = getBackupDirectory();
         Path encFile = backupDir.resolve(fileName);
         if (!Files.exists(encFile)) {
             throw new FileNotFoundException("Encrypted backup file not found: " + fileName);
@@ -406,5 +501,32 @@ public class BackupService {
         }
 
         return msg;
+    }
+
+    public java.util.List<Map<String, Object>> getAvailableBackups() {
+        java.util.List<Map<String, Object>> list = new java.util.ArrayList<>();
+        Path backupDir = getBackupDirectory();
+        if (!Files.exists(backupDir)) {
+            return list;
+        }
+        try (java.util.stream.Stream<Path> stream = Files.list(backupDir)) {
+            stream.filter(p -> p.getFileName().toString().endsWith(".sql") || p.getFileName().toString().endsWith(".enc"))
+                .forEach(p -> {
+                    try {
+                        Map<String, Object> map = new java.util.HashMap<>();
+                        map.put("fileName", p.getFileName().toString());
+                        map.put("sizeMB", String.format("%.2f", Files.size(p) / (1024.0 * 1024.0)));
+                        long millis = Files.getLastModifiedTime(p).toMillis();
+                        LocalDateTime ldt = LocalDateTime.ofInstant(
+                                java.time.Instant.ofEpochMilli(millis), 
+                                java.time.ZoneId.systemDefault()
+                        );
+                        map.put("lastModified", ldt.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+                        list.add(map);
+                    } catch (IOException ignored) {}
+                });
+        } catch (IOException ignored) {}
+        list.sort((a, b) -> ((String) b.get("lastModified")).compareTo((String) a.get("lastModified")));
+        return list;
     }
 }

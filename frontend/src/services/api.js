@@ -3,7 +3,7 @@ import { Capacitor } from '@capacitor/core'
 import { ENV } from '../config/env'
 
 const api = axios.create({
-  baseURL: Capacitor.isNativePlatform() ? ENV.apiUrl : '/api',
+  baseURL: ENV.apiUrl,
   headers: {
     'Content-Type': 'application/json',
   },

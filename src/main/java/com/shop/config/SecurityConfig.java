@@ -98,6 +98,7 @@ public class SecurityConfig {
                                 "/areas",
                                 "/deliveries",
                                 "/users",
+                                "/schedulers",
                                 "/api/auth/**",
                                 "/api/config/**",
                                 "/ws/**",

@@ -1,6 +1,7 @@
 package com.shop.modules.dashboard;
 
 import com.shop.common.ApiResponse;
+import com.shop.modules.dashboard.dto.DashboardHealthReportResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -41,5 +42,15 @@ public class DashboardAiController {
         Map<String, String> result = new HashMap<>();
         result.put("reply", reply);
         return ResponseEntity.ok(ApiResponse.success(result));
+    }
+
+    @GetMapping("/health-report")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<DashboardHealthReportResponse>> getHealthReport(
+            @RequestParam int year,
+            @RequestParam int month,
+            @RequestParam(required = false, defaultValue = "false") boolean force) {
+        DashboardHealthReportResponse report = dashboardAiService.generateHealthReport(year, month, force);
+        return ResponseEntity.ok(ApiResponse.success(report));
     }
 }

@@ -37,6 +37,7 @@ export default function WhatsAppSetup() {
 
   // Broadcast mode: 'TEXT' or 'PDF'
   const [broadcastMode, setBroadcastMode] = useState('PDF')
+  const [textTemplate, setTextTemplate] = useState('HINGLISH')
 
   const getCurrentMonthCode = () => {
     const now = new Date()
@@ -201,7 +202,16 @@ export default function WhatsAppSetup() {
   // ─── 9. Build text reminder message ──────────────────────────────────────
   const buildTextMessage = (customer) => {
     const outstanding = Number(customer.totalPending || 0)
-    return `*LARI TRADERS*\nOutstanding Balance Reminder\n\nDear *${customer.name}*${customer.shopName ? ` (${customer.shopName})` : ''},\n\nYou have an outstanding balance of *₹${outstanding.toLocaleString('en-IN', { minimumFractionDigits: 2 })}*.\n\nPlease clear your dues as soon as possible. Thank you!`
+    const formattedBalance = outstanding.toLocaleString('en-IN', { minimumFractionDigits: 2 })
+    const shopDetail = customer.shopName ? ` (${customer.shopName})` : ''
+    
+    if (textTemplate === 'HINDI') {
+      return `*लारी ट्रेडर्स*\nभुगतान अनुस्मारक (बकाया राशि)\n\nप्रिय *${customer.name}*${shopDetail},\n\nआपका कुल बकाया बैलेंस *₹${formattedBalance}* लंबित है।\n\nकृपया जल्द से जल्द अपना भुगतान स्पष्ट करें। धन्यवाद! — लारी ट्रेडर्स`
+    } else if (textTemplate === 'HINGLISH') {
+      return `*LARI TRADERS*\nPayment Reminder (Udhari/Baki)\n\nNamaste *${customer.name}*${shopDetail},\n\nAapka kul outstanding balance *₹${formattedBalance}* pending hai.\n\nKripya jald se jald apna bhugtan (payment) clear karein. Shukriya! — Lari Traders`
+    } else {
+      return `*LARI TRADERS*\nOutstanding Balance Reminder\n\nDear *${customer.name}*${shopDetail},\n\nYou have an outstanding balance of *₹${formattedBalance}*.\n\nPlease clear your dues as soon as possible. Thank you! — Lari Traders`
+    }
   }
 
   // ─── 10. Main Broadcast Loop ──────────────────────────────────────────────
@@ -567,6 +577,48 @@ export default function WhatsAppSetup() {
                   {broadcastMode === 'PDF' ? '📄 Full PDF ledger statement attached' : '💬 Short text reminder message'}
                 </span>
               </div>
+
+              {broadcastMode === 'TEXT' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-2)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-400" style={{ fontSize: '12px' }}>Message Language:</span>
+                    <select 
+                      value={textTemplate}
+                      onChange={(e) => setTextTemplate(e.target.value)}
+                      disabled={progress.isSending}
+                      className="form-select text-xs"
+                      style={{ 
+                        padding: '4px 8px', 
+                        borderRadius: '6px', 
+                        border: '1px solid var(--color-border)', 
+                        background: 'var(--color-bg-primary)', 
+                        color: 'var(--color-text)', 
+                        fontSize: '12px' 
+                      }}
+                    >
+                      <option value="HINGLISH">Hinglish (Hindi + English)</option>
+                      <option value="ENGLISH">English (Angreji)</option>
+                      <option value="HINDI">Hindi (हिन्दी)</option>
+                    </select>
+                  </div>
+                  <div style={{
+                    padding: 'var(--space-3)',
+                    background: 'var(--color-bg)',
+                    borderRadius: 'var(--radius-sm)',
+                    borderLeft: '3px solid var(--color-accent)',
+                    fontSize: '11px',
+                    color: 'var(--color-text-secondary)',
+                    whiteSpace: 'pre-wrap',
+                    fontFamily: 'monospace',
+                    lineHeight: '1.4'
+                  }}>
+                    <div style={{ fontWeight: 600, marginBottom: '4px', textTransform: 'uppercase', fontSize: '9px', letterSpacing: '0.05em', color: 'var(--color-accent)' }}>Template Preview (Sample):</div>
+                    <div style={{ color: 'var(--color-text)' }}>
+                      {buildTextMessage({ name: 'Rahul Kumar', shopName: 'Kirana Store', totalPending: 5430 })}
+                    </div>
+                  </div>
+                </div>
+              )}
               
               {broadcastMode === 'PDF' && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-2)' }}>
@@ -716,7 +768,7 @@ export default function WhatsAppSetup() {
         message={
           broadcastMode === 'PDF'
             ? `${selectedIds.length} customers ko PDF ledger statement WhatsApp pe bheji jayegi. PDF frontend pe generate hogi. Confirm karein?`
-            : `${selectedIds.length} customers ko text reminder message bheji jayegi. Confirm karein?`
+            : `${selectedIds.length} customers ko ${textTemplate.toLowerCase()} text reminder message bheji jayegi. Confirm karein?`
         }
         confirmLabel={broadcastMode === 'PDF' ? 'Send PDFs' : 'Send Messages'}
         danger={false}

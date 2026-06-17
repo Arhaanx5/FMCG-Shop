@@ -40,4 +40,6 @@ public interface StockBatchRepository
     boolean existsBySupplierNameIgnoreCaseAndInvoiceNumberIgnoreCase(String supplierName, String invoiceNumber);
 
     List<StockBatch> findByInvoiceNumberIgnoreCase(String invoiceNumber);
+
+    boolean existsByExhaustedFalse();
 }

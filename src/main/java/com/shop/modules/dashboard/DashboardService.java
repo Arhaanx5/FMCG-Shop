@@ -7,6 +7,7 @@ import com.shop.modules.billing.BillStatus;
 import com.shop.modules.billing.BillService;
 import com.shop.modules.billing.dto.BillResponse;
 import com.shop.modules.customer.CustomerRepository;
+import com.shop.modules.customer.Customer;
 import com.shop.modules.dashboard.dto.DashboardResponse;
 import com.shop.modules.dashboard.dto.MonthlyReportResponse;
 import com.shop.modules.dashboard.dto.DashboardSummaryResponse;
@@ -27,6 +28,9 @@ import com.shop.modules.khata.PaymentRepository;
 import com.shop.modules.khata.Payment;
 import com.shop.modules.dashboard.dto.SalesmanPerformanceResponse;
 import com.shop.modules.damage.DamageLogRepository;
+import com.shop.modules.customer.CustomerService;
+import com.shop.modules.backup.BackupService;
+import java.util.Comparator;
 import java.util.ArrayList;
 import lombok.Builder;
 import lombok.Data;
@@ -55,6 +59,8 @@ public class DashboardService {
     private final PaymentRepository paymentRepository;
     private final DamageLogRepository damageLogRepository;
     private final BillService billService;
+    private final CustomerService customerService;
+    private final BackupService backupService;
 
     @Autowired
     public DashboardService(BillRepository billRepository,
@@ -68,7 +74,9 @@ public class DashboardService {
                            AreaRepository areaRepository,
                            PaymentRepository paymentRepository,
                            DamageLogRepository damageLogRepository,
-                           BillService billService) {
+                           BillService billService,
+                           CustomerService customerService,
+                           BackupService backupService) {
         this.billRepository = billRepository;
         this.customerRepository = customerRepository;
         this.productRepository = productRepository;
@@ -81,6 +89,8 @@ public class DashboardService {
         this.paymentRepository = paymentRepository;
         this.damageLogRepository = damageLogRepository;
         this.billService = billService;
+        this.customerService = customerService;
+        this.backupService = backupService;
     }
 
     @Builder
@@ -246,6 +256,72 @@ public class DashboardService {
                         .build())
                 .collect(Collectors.toList());
 
+        // 1. Overdue Udhar calculation
+        LocalDateTime threshold = LocalDateTime.now().minusDays(7);
+        List<Bill> pendingBills = billRepository.findPendingBills();
+        List<Bill> overdueBills = pendingBills.stream()
+                .filter(b -> b.getCreatedAt() != null && b.getCreatedAt().isBefore(threshold))
+                .collect(Collectors.toList());
+
+        Map<Customer, List<Bill>> customerOverdueBills = overdueBills.stream()
+                .filter(b -> b.getCustomer() != null)
+                .collect(Collectors.groupingBy(Bill::getCustomer));
+
+        List<DashboardResponse.OverdueUdharAlert> overdueUdharAlerts = customerOverdueBills.entrySet().stream()
+                .map(entry -> {
+                    Customer c = entry.getKey();
+                    List<Bill> bills = entry.getValue();
+
+                    BigDecimal totalOverdue = bills.stream()
+                            .map(b -> b.getPendingAmount() != null ? b.getPendingAmount() : BigDecimal.ZERO)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                    LocalDateTime oldestBillTime = bills.stream()
+                            .map(Bill::getCreatedAt)
+                            .min(Comparator.naturalOrder())
+                            .orElse(LocalDateTime.now());
+
+                    long daysOverdue = java.time.temporal.ChronoUnit.DAYS.between(oldestBillTime, LocalDateTime.now());
+
+                    return DashboardResponse.OverdueUdharAlert.builder()
+                            .customerName(c.getName())
+                            .shopName(c.getShopName())
+                            .overdueDays((int) daysOverdue)
+                            .totalOverdueAmount(totalOverdue)
+                            .build();
+                })
+                .sorted((a, b) -> b.getTotalOverdueAmount().compareTo(a.getTotalOverdueAmount()))
+                .collect(Collectors.toList());
+
+        long overdueUdharCount = overdueUdharAlerts.size();
+
+        // 2. Credit Limit Exceeded calculation
+        List<Customer> activeCustomers = customerRepository.findByActiveTrue();
+        List<DashboardResponse.CreditLimitAlert> creditLimitAlerts = activeCustomers.stream()
+                .filter(c -> {
+                    BigDecimal limit = customerService.calculateEffectiveCreditLimit(c);
+                    return c.getTotalPending() != null && c.getTotalPending().compareTo(limit) > 0;
+                })
+                .map(c -> DashboardResponse.CreditLimitAlert.builder()
+                        .customerName(c.getName())
+                        .shopName(c.getShopName())
+                        .totalPending(c.getTotalPending())
+                        .creditLimit(customerService.calculateEffectiveCreditLimit(c))
+                        .build())
+                .sorted((a, b) -> b.getTotalPending().subtract(b.getCreditLimit()).compareTo(a.getTotalPending().subtract(a.getCreditLimit())))
+                .collect(Collectors.toList());
+
+        long creditLimitExceededCount = creditLimitAlerts.size();
+
+        // 3. Backup Status calculation
+        Boolean backupStale = false;
+        LocalDateTime lastBackupTime = backupService.getLastRunTime();
+        if (lastBackupTime == null) {
+            backupStale = true;
+        } else {
+            backupStale = lastBackupTime.isBefore(LocalDateTime.now().minusHours(25));
+        }
+
         return DashboardResponse.builder()
                 .todayRevenue(todayRevenue)
                 .todayCollected(todayCollected)
@@ -261,10 +337,16 @@ public class DashboardService {
                 .expiringBatchesCount(expiringCount)
                 .inactiveCustomersCount(inactiveCount)
                 .pendingDeliveriesCount(pendingDeliveries)
+                .overdueUdharCount(overdueUdharCount)
+                .creditLimitExceededCount(creditLimitExceededCount)
+                .backupStale(backupStale)
+                .lastBackupTime(lastBackupTime)
                 .lowStockAlerts(alerts)
                 .expiringBatches(expiringBatches)
                 .inactiveCustomers(inactiveCustomers)
                 .pendingDeliveries(pendingDeliveriesList)
+                .overdueUdharAlerts(overdueUdharAlerts)
+                .creditLimitExceededAlerts(creditLimitAlerts)
                 .build();
     }
 

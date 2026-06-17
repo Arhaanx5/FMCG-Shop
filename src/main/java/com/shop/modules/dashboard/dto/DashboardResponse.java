@@ -25,10 +25,16 @@ public class DashboardResponse {
     private Long expiringBatchesCount;
     private Long inactiveCustomersCount;
     private Long pendingDeliveriesCount;
+    private Long overdueUdharCount;
+    private Long creditLimitExceededCount;
+    private Boolean backupStale;
+    private LocalDateTime lastBackupTime;
     private List<LowStockAlert> lowStockAlerts;
     private List<ExpiringBatchAlert> expiringBatches;
     private List<InactiveCustomerAlert> inactiveCustomers;
     private List<PendingDeliveryAlert> pendingDeliveries;
+    private List<OverdueUdharAlert> overdueUdharAlerts;
+    private List<CreditLimitAlert> creditLimitExceededAlerts;
 
     @Data
     @Builder
@@ -66,5 +72,23 @@ public class DashboardResponse {
         private String customerName;
         private String shopName;
         private BigDecimal amount;
+    }
+
+    @Data
+    @Builder
+    public static class OverdueUdharAlert {
+        private String customerName;
+        private String shopName;
+        private Integer overdueDays;
+        private BigDecimal totalOverdueAmount;
+    }
+
+    @Data
+    @Builder
+    public static class CreditLimitAlert {
+        private String customerName;
+        private String shopName;
+        private BigDecimal totalPending;
+        private BigDecimal creditLimit;
     }
 }

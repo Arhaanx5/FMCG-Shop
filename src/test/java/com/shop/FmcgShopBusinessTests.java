@@ -6,6 +6,7 @@ import com.shop.modules.billing.dto.ReturnItemsRequest;
 import com.shop.modules.customer.*;
 import com.shop.modules.customer.dto.*;
 import com.shop.modules.dashboard.DashboardService;
+import com.shop.modules.backup.BackupService;
 import com.shop.modules.dashboard.dto.DashboardResponse;
 import com.shop.modules.delivery.*;
 import com.shop.modules.delivery.RouteOptimizationService.RouteResult;
@@ -65,6 +66,7 @@ public class FmcgShopBusinessTests {
     @Mock private CustomerService customerServiceMock;
     @Mock private ProductService productServiceMock;
     @Mock private BillService billServiceMock;
+    @Mock private BackupService backupServiceMock;
 
     @InjectMocks private StockService stockService;
     @InjectMocks private BillService billService;
@@ -123,7 +125,9 @@ public class FmcgShopBusinessTests {
                 areaRepository,
                 paymentRepository,
                 damageLogRepository,
-                billServiceMock
+                billServiceMock,
+                customerServiceMock,
+                backupServiceMock
         );
 
         this.routeOptimizationService = new RouteOptimizationService(deliveryRepository, userRepository);

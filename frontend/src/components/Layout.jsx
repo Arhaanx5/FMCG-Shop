@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Package, Users, ShoppingCart, Warehouse,
   BookOpen, Receipt, AlertTriangle, MapPin, UserCog,
   Menu, X, LogOut, ChevronLeft, Award, Truck, Sun, Moon, Palette,
-  MessageSquare
+  MessageSquare, Clock, Activity
 } from 'lucide-react'
 
 const navItems = [
@@ -25,6 +25,8 @@ const navItems = [
   { path: '/areas', label: 'Areas', icon: MapPin, roles: ['ADMIN', 'MANAGER'] },
   { path: '/deliveries', label: 'Deliveries', icon: Truck, roles: ['ADMIN', 'MANAGER', 'DELIVERY_BOY', 'SALESMAN'] },
   { path: '/users', label: 'Users', icon: UserCog, roles: ['ADMIN'] },
+  { path: '/schedulers', label: 'Schedulers', icon: Clock, roles: ['ADMIN'] },
+  { path: '/health-report', label: 'CFO Health Report', icon: Activity, roles: ['ADMIN', 'MANAGER'] },
 ]
 
 const pageNames = {
@@ -41,6 +43,8 @@ const pageNames = {
   '/areas': 'Areas',
   '/deliveries': 'Deliveries & Route Map',
   '/users': 'User Management',
+  '/schedulers': 'Task Schedulers & Backups',
+  '/health-report': 'CFO Health Report',
 }
 
 export default function Layout() {

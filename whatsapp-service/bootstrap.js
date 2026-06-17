@@ -53,7 +53,7 @@ function findChromePath() {
             if (statSync(candidate).isDirectory()) {
                 const versions = readdirSync(candidate)
                     .filter(d => d.startsWith('win'))
-                    .sort();
+                    .sort().reverse();
                 for (const ver of versions) {
                     for (const sub of ['chrome-win64', 'chrome-win32']) {
                         const exePath = join(candidate, ver, sub, 'chrome.exe');

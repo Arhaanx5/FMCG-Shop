@@ -10,6 +10,7 @@ import api from '../services/api'
 import StatCard from '../components/StatCard'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
+import Modal from '../components/Modal'
 
 const PIE_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899']
 const MODERN_PIE_COLORS = ['#8b5cf6', '#a78bfa', '#ec4899', '#f97316', '#f59e0b', '#10b981']
@@ -346,6 +347,7 @@ export default function Dashboard() {
   }
 
   const [recentBills, setRecentBills] = useState([])
+  const [showOverdueModal, setShowOverdueModal] = useState(false)
 
   useEffect(() => {
     loadDashboard()
@@ -360,6 +362,14 @@ export default function Dashboard() {
       setMonthly(summary.monthly)
       setYearly(summary.yearly)
       setRecentBills(summary.recentBills || [])
+      
+      // Check for overdue bills on session login
+      const overdueList = summary.today?.overdueUdharAlerts || []
+      const hasShown = sessionStorage.getItem('overdue_udhar_popup_shown')
+      if (overdueList.length > 0 && !hasShown) {
+        setShowOverdueModal(true)
+        sessionStorage.setItem('overdue_udhar_popup_shown', 'true')
+      }
     } catch (err) {
       toast.error('Failed to load dashboard data')
     } finally {
@@ -952,6 +962,43 @@ export default function Dashboard() {
               </div>
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                {today?.backupStale && (
+                  <div style={{
+                    padding: 'var(--space-3) var(--space-4)',
+                    background: 'var(--color-danger-soft)',
+                    border: '1px solid rgba(239, 68, 68, 0.2)',
+                    borderRadius: 'var(--radius-md)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 'var(--space-3)',
+                    color: 'var(--color-danger)',
+                    fontSize: 'var(--font-size-xs)',
+                    fontWeight: 'var(--font-weight-medium)',
+                  }}>
+                    <Cloud size={18} />
+                    <span>Database Backup is Stale! Last run: {today.lastBackupTime ? new Date(today.lastBackupTime).toLocaleString('en-IN') : 'Never'}</span>
+                  </div>
+                )}
+                <AlertItem
+                  icon={<AlertTriangle size={20} />}
+                  label="7+ Days Overdue Udhar"
+                  value={today?.overdueUdharCount || 0}
+                  color="var(--color-danger)"
+                  bg="var(--color-danger-soft)"
+                  details={today?.overdueUdharAlerts || []}
+                  type="overdueUdhar"
+                  scope={alertScope}
+                />
+                <AlertItem
+                  icon={<Users size={20} />}
+                  label="Credit Limit Exceeded"
+                  value={today?.creditLimitExceededCount || 0}
+                  color="var(--color-warning)"
+                  bg="var(--color-warning-soft)"
+                  details={today?.creditLimitExceededAlerts || []}
+                  type="creditLimit"
+                  scope={alertScope}
+                />
                 <AlertItem
                   icon={<Package size={20} />}
                   label="Low Stock Products"
@@ -1221,6 +1268,43 @@ export default function Dashboard() {
                 </div>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                  {today?.backupStale && (
+                    <div style={{
+                      padding: 'var(--space-3) var(--space-4)',
+                      background: 'var(--color-danger-soft)',
+                      border: '1px solid rgba(239, 68, 68, 0.2)',
+                      borderRadius: 'var(--radius-md)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 'var(--space-3)',
+                      color: 'var(--color-danger)',
+                      fontSize: 'var(--font-size-xs)',
+                      fontWeight: 'var(--font-weight-medium)',
+                    }}>
+                      <Cloud size={18} />
+                      <span>Database Backup is Stale! Last run: {today.lastBackupTime ? new Date(today.lastBackupTime).toLocaleString('en-IN') : 'Never'}</span>
+                    </div>
+                  )}
+                  <AlertItem
+                    icon={<AlertTriangle size={20} />}
+                    label="7+ Days Overdue Udhar"
+                    value={today?.overdueUdharCount || 0}
+                    color="var(--color-danger)"
+                    bg="var(--color-danger-soft)"
+                    details={today?.overdueUdharAlerts || []}
+                    type="overdueUdhar"
+                    scope={alertScope}
+                  />
+                  <AlertItem
+                    icon={<Users size={20} />}
+                    label="Credit Limit Exceeded"
+                    value={today?.creditLimitExceededCount || 0}
+                    color="var(--color-warning)"
+                    bg="var(--color-warning-soft)"
+                    details={today?.creditLimitExceededAlerts || []}
+                    type="creditLimit"
+                    scope={alertScope}
+                  />
                   <AlertItem
                     icon={<Package size={20} />}
                     label="Low Stock Products"
@@ -1303,6 +1387,58 @@ export default function Dashboard() {
           </div>
         </>
       )}
+
+      <Modal
+        isOpen={showOverdueModal}
+        onClose={() => setShowOverdueModal(false)}
+        title="⚠️ Outstanding Overdue Udhar Alerts"
+        wide
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
+            Following customers have pending bills that have exceeded **7 days** since creation. Please follow up on collections.
+          </p>
+          <div style={{ maxHeight: '350px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+            {(today?.overdueUdharAlerts || []).map((item, idx) => (
+              <div
+                key={idx}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: 'var(--space-3) var(--space-4)',
+                  background: 'var(--color-surface-2)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-md)',
+                  borderLeft: '4px solid var(--color-danger)',
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 'var(--font-weight-bold)', fontSize: 'var(--font-size-base)', color: 'var(--color-text)' }}>
+                    {item.customerName}
+                  </div>
+                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
+                    Shop: {item.shopName || 'N/A'} • Oldest Bill: <span style={{ color: 'var(--color-danger)', fontWeight: 'var(--font-weight-medium)' }}>{item.overdueDays} days ago</span>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-bold)', color: 'var(--color-danger)' }}>
+                    ₹{Number(item.totalOverdueAmount || 0).toLocaleString('en-IN')}
+                  </div>
+                  <div style={{ fontSize: '9px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                    Overdue Udhar
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-2)' }}>
+            <button className="btn btn-primary" onClick={() => setShowOverdueModal(false)}>
+              Understood
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
@@ -1362,7 +1498,7 @@ function AlertItem({ icon, label, value, color, bg, details, type, scope }) {
                       style={{ 
                         fontSize: 'var(--font-size-xs)',
                         padding: 'var(--space-2)',
-                        background: 'rgba(10, 17, 40, 0.4)',
+                        background: color === 'var(--color-danger)' ? 'var(--color-danger-soft)' : color === 'var(--color-warning)' ? 'var(--color-warning-soft)' : color === 'var(--color-info)' ? 'var(--color-info-soft)' : 'var(--color-accent-soft)',
                         borderRadius: 'var(--radius-sm)',
                         borderLeft: `2px solid ${color}`,
                       }}
@@ -1389,6 +1525,34 @@ function AlertItem({ icon, label, value, color, bg, details, type, scope }) {
 }
 
 function renderDetailItem(type, item) {
+  if (type === 'overdueUdhar') {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div style={{ fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text)' }}>{item.customerName}</div>
+          <div style={{ color: 'var(--color-text-secondary)', fontSize: '10px' }}>{item.shopName || 'N/A'} • Oldest: {item.overdueDays}d ago</div>
+        </div>
+        <span className="badge badge-danger" style={{ fontSize: '10px', fontWeight: 'bold' }}>
+          ₹{Number(item.totalOverdueAmount || 0).toLocaleString('en-IN')}
+        </span>
+      </div>
+    )
+  }
+
+  if (type === 'creditLimit') {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div style={{ fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text)' }}>{item.customerName}</div>
+          <div style={{ color: 'var(--color-text-secondary)', fontSize: '10px' }}>{item.shopName || 'N/A'} • Limit: ₹{Number(item.creditLimit || 0).toLocaleString('en-IN')}</div>
+        </div>
+        <span className="badge badge-warning" style={{ fontSize: '10px', fontWeight: 'bold' }}>
+          ₹{Number(item.totalPending || 0).toLocaleString('en-IN')}
+        </span>
+      </div>
+    )
+  }
+
   if (type === 'lowStock') {
     return (
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

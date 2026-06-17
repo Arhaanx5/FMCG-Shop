@@ -278,7 +278,7 @@ function findChromePath() {
             // 24.38.0 expects Chrome 146, not the newest available.
             if (fs.statSync(candidate).isDirectory()) {
                 const versions = fs.readdirSync(candidate).filter(d => d.startsWith('win'));
-                for (const ver of versions.sort()) {
+                for (const ver of versions.sort().reverse()) {
                     const exePath = path.join(candidate, ver, 'chrome-win64', 'chrome.exe');
                     if (fs.existsSync(exePath)) {
                         log('INFO', 'CHROME', `Found Puppeteer Chrome at: ${exePath}`);
@@ -310,7 +310,9 @@ const client = new Client({
             '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas',
             '--no-first-run', '--no-zygote', '--disable-gpu',
             '--disable-extensions', '--single-process',
-            '--memory-pressure-off'
+            '--memory-pressure-off',
+            '--blink-settings=imagesEnabled=false',
+            '--disable-features=Translate,BackForwardCache'
         ]
     }
 });
