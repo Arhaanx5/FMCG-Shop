@@ -25,6 +25,18 @@ public class DashboardHealthReportResponse {
 
     private List<ActionItem> actionChecklist;
 
+    private RawMetrics rawMetrics;
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class RawMetrics {
+        private BigDecimal revenue;
+        private BigDecimal netProfit;
+        private BigDecimal totalExpenses;
+    }
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor

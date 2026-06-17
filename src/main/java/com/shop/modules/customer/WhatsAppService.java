@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -17,6 +18,8 @@ public class WhatsAppService {
 
     private final CustomerService customerService;
     private final AiReminderGenerator aiReminderGenerator;
+    private final com.shop.modules.receivables.UdharReminderLogRepository udharReminderLogRepository;
+    private final com.shop.modules.user.UserRepository userRepository;
     private final RestTemplate restTemplate = new RestTemplate();
     private final String nodeServiceUrl = "http://127.0.0.1:3000";
 
@@ -82,7 +85,7 @@ public class WhatsAppService {
         }
     }
 
-    public void startBulkSending(List<String> customerIds) {
+    public void startBulkSending(List<String> customerIds, String senderPhone) {
         if (Boolean.TRUE.equals(progress.get("isSending"))) {
             log.warn("Bulk sending is already in progress.");
             return;
@@ -124,12 +127,45 @@ public class WhatsAppService {
                     restTemplate.postForObject(nodeServiceUrl + "/send", payload, Map.class);
                     incrementSuccess();
 
+                    // Log success to DB
+                    try {
+                        com.shop.modules.user.User sender = senderPhone != null ? userRepository.findByPhone(senderPhone).orElse(null) : null;
+                        com.shop.modules.receivables.UdharReminderLog logEntity = com.shop.modules.receivables.UdharReminderLog.builder()
+                                .customer(customer)
+                                .channel("WHATSAPP")
+                                .status("SENT")
+                                .notes("Bulk automated WhatsApp reminder sent successfully.")
+                                .createdBy(sender)
+                                .reminderSentAt(LocalDateTime.now())
+                                .build();
+                        udharReminderLogRepository.save(logEntity);
+                    } catch (Exception le) {
+                        log.error("Failed to save bulk reminder log: {}", le.getMessage());
+                    }
+
                     // Rate limiting delay (2.5 seconds) to avoid spam limits
                     Thread.sleep(2500);
 
                 } catch (Exception e) {
                     log.error("Failed to send bulk reminder for customer id {}: {}", id, e.getMessage());
                     incrementFailed();
+
+                    // Log failure to DB
+                    try {
+                        Customer customer = customerService.findCustomerByIdentifier(id);
+                        com.shop.modules.user.User sender = senderPhone != null ? userRepository.findByPhone(senderPhone).orElse(null) : null;
+                        com.shop.modules.receivables.UdharReminderLog logEntity = com.shop.modules.receivables.UdharReminderLog.builder()
+                                .customer(customer)
+                                .channel("WHATSAPP")
+                                .status("FAILED")
+                                .notes("Bulk automated WhatsApp reminder failed: " + e.getMessage())
+                                .createdBy(sender)
+                                .reminderSentAt(LocalDateTime.now())
+                                .build();
+                        udharReminderLogRepository.save(logEntity);
+                    } catch (Exception le) {
+                        log.error("Failed to save failed bulk reminder log: {}", le.getMessage());
+                    }
                 }
             }
 

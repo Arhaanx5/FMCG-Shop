@@ -23,6 +23,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.data.domain.PageRequest;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -45,10 +46,12 @@ public class DashboardAiService {
     private final StockBatchRepository batchRepository;
     private final CustomerRepository customerRepository;
     private final ObjectMapper objectMapper;
+    private final com.shop.modules.receivables.ReceivablesAgingService receivablesAgingService;
 
     private static final String PYTHON_TEXT_GEN_URL = "http://127.0.0.1:8087/ocr/generate-text";
     private static final String PYTHON_STRUCTURED_URL = "http://127.0.0.1:8087/ocr/parse-structured";
     private final Map<String, String> insightsCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final String[] MONTH_NAMES = {"", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
     // ── Existing Insights Method ──
     public String generateInsights(int year, int month) {
@@ -147,26 +150,11 @@ public class DashboardAiService {
 
             // Receivables aging (0-30, 31-60, 61-90, 90+ days from createdAt)
             List<Bill> pendingBills = billRepository.findPendingBills();
-            BigDecimal age30 = BigDecimal.ZERO;
-            BigDecimal age60 = BigDecimal.ZERO;
-            BigDecimal age90 = BigDecimal.ZERO;
-            BigDecimal age90Plus = BigDecimal.ZERO;
-            LocalDateTime now = LocalDateTime.now();
-
-            for (Bill pb : pendingBills) {
-                if (pb.getCreatedAt() == null) continue;
-                long days = ChronoUnit.DAYS.between(pb.getCreatedAt(), now);
-                BigDecimal pending = pb.getPendingAmount() != null ? pb.getPendingAmount() : BigDecimal.ZERO;
-                if (days <= 30) {
-                    age30 = age30.add(pending);
-                } else if (days <= 60) {
-                    age60 = age60.add(pending);
-                } else if (days <= 90) {
-                    age90 = age90.add(pending);
-                } else {
-                    age90Plus = age90Plus.add(pending);
-                }
-            }
+            com.shop.modules.receivables.dto.ReceivablesAgingResult aging = receivablesAgingService.calculateAging(pendingBills);
+            BigDecimal age30 = aging.getAge30();
+            BigDecimal age60 = aging.getAge60();
+            BigDecimal age90 = aging.getAge90();
+            BigDecimal age90Plus = aging.getAge90Plus();
 
             // Calculate COGS Fallback & Confidence Details
             int totalBillItems = 0;
@@ -201,6 +189,15 @@ public class DashboardAiService {
             // 6. Call Python API with Connection/Read Timeout & Retry-Once Resiliency
             Map<String, Object> responseMap = callStructuredOcrWithRetry(prompt, systemInstruction);
             DashboardHealthReportResponse reportDto = parseAndValidate(responseMap);
+
+            // Attach raw metrics from backend calculations
+            DashboardHealthReportResponse.RawMetrics raw = DashboardHealthReportResponse.RawMetrics.builder()
+                    .revenue(monthlyReport.getTotalRevenue())
+                    .netProfit(monthlyReport.getNetProfit())
+                    .totalExpenses(monthlyReport.getTotalExpenses())
+                    .build();
+            reportDto.setRawMetrics(raw);
+
 
             // Programmatic safety cap on profitability score & overall score if database batch linking is highly incomplete (>50% unlinked items)
             if (fallbackPercentage > 50.0) {
@@ -548,5 +545,116 @@ public class DashboardAiService {
         } catch (Exception e) {
             return "Failed to connect to AI Service: " + e.getMessage();
         }
+    }
+
+    public TrendSummaryResponse getTrendData(int limit) {
+        if (limit <= 0) {
+            limit = 12;
+        }
+
+        // Fetch reports sorted descending by year and month using pageable limit
+        List<HealthReport> reports = healthReportRepository.findAllByOrderByReportYearDescReportMonthDesc(PageRequest.of(0, limit));
+
+        List<HealthReportTrendResponse> trendList = new ArrayList<>();
+
+        for (HealthReport entity : reports) {
+            DashboardHealthReportResponse reportDto = deserializeReport(entity.getReportJson());
+            if (reportDto == null) continue;
+
+            int year = entity.getReportYear();
+            int month = entity.getReportMonth();
+
+            // Lazy backfill/auto-persist if rawMetrics is null
+            if (reportDto.getRawMetrics() == null) {
+                log.info("Executing lazy backfill calculation for health report: {}-{}", year, month);
+                try {
+                    MonthlyReportResponse monthly = dashboardService.getMonthlyReport(year, month);
+                    DashboardHealthReportResponse.RawMetrics raw = DashboardHealthReportResponse.RawMetrics.builder()
+                            .revenue(monthly.getTotalRevenue() != null ? monthly.getTotalRevenue() : BigDecimal.ZERO)
+                            .netProfit(monthly.getNetProfit() != null ? monthly.getNetProfit() : BigDecimal.ZERO)
+                            .totalExpenses(monthly.getTotalExpenses() != null ? monthly.getTotalExpenses() : BigDecimal.ZERO)
+                            .build();
+                    reportDto.setRawMetrics(raw);
+
+                    // Update entity and save back to database
+                    entity.setReportJson(objectMapper.writeValueAsString(reportDto));
+                    healthReportRepository.save(entity);
+                    log.info("Lazy backfill successfully saved to DB for report: {}-{}", year, month);
+                } catch (Exception e) {
+                    log.error("Failed to execute or save lazy backfill for report {}-{}: ", year, month, e);
+                }
+            }
+
+            DashboardHealthReportResponse.RawMetrics raw = reportDto.getRawMetrics();
+            BigDecimal revenue = raw != null ? raw.getRevenue() : BigDecimal.ZERO;
+            BigDecimal netProfit = raw != null ? raw.getNetProfit() : BigDecimal.ZERO;
+            BigDecimal totalExpenses = raw != null ? raw.getTotalExpenses() : BigDecimal.ZERO;
+
+            String monthName = (month >= 1 && month <= 12) ? MONTH_NAMES[month] : String.valueOf(month);
+
+            HealthReportTrendResponse trend = HealthReportTrendResponse.builder()
+                    .year(year)
+                    .month(month)
+                    .monthName(monthName)
+                    .overallScore(reportDto.getOverallScore())
+                    .profitabilityScore(reportDto.getProfitabilityDetails() != null ? reportDto.getProfitabilityDetails().getScore() : null)
+                    .cashFlowScore(reportDto.getCashFlowDetails() != null ? reportDto.getCashFlowDetails().getScore() : null)
+                    .inventoryScore(reportDto.getInventoryDetails() != null ? reportDto.getInventoryDetails().getScore() : null)
+                    .customerScore(reportDto.getCustomerDetails() != null ? reportDto.getCustomerDetails().getScore() : null)
+                    .receivablesScore(reportDto.getReceivablesDetails() != null ? reportDto.getReceivablesDetails().getScore() : null)
+                    .suppliersScore(reportDto.getSuppliersDetails() != null ? reportDto.getSuppliersDetails().getScore() : null)
+                    .operationalScore(reportDto.getOperationalDetails() != null ? reportDto.getOperationalDetails().getScore() : null)
+                    .revenue(revenue)
+                    .netProfit(netProfit)
+                    .totalExpenses(totalExpenses)
+                    .status(reportDto.getStatus())
+                    .build();
+
+            trendList.add(trend);
+        }
+
+        // Reverse to make it chronological (oldest to newest)
+        Collections.reverse(trendList);
+
+        // MoM calculations (between the last two elements if we have at least 2)
+        Integer currentScore = null;
+        Integer prevScore = null;
+        Integer delta = null;
+        String deltaExplanation = "Pichle mahine ke trends dekhne ke liye report data available nahi hai.";
+
+        if (!trendList.isEmpty()) {
+            HealthReportTrendResponse latestTrend = trendList.get(trendList.size() - 1);
+            currentScore = latestTrend.getOverallScore();
+
+            if (trendList.size() >= 2) {
+                HealthReportTrendResponse prevTrend = trendList.get(trendList.size() - 2);
+                prevScore = prevTrend.getOverallScore();
+
+                if (currentScore != null && prevScore != null) {
+                    delta = currentScore - prevScore;
+                    if (delta > 0) {
+                        deltaExplanation = String.format("Is mahine ka Business Health Score %d hai, jo pichle mahine se %d points behtar hai! 📈", currentScore, delta);
+                    } else if (delta < 0) {
+                        deltaExplanation = String.format("Is mahine ka Business Health Score %d hai, jo pichle mahine se %d points kam hai. 📉 Margin ya inventory control behtar kijiye.", currentScore, Math.abs(delta));
+                    } else {
+                        deltaExplanation = String.format("Is mahine ka Business Health Score %d hai, jo pichle mahine ke barabar (stable) hai. ⚖️", currentScore);
+                    }
+                } else if (currentScore == null) {
+                    deltaExplanation = "Is mahine ka data empty hai (NO_DATA).";
+                } else {
+                    deltaExplanation = String.format("Is mahine ka score %d hai, par pichle mahine ka data available nahi tha.", currentScore);
+                }
+            } else if (currentScore != null) {
+                deltaExplanation = String.format("Is mahine ka Business Health Score %d hai. Trend analysis ke liye agle mahine data log kijiye.", currentScore);
+            }
+        }
+
+        return TrendSummaryResponse.builder()
+                .trends(trendList)
+                .currentMonthScore(currentScore)
+                .previousMonthScore(prevScore)
+                .scoreDelta(delta)
+                .deltaExplanation(deltaExplanation)
+                .build();
     }
 }

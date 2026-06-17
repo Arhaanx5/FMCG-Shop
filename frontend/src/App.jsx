@@ -23,6 +23,8 @@ import Deliveries from './pages/Deliveries'
 import WhatsAppSetup from './pages/WhatsAppSetup'
 import SchedulerManager from './pages/SchedulerManager'
 import HealthReport from './pages/HealthReport'
+import TrendDashboard from './pages/TrendDashboard'
+import UdharCollection from './pages/UdharCollection'
 
 function ProtectedRoute({ children, roles }) {
   const { isAuthenticated, user } = useAuth()
@@ -87,6 +89,8 @@ export default function App() {
         <Route path="users" element={<ProtectedRoute roles={['ADMIN']}><Users /></ProtectedRoute>} />
         <Route path="schedulers" element={<ProtectedRoute roles={['ADMIN']}><SchedulerManager /></ProtectedRoute>} />
         <Route path="health-report" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><HealthReport /></ProtectedRoute>} />
+        <Route path="health-trend" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><TrendDashboard /></ProtectedRoute>} />
+        <Route path="receivables" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><UdharCollection /></ProtectedRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

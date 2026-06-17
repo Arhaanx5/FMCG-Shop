@@ -6,6 +6,8 @@ import com.shop.modules.billing.dto.ReturnItemsRequest;
 import com.shop.modules.customer.*;
 import com.shop.modules.customer.dto.*;
 import com.shop.modules.dashboard.DashboardService;
+import com.shop.modules.dashboard.HealthReportRepository;
+import com.shop.modules.dashboard.DashboardAiService;
 import com.shop.modules.backup.BackupService;
 import com.shop.modules.dashboard.dto.DashboardResponse;
 import com.shop.modules.delivery.*;
@@ -30,6 +32,8 @@ import com.shop.modules.area.Area;
 import com.shop.modules.area.AreaRepository;
 import com.shop.modules.khata.Payment;
 import com.shop.modules.khata.PaymentRepository;
+import com.shop.modules.receivables.*;
+import com.shop.modules.receivables.dto.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -61,6 +65,9 @@ public class FmcgShopBusinessTests {
     @Mock private AreaRepository areaRepository;
     @Mock private PaymentRepository paymentRepository;
     @Mock private StockAdjustmentLogRepository stockAdjustmentLogRepository;
+    @Mock private UdharReminderLogRepository udharReminderLogRepository;
+    @Mock private WhatsAppService whatsAppService;
+    @Mock private ReceivablesAgingService receivablesAgingService;
 
     // Mocks injected into BillService and DamageService
     @Mock private CustomerService customerServiceMock;
@@ -75,6 +82,8 @@ public class FmcgShopBusinessTests {
     @InjectMocks private CustomerService customerService;
     @InjectMocks private AiReminderService aiReminderService;
     @InjectMocks private RouteOptimizationService routeOptimizationService;
+    @Mock private HealthReportRepository healthReportRepository;
+    @InjectMocks private DashboardAiService dashboardAiService;
 
     @org.junit.jupiter.api.BeforeEach
     public void setUp() {
@@ -131,6 +140,19 @@ public class FmcgShopBusinessTests {
         );
 
         this.routeOptimizationService = new RouteOptimizationService(deliveryRepository, userRepository);
+        
+        this.dashboardAiService = new DashboardAiService(
+                dashboardService,
+                healthReportRepository,
+                billRepository,
+                expenseRepository,
+                paymentRepository,
+                productRepository,
+                batchRepository,
+                customerRepository,
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                receivablesAgingService
+        );
     }
 
     // Helper to create a dummy Product
@@ -912,6 +934,173 @@ public class FmcgShopBusinessTests {
                 "📞 8707867040";
 
         assertEquals(expected, message);
+    }
+
+    @Test
+    public void testHealthReportTrendLazyBackfill() throws Exception {
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+
+        // 1. Mock a HealthReport database entity that has NO rawMetrics in its JSON
+        com.shop.modules.dashboard.dto.DashboardHealthReportResponse reportDto = com.shop.modules.dashboard.dto.DashboardHealthReportResponse.builder()
+                .overallScore(85)
+                .status("HEALTHY")
+                .build();
+        reportDto.setRawMetrics(null); // Explicitly null to trigger fallback
+
+        String jsonWithNullMetrics = mapper.writeValueAsString(reportDto);
+
+        com.shop.modules.dashboard.HealthReport entity = com.shop.modules.dashboard.HealthReport.builder()
+                .id(UUID.randomUUID())
+                .reportYear(2026)
+                .reportMonth(6)
+                .reportJson(jsonWithNullMetrics)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        List<com.shop.modules.dashboard.HealthReport> mockList = new ArrayList<>(Collections.singletonList(entity));
+
+        // Mock repository
+        when(healthReportRepository.findAllByOrderByReportYearDescReportMonthDesc(any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(mockList);
+
+        // Mock dashboardService.getMonthlyReport(2026, 6)
+        com.shop.modules.dashboard.dto.MonthlyReportResponse monthlyReport = com.shop.modules.dashboard.dto.MonthlyReportResponse.builder()
+                .totalRevenue(BigDecimal.valueOf(100000))
+                .netProfit(BigDecimal.valueOf(40000))
+                .totalExpenses(BigDecimal.valueOf(60000))
+                .build();
+        when(dashboardService.getMonthlyReport(2026, 6)).thenReturn(monthlyReport);
+
+        // Act - first call triggers backfill and repository.save
+        com.shop.modules.dashboard.dto.TrendSummaryResponse summary = dashboardAiService.getTrendData(12);
+
+        // Assert
+        assertNotNull(summary);
+        assertEquals(1, summary.getTrends().size());
+        com.shop.modules.dashboard.dto.HealthReportTrendResponse trend = summary.getTrends().get(0);
+        assertEquals(0, BigDecimal.valueOf(100000).compareTo(trend.getRevenue()));
+        assertEquals(0, BigDecimal.valueOf(40000).compareTo(trend.getNetProfit()));
+        assertEquals(0, BigDecimal.valueOf(60000).compareTo(trend.getTotalExpenses()));
+
+        // Verify that healthReportRepository.save() was called to persist backfill to DB
+        verify(healthReportRepository, times(1)).save(entity);
+
+        // Check that the JSON in the entity now has populated rawMetrics
+        String jsonWithPopulatedMetrics = entity.getReportJson();
+        assertTrue(jsonWithPopulatedMetrics.contains("rawMetrics"));
+        assertTrue(jsonWithPopulatedMetrics.contains("revenue"));
+
+        // Reset mock invocation counts to verify second call behavior
+        reset(healthReportRepository);
+        reset(dashboardService);
+
+        when(healthReportRepository.findAllByOrderByReportYearDescReportMonthDesc(any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(mockList);
+
+        // Act - second call reads rawMetrics directly from JSON
+        com.shop.modules.dashboard.dto.TrendSummaryResponse summary2 = dashboardAiService.getTrendData(12);
+
+        // Assert - verified no recalculations, no saves
+        assertNotNull(summary2);
+        verify(dashboardService, never()).getMonthlyReport(anyInt(), anyInt());
+        verify(healthReportRepository, never()).save(any());
+    }
+
+    @Test
+    public void testReceivablesPriorityAndNeedsFollowUp() {
+        // Prepare mock customers, bills and reminder logs
+        UUID customerId1 = UUID.randomUUID();
+        Customer c1 = new Customer();
+        c1.setId(customerId1);
+        c1.setName("Customer A");
+        c1.setPhone("9876543210");
+        c1.setIsNpa(false);
+
+        UUID customerId2 = UUID.randomUUID();
+        Customer c2 = new Customer();
+        c2.setId(customerId2);
+        c2.setName("Customer B");
+        c2.setPhone("9876543211");
+        c2.setIsNpa(true);
+
+        Bill b1 = new Bill();
+        b1.setId(UUID.randomUUID());
+        b1.setCustomer(c1);
+        b1.setPendingAmount(new BigDecimal("5000.00"));
+        b1.setCreatedAt(LocalDateTime.now().minusDays(20)); // > 15 days overdue
+
+        Bill b2 = new Bill();
+        b2.setId(UUID.randomUUID());
+        b2.setCustomer(c2);
+        b2.setPendingAmount(new BigDecimal("10000.00"));
+        b2.setCreatedAt(LocalDateTime.now().minusDays(10)); // < 15 days overdue
+
+        when(billRepository.findPendingBills()).thenReturn(Arrays.asList(b1, b2));
+        when(udharReminderLogRepository.findTopByCustomerIdOrderByReminderSentAtDesc(customerId1)).thenReturn(Optional.empty());
+        when(udharReminderLogRepository.findTopByCustomerIdOrderByReminderSentAtDesc(customerId2)).thenReturn(Optional.empty());
+
+        ReceivablesService receivablesService = new ReceivablesService(
+                billRepository, customerRepository, udharReminderLogRepository, userRepository, whatsAppService, aiReminderGenerator
+        );
+
+        List<ReceivablesPendingResponse> pending = receivablesService.getPendingReceivables("daysOverdue");
+
+        assertEquals(2, pending.size());
+        // Sorting default is daysOverdue desc (Customer A is 20 days, Customer B is 10 days)
+        assertEquals("Customer A", pending.get(0).getCustomerName());
+        assertTrue(pending.get(0).isNeedsFollowUp());
+        assertFalse(pending.get(0).isNpa());
+
+        assertEquals("Customer B", pending.get(1).getCustomerName());
+        assertFalse(pending.get(1).isNeedsFollowUp());
+        assertTrue(pending.get(1).isNpa());
+    }
+
+    @Test
+    public void testSpamGuardCooldownAndBypass() {
+        UUID customerId = UUID.randomUUID();
+        Customer c = new Customer();
+        c.setId(customerId);
+        c.setName("Customer A");
+        c.setPhone("9876543210");
+        c.setTotalPending(new BigDecimal("5000.00"));
+
+        Bill b = new Bill();
+        b.setId(UUID.randomUUID());
+        b.setCustomer(c);
+        b.setPendingAmount(new BigDecimal("5000.00"));
+        b.setCreatedAt(LocalDateTime.now().minusDays(20));
+
+        UdharReminderLog recentLog = UdharReminderLog.builder()
+                .customer(c)
+                .reminderSentAt(LocalDateTime.now().minusHours(2)) // 2 hours ago
+                .status("SENT")
+                .build();
+
+        // Mocks for findById, last log
+        when(customerRepository.findById(customerId)).thenReturn(Optional.of(c));
+        
+        ReceivablesService receivablesService = new ReceivablesService(
+                billRepository, customerRepository, udharReminderLogRepository, userRepository, whatsAppService, aiReminderGenerator
+        );
+
+        // 1. Check with recent reminder sent (should trigger COOLDOWN)
+        when(udharReminderLogRepository.findTopByCustomerIdOrderByReminderSentAtDesc(customerId)).thenReturn(Optional.of(recentLog));
+
+        SendReminderResponse response = receivablesService.sendReminder(customerId, "WHATSAPP", "notes", null, false);
+        assertFalse(response.isSuccess());
+        assertEquals("COOLDOWN", response.getError());
+        assertTrue(response.getMessage().contains("already 2 hours pehle"));
+
+        // 2. Bypass cooldown check (ignoreCooldown=true)
+        when(whatsAppService.getStatus()).thenReturn("CONNECTED");
+        when(aiReminderGenerator.generateReminderMessage(any(), any(), any(), any(), any())).thenReturn("Test Reminder Message");
+        
+        SendReminderResponse responseBypassed = receivablesService.sendReminder(customerId, "WHATSAPP", "notes", null, true);
+        assertTrue(responseBypassed.isSuccess());
+        assertTrue(responseBypassed.isSent());
+        verify(whatsAppService, times(1)).sendText(anyString(), anyString());
+        verify(udharReminderLogRepository, times(1)).save(any(UdharReminderLog.class));
     }
 }
 

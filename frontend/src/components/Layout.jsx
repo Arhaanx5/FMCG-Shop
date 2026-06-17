@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Package, Users, ShoppingCart, Warehouse,
   BookOpen, Receipt, AlertTriangle, MapPin, UserCog,
   Menu, X, LogOut, ChevronLeft, Award, Truck, Sun, Moon, Palette,
-  MessageSquare, Clock, Activity
+  MessageSquare, Clock, Activity, TrendingUp, DollarSign
 } from 'lucide-react'
 
 const navItems = [
@@ -20,13 +20,15 @@ const navItems = [
   { path: '/salesmen', label: 'Salesmen', icon: Award, roles: ['ADMIN', 'MANAGER'] },
   { path: '/stock', label: 'Stock', icon: Warehouse, roles: ['ADMIN', 'MANAGER'] },
   { path: '/khata', label: 'Khata', icon: BookOpen, roles: ['ADMIN', 'MANAGER', 'DELIVERY_BOY', 'SALESMAN'] },
+  { path: '/receivables', label: 'Udhar Collection', icon: DollarSign, roles: ['ADMIN', 'MANAGER'] },
   { path: '/expenses', label: 'Expenses', icon: Receipt, roles: ['ADMIN'] },
   { path: '/damage', label: 'Damage', icon: AlertTriangle, roles: ['ADMIN', 'MANAGER'] },
   { path: '/areas', label: 'Areas', icon: MapPin, roles: ['ADMIN', 'MANAGER'] },
   { path: '/deliveries', label: 'Deliveries', icon: Truck, roles: ['ADMIN', 'MANAGER', 'DELIVERY_BOY', 'SALESMAN'] },
   { path: '/users', label: 'Users', icon: UserCog, roles: ['ADMIN'] },
   { path: '/schedulers', label: 'Schedulers', icon: Clock, roles: ['ADMIN'] },
-  { path: '/health-report', label: 'CFO Health Report', icon: Activity, roles: ['ADMIN', 'MANAGER'] },
+  { path: '/health-report', label: 'Business Health', icon: Activity, roles: ['ADMIN', 'MANAGER'] },
+  { path: '/health-trend', label: 'Health Trends', icon: TrendingUp, roles: ['ADMIN', 'MANAGER'] },
 ]
 
 const pageNames = {
@@ -38,13 +40,15 @@ const pageNames = {
   '/salesmen': 'Salesmen & Routes',
   '/stock': 'Stock',
   '/khata': 'Khata / Payments',
+  '/receivables': 'Udhar Collection Dashboard',
   '/expenses': 'Expenses',
   '/damage': 'Damage Log',
   '/areas': 'Areas',
   '/deliveries': 'Deliveries & Route Map',
   '/users': 'User Management',
   '/schedulers': 'Task Schedulers & Backups',
-  '/health-report': 'CFO Health Report',
+  '/health-report': 'Business Health Report',
+  '/health-trend': 'Business Health Trends',
 }
 
 export default function Layout() {

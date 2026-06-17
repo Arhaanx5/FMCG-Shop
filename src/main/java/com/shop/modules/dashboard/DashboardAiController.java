@@ -2,6 +2,7 @@ package com.shop.modules.dashboard;
 
 import com.shop.common.ApiResponse;
 import com.shop.modules.dashboard.dto.DashboardHealthReportResponse;
+import com.shop.modules.dashboard.dto.TrendSummaryResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -52,5 +53,13 @@ public class DashboardAiController {
             @RequestParam(required = false, defaultValue = "false") boolean force) {
         DashboardHealthReportResponse report = dashboardAiService.generateHealthReport(year, month, force);
         return ResponseEntity.ok(ApiResponse.success(report));
+    }
+
+    @GetMapping("/health-report/trend")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<TrendSummaryResponse>> getHealthReportTrend(
+            @RequestParam(required = false, defaultValue = "12") int months) {
+        TrendSummaryResponse trend = dashboardAiService.getTrendData(months);
+        return ResponseEntity.ok(ApiResponse.success(trend));
     }
 }

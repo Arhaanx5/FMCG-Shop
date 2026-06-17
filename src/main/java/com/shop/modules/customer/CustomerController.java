@@ -56,8 +56,11 @@ public class CustomerController {
 
     @PostMapping("/whatsapp/send-bulk")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
-    public ResponseEntity<ApiResponse<String>> sendBulkReminders(@RequestBody java.util.List<String> customerIds) {
-        whatsAppService.startBulkSending(customerIds);
+    public ResponseEntity<ApiResponse<String>> sendBulkReminders(
+            @RequestBody java.util.List<String> customerIds,
+            org.springframework.security.core.Authentication auth) {
+        String senderPhone = auth != null ? auth.getName() : null;
+        whatsAppService.startBulkSending(customerIds, senderPhone);
         return ResponseEntity.ok(
                 ApiResponse.success("Background bulk reminders initiated successfully", null)
         );
