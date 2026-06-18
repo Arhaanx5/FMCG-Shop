@@ -167,6 +167,7 @@ public class StockController {
         serviceReq.setSellPricePrimary(req.getSellPricePrimary());
         serviceReq.setSellPriceSecondary(req.getSellPriceSecondary());
         serviceReq.setLogAsExpense(req.isLogAsExpense());
+        serviceReq.setGstPercent(req.getGstPercent());
         serviceReq.setInvoiceNumber(req.getInvoiceNumber());
 
         String username = principal != null ? principal.getName() : "System";
@@ -204,6 +205,7 @@ public class StockController {
             serviceReq.setSellPricePrimary(req.getSellPricePrimary());
             serviceReq.setSellPriceSecondary(req.getSellPriceSecondary());
             serviceReq.setLogAsExpense(req.isLogAsExpense());
+            serviceReq.setGstPercent(req.getGstPercent());
             serviceReq.setInvoiceNumber(req.getInvoiceNumber());
 
             StockBatch batch = stockService.receiveStock(serviceReq, username);

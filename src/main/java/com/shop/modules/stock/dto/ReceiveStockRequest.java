@@ -54,5 +54,7 @@ public class ReceiveStockRequest {
 
     private BigDecimal sellPriceSecondary;
 
+    private BigDecimal gstPercent;
+
     private boolean logAsExpense = true;
 }

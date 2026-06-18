@@ -711,6 +711,7 @@ export default function Stock() {
         secondaryAdded: totalSecondaryUnits,
         openBoxAdded,
         buyPriceWithoutTax,
+        gstPercent: product.gstPercent,
         newProduct: false
       }
     } else {
@@ -747,6 +748,7 @@ export default function Stock() {
           buyPriceWithoutTax: item.buyPriceWithoutTax,
           expiryDate: item.expiryDate,
           supplierName: scannerSupplier,
+          gstPercent: Number(item.gstPercent || 0),
           logAsExpense: true
         }
       })
@@ -800,6 +802,8 @@ export default function Stock() {
     if (!form.productId) { toast.error('Select a product'); return }
     setSaving(true)
     try {
+      const selectedProduct = products.find(p => p.id === form.productId)
+      const gst = selectedProduct ? Number(selectedProduct.gstPercent || 0) : 0
       const payload = {
         ...form,
         primaryReceived: Number(form.primaryReceived || 0),
@@ -809,6 +813,7 @@ export default function Stock() {
         buyPriceWithTax: form.buyPriceWithTax ? Number(form.buyPriceWithTax) : null,
         sellPricePrimary: form.sellPricePrimary ? Number(form.sellPricePrimary) : null,
         sellPriceSecondary: form.sellPriceSecondary ? Number(form.sellPriceSecondary) : null,
+        gstPercent: gst,
         logAsExpense: !!form.logAsExpense
       }
       await api.post('/stock/receive', payload)
@@ -1488,6 +1493,8 @@ export default function Stock() {
                       <th style={{ padding: '12px 16px', minWidth: '110px' }}>Batch No</th>
                       <th style={{ padding: '12px 16px', minWidth: '140px' }}>Expiry</th>
                       <th style={{ padding: '12px 16px', minWidth: '110px' }}>Buy (BOX)</th>
+                      <th style={{ padding: '12px 16px', minWidth: '80px' }}>GST (%)</th>
+                      <th style={{ padding: '12px 16px', minWidth: '120px' }}>Total (Tax Incl.)</th>
                       <th style={{ padding: '12px 16px', minWidth: '110px' }}>Status</th>
                       <th style={{ padding: '12px 16px', minWidth: '220px' }}>Mapped DB Product</th>
                       <th style={{ padding: '12px 16px', textAlign: 'center' }}>Action</th>
@@ -1675,6 +1682,38 @@ export default function Stock() {
                             />
                           </div>
                         </td>
+                        <td style={{ padding: '8px 16px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                            <input
+                              type="number"
+                              step="0.01"
+                              className="form-input"
+                              style={{ width: '60px', padding: '4px 8px', fontSize: '12px', margin: 0 }}
+                              value={item.gstPercent ?? '5'}
+                              min="0"
+                              onChange={e => {
+                                const val = e.target.value;
+                                const updated = [...scannerPreview];
+                                updated[index].gstPercent = val;
+                                setScannerPreview(updated);
+                              }}
+                            />
+                            <span style={{ color: 'var(--color-text-secondary)' }}>%</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '8px 16px', fontWeight: '600' }}>
+                          {(() => {
+                            const ratio = item.secondaryPerPrimary || 1;
+                            const pAdded = item.primaryAdded === '' ? 0 : (Number(item.primaryAdded) || 0);
+                            const oAdded = item.openBoxAdded === '' ? 0 : (Number(item.openBoxAdded) || 0);
+                            const buyPrice = Number(item.buyPriceWithoutTax || 0);
+                            const gst = Number(item.gstPercent || 0);
+                            
+                            const valWithoutTax = (pAdded * buyPrice) + (oAdded * (buyPrice / ratio));
+                            const valWithTax = valWithoutTax * (1 + gst / 100);
+                            return `₹${valWithTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                          })()}
+                        </td>
                         <td style={{ padding: '12px 16px' }}>
                           {item.duplicateBatch ? (
                             <span className="badge badge-danger" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
@@ -1728,6 +1767,71 @@ export default function Stock() {
                   </tbody>
                 </table>
               </div>
+
+              {(() => {
+                let totalTaxable = 0;
+                let totalGst = 0;
+                let totalNet = 0;
+                
+                scannerPreview.forEach(item => {
+                  const ratio = item.secondaryPerPrimary || 1;
+                  const pAdded = item.primaryAdded === '' ? 0 : (Number(item.primaryAdded) || 0);
+                  const oAdded = item.openBoxAdded === '' ? 0 : (Number(item.openBoxAdded) || 0);
+                  const buyPrice = Number(item.buyPriceWithoutTax || 0);
+                  const gst = Number(item.gstPercent || 0);
+                  
+                  const rowTaxable = (pAdded * buyPrice) + (oAdded * (buyPrice / ratio));
+                  const rowGst = rowTaxable * (gst / 100);
+                  const rowNet = rowTaxable + rowGst;
+                  
+                  totalTaxable += rowTaxable;
+                  totalGst += rowGst;
+                  totalNet += rowNet;
+                });
+
+                return (
+                  <div style={{
+                    background: 'var(--color-surface)',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: 'var(--radius-lg)',
+                    padding: 'var(--space-5)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginTop: '20px',
+                    boxShadow: '0 2px 10px rgba(0,0,0,0.03)',
+                    flexWrap: 'wrap',
+                    gap: '15px'
+                  }}>
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: '15px', fontWeight: '600' }}>Scanned Invoice Grand Summary</h4>
+                      <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                        Confirm karne se pehle apni printed bill se total match karein.
+                      </p>
+                    </div>
+                    <div style={{ display: 'flex', gap: '30px', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>Total Taxable Value</span>
+                        <span style={{ fontSize: '16px', fontWeight: '600', color: 'var(--color-text)' }}>
+                          ₹{totalTaxable.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>Total GST Tax</span>
+                        <span style={{ fontSize: '16px', fontWeight: '600', color: 'var(--color-text)' }}>
+                          ₹{totalGst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', paddingLeft: '20px', borderLeft: '2px solid var(--color-border)' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Grand Total (Incl. Tax)</span>
+                        <span style={{ fontSize: '22px', fontWeight: '800', color: 'var(--color-success)' }}>
+                          ₹{totalNet.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
                 <button

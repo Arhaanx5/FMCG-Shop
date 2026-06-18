@@ -156,7 +156,11 @@ public class StockService {
                 + req.getExtraSecondaryReceived();
 
         // Calculate buy price with tax
-        BigDecimal gstRate = product.getGstPercent()
+        BigDecimal gstPercent = req.getGstPercent() != null && req.getGstPercent().compareTo(BigDecimal.ZERO) >= 0
+                ? req.getGstPercent()
+                : product.getGstPercent();
+
+        BigDecimal gstRate = gstPercent
                 .divide(BigDecimal.valueOf(100));
 
         BigDecimal taxAmount =
@@ -184,7 +188,7 @@ public class StockService {
                 .buyPriceWithoutTax(
                         req.getBuyPriceWithoutTax())
                 .buyPriceWithTax(buyPriceWithTax)
-                .gstPercent(product.getGstPercent())
+                .gstPercent(gstPercent)
                 .expiryDate(req.getExpiryDate())
                 .supplierName(req.getSupplierName())
                 .exhausted(false)
@@ -729,6 +733,7 @@ public class StockService {
         private int extraSecondaryReceived;
         private int offerSecondaryReceived = 0; // free units from distributor
         private BigDecimal buyPriceWithoutTax;
+        private BigDecimal gstPercent;
         private LocalDate expiryDate;
         private String supplierName;
         private BigDecimal sellPricePrimary;

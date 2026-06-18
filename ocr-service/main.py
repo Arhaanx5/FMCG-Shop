@@ -178,40 +178,65 @@ async def scan_invoice(file: UploadFile = File(...)):
             base64_data = base64.b64encode(processed_image).decode('utf-8')
             logger.info(f"Image file detected. Compressed size: {len(processed_image)} bytes.")
         
-        # Using gemini-2.5-flash with thinking DISABLED (thinkingBudget=0) for fast response
-        # Thinking mode adds 10-20s of latency — not needed for structured invoice extraction
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+        # List of models to try in sequence to bypass 20 requests/day/model free tier limit or deprecated models
+        models_to_try = [
+            "gemini-2.5-flash",
+            "gemini-3.5-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-3.1-flash-lite",
+            "gemini-2.0-flash"
+        ]
         
-        payload = {
-            "contents": [{
-                "parts": [
-                    {"text": PROMPT},
-                    {
-                        "inlineData": {
-                            "mime_type": mime_type,
-                            "data": base64_data
-                        }
-                    }
-                ]
-            }],
-            "generationConfig": {
-                "responseMimeType": "application/json",
-                "thinkingConfig": {
+        response = None
+        last_error = None
+        headers = {"Content-Type": "application/json"}
+        
+        for model_name in models_to_try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+            
+            # Formulate generation config. Only gemini-2.5 supports thinkingConfig parameter
+            generation_config = {
+                "responseMimeType": "application/json"
+            }
+            if model_name.startswith("gemini-2.5"):
+                generation_config["thinkingConfig"] = {
                     "thinkingBudget": 0
                 }
+                
+            payload = {
+                "contents": [{
+                    "parts": [
+                        {"text": PROMPT},
+                        {
+                            "inlineData": {
+                                "mime_type": mime_type,
+                                "data": base64_data
+                            }
+                        }
+                    ]
+                }],
+                "generationConfig": generation_config
             }
-        }
-        
-        logger.info("Calling Gemini REST API (thinking disabled for speed)...")
-        headers = {"Content-Type": "application/json"}
-        # Run blocking HTTP call in a thread pool so we don't block the async event loop
-        response = await asyncio.to_thread(requests.post, url, json=payload, headers=headers)
-        
-        if response.status_code != 200:
-            logger.error(f"Gemini API returned error {response.status_code}: {response.text}")
+            
+            logger.info(f"Calling Gemini REST API with model: {model_name}...")
+            try:
+                res = await asyncio.to_thread(requests.post, url, json=payload, headers=headers)
+                if res.status_code == 200:
+                    response = res
+                    logger.info(f"Successfully received response from model: {model_name}")
+                    break
+                else:
+                    logger.warning(f"Model {model_name} returned status code {res.status_code}: {res.text}")
+                    last_error = f"{res.status_code}: {res.text}"
+            except Exception as e:
+                logger.error(f"Error calling model {model_name}: {e}")
+                last_error = str(e)
+                
+        if not response:
+            logger.error(f"All Gemini models failed. Last error: {last_error}")
             raise HTTPException(
-                status_code=response.status_code,
-                detail=f"Gemini API error: {response.text}"
+                status_code=500,
+                detail=f"All Gemini models exhausted or failed. Last error details: {last_error}"
             )
             
         response_json = response.json()
