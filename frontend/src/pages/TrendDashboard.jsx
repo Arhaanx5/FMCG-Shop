@@ -7,7 +7,8 @@ import {
 } from 'lucide-react'
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis,
-  CartesianGrid, Tooltip, Legend, LineChart, Line
+  CartesianGrid, Tooltip, Legend, LineChart, Line, BarChart, Bar,
+  PieChart, Pie, Cell, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar
 } from 'recharts'
 
 export default function TrendDashboard() {
@@ -16,6 +17,17 @@ export default function TrendDashboard() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
+  // Interactive UI States
+  const [healthChartType, setHealthChartType] = useState('area') // 'area' | 'bar'
+  const [financialChartType, setFinancialChartType] = useState('line') // 'line' | 'bar'
+  const [activeCategory, setActiveCategory] = useState(null) // key of sub-category or null
+  const [visibleFinancials, setVisibleFinancials] = useState({
+    revenue: true,
+    totalExpenses: true,
+    netProfit: true
+  })
+  const [selectedMonthIndex, setSelectedMonthIndex] = useState(0)
+
   const fetchTrendData = async () => {
     setLoading(true)
     setError(null)
@@ -23,6 +35,18 @@ export default function TrendDashboard() {
       const response = await api.get(`/dashboard/ai/health-report/trend?months=${monthsLimit}`)
       if (response.data && response.data.success) {
         setData(response.data.data)
+        const trends = response.data.data.trends || []
+        // Auto-fallback to Bar chart if there's only 1 month of data
+        if (trends.length === 1) {
+          setHealthChartType('bar')
+          setFinancialChartType('bar')
+        } else {
+          setHealthChartType('area')
+          setFinancialChartType('line')
+        }
+        if (trends.length > 0) {
+          setSelectedMonthIndex(trends.length - 1)
+        }
       } else {
         setError(response.data?.message || 'Failed to fetch trend data.')
       }
@@ -53,20 +77,48 @@ export default function TrendDashboard() {
     return 'text-rose-600 dark:text-rose-400 border-rose-500'
   }
 
+  const handleFinancialLegendClick = (props) => {
+    if (!props) return
+    const { dataKey } = props
+    if (!dataKey) return
+    setVisibleFinancials(prev => ({
+      ...prev,
+      [dataKey]: !prev[dataKey]
+    }))
+  }
+
+  const renderLegendText = (value, entry) => {
+    const id = entry?.id || value
+    let key = ''
+    if (id === 'revenue' || value === 'Revenue') key = 'revenue'
+    else if (id === 'totalExpenses' || value === 'Total Expenses') key = 'totalExpenses'
+    else if (id === 'netProfit' || value === 'Net Profit') key = 'netProfit'
+
+    const isVisible = key ? visibleFinancials[key] : true
+    return (
+      <span className={`cursor-pointer transition-all duration-200 hover:text-slate-900 dark:hover:text-white select-none ${
+        isVisible ? 'opacity-100 font-semibold' : 'opacity-35 line-through text-slate-400'
+      }`}>
+        {value}
+      </span>
+    )
+  }
+
   // Custom tooltips to render cleanly on null/missing values
   const CustomScoreTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
-      const scoreVal = payload[0].value
       return (
-        <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded shadow-md text-xs">
+        <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded shadow-md text-xs flex flex-col gap-1.5">
           <p className="font-semibold text-slate-800 dark:text-slate-200 mb-1">{label}</p>
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: payload[0].color || '#3b82f6' }}></span>
-            <span className="text-slate-600 dark:text-slate-400">{payload[0].name}:</span>
-            <span className="font-bold text-slate-900 dark:text-slate-100">
-              {scoreVal === null || scoreVal === undefined ? 'No Data' : `${scoreVal} / 100`}
-            </span>
-          </div>
+          {payload.map((item, idx) => (
+            <div key={idx} className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item?.color || '#3b82f6' }}></span>
+              <span className="text-slate-600 dark:text-slate-400">{item?.name || 'Score'}:</span>
+              <span className="font-bold text-slate-900 dark:text-slate-100">
+                {item?.value === null || item?.value === undefined ? 'No Data' : `${item.value} / 100`}
+              </span>
+            </div>
+          ))}
         </div>
       )
     }
@@ -81,11 +133,11 @@ export default function TrendDashboard() {
           {payload.map((item, idx) => (
             <div key={idx} className="flex items-center justify-between gap-4 mb-1">
               <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }}></span>
-                <span>{item.name}:</span>
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item?.color || '#3b82f6' }}></span>
+                <span>{item?.name || 'Value'}:</span>
               </div>
               <span className="font-bold text-slate-900 dark:text-slate-100">
-                {formatCurrency(item.value)}
+                {formatCurrency(item?.value)}
               </span>
             </div>
           ))}
@@ -121,6 +173,41 @@ export default function TrendDashboard() {
   const currentScore = data?.currentMonthScore
   const scoreDelta = data?.scoreDelta
   const explanation = data?.deltaExplanation
+
+  const categories = [
+    { name: 'Profitability', key: 'profitabilityScore', color: '#10b981', icon: DollarSign },
+    { name: 'Cash Flow', key: 'cashFlowScore', color: '#3b82f6', icon: Activity },
+    { name: 'Inventory Efficiency', key: 'inventoryScore', color: '#f59e0b', icon: Package },
+    { name: 'Customer Engagement', key: 'customerScore', color: '#8b5cf6', icon: Users },
+    { name: 'Receivables Control', key: 'receivablesScore', color: '#f43f5e', icon: BookOpen },
+    { name: 'Suppliers Management', key: 'suppliersScore', color: '#06b6d4', icon: Truck }
+  ]
+
+  const activeCategoryDetail = categories.find(c => c.key === activeCategory)
+  const selectedData = trendData[selectedMonthIndex] || null
+
+  const radarData = selectedData ? [
+    { subject: 'Profitability', value: selectedData.profitabilityScore || 0, fullMark: 100 },
+    { subject: 'Cash Flow', value: selectedData.cashFlowScore || 0, fullMark: 100 },
+    { subject: 'Inventory', value: selectedData.inventoryScore || 0, fullMark: 100 },
+    { subject: 'Customer', value: selectedData.customerScore || 0, fullMark: 100 },
+    { subject: 'Receivables', value: selectedData.receivablesScore || 0, fullMark: 100 },
+    { subject: 'Suppliers', value: selectedData.suppliersScore || 0, fullMark: 100 }
+  ] : []
+
+  const expensesVal = selectedData?.totalExpenses ? Number(selectedData.totalExpenses) : 0
+  const profitVal = selectedData?.netProfit ? Number(selectedData.netProfit) : 0
+  const totalRevenue = selectedData ? Number(selectedData.revenue) : 0
+
+  const pieData = []
+  if (expensesVal > 0) {
+    pieData.push({ name: 'Expenses', value: expensesVal, color: '#f43f5e' })
+  }
+  if (profitVal > 0) {
+    pieData.push({ name: 'Net Profit', value: profitVal, color: '#6366f1' })
+  } else if (profitVal < 0) {
+    pieData.push({ name: 'Net Loss', value: Math.abs(profitVal), color: '#eab308' })
+  }
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto flex flex-col gap-6">
@@ -174,78 +261,317 @@ export default function TrendDashboard() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Overall Health Trend Chart */}
             <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm flex flex-col gap-4">
-              <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <Activity className="text-blue-500" size={16} /> Overall Health Score Trend
-              </h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 flex flex-col gap-0.5">
+                  <span className="flex items-center gap-1.5">
+                    <Activity className="text-blue-500" size={16} /> Overall Health Score Trend
+                  </span>
+                  {activeCategoryDetail && (
+                    <span className="text-[11px] text-slate-500 font-normal">
+                      Comparing with: <span className="font-semibold" style={{ color: activeCategoryDetail.color }}>{activeCategoryDetail.name}</span>
+                    </span>
+                  )}
+                </h3>
+                <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 animate-fade-in">
+                  <button
+                    onClick={() => setHealthChartType('area')}
+                    className={`px-2.5 py-1 text-[10px] font-semibold rounded-md transition ${
+                      healthChartType === 'area'
+                        ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    Area/Line
+                  </button>
+                  <button
+                    onClick={() => setHealthChartType('bar')}
+                    className={`px-2.5 py-1 text-[10px] font-semibold rounded-md transition ${
+                      healthChartType === 'bar'
+                        ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    Bar
+                  </button>
+                </div>
+              </div>
+
+              {activeCategoryDetail && (
+                <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-800 text-[11px] select-none animate-slide-down">
+                  <span className="text-slate-600 dark:text-slate-400">
+                    Comparing Overall Health with <strong style={{ color: activeCategoryDetail.color }}>{activeCategoryDetail.name}</strong>
+                  </span>
+                  <button
+                    onClick={() => setActiveCategory(null)}
+                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 font-bold transition"
+                  >
+                    ✕ Clear Compare
+                  </button>
+                </div>
+              )}
+
               <div className="h-[320px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.25}/>
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" className="dark:stroke-slate-800" />
-                    <XAxis dataKey="monthName" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: 'gray' }} />
-                    <YAxis domain={[0, 100]} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: 'gray' }} />
-                    <Tooltip content={<CustomScoreTooltip />} />
-                    <Area type="monotone" dataKey="overallScore" stroke="#3b82f6" strokeWidth={2.5} fillOpacity={1} fill="url(#colorScore)" connectNulls={false} name="Overall Score" />
-                  </AreaChart>
+                  {healthChartType === 'area' ? (
+                    <AreaChart
+                      data={trendData}
+                      margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                      onClick={(nextState) => {
+                        if (nextState && nextState.activeTooltipIndex !== undefined) {
+                          setSelectedMonthIndex(nextState.activeTooltipIndex)
+                        }
+                      }}
+                      className="cursor-pointer"
+                    >
+                      <defs>
+                        <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.25}/>
+                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.0}/>
+                        </linearGradient>
+                        {activeCategoryDetail && (
+                          <linearGradient id={`colorSub_${activeCategory}`} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor={activeCategoryDetail.color} stopOpacity={0.2}/>
+                            <stop offset="95%" stopColor={activeCategoryDetail.color} stopOpacity={0.0}/>
+                          </linearGradient>
+                        )}
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" className="dark:stroke-slate-800" />
+                      <XAxis dataKey="monthName" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: 'gray' }} />
+                      <YAxis domain={[0, 100]} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: 'gray' }} />
+                      <Tooltip content={<CustomScoreTooltip />} />
+                      <Area type="monotone" dataKey="overallScore" stroke="#3b82f6" strokeWidth={2.5} fillOpacity={1} fill="url(#colorScore)" connectNulls={false} name="Overall Score" dot={{ r: trendData.length === 1 ? 5 : 0 }} activeDot={{ r: 7 }} />
+                      {activeCategoryDetail && (
+                        <Area type="monotone" dataKey={activeCategory} stroke={activeCategoryDetail.color} strokeWidth={2} fillOpacity={1} fill={`url(#colorSub_${activeCategory})`} connectNulls={false} name={activeCategoryDetail.name} dot={{ r: trendData.length === 1 ? 5 : 0 }} activeDot={{ r: 7 }} />
+                      )}
+                    </AreaChart>
+                  ) : (
+                    <BarChart
+                      data={trendData}
+                      margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                      onClick={(nextState) => {
+                        if (nextState && nextState.activeTooltipIndex !== undefined) {
+                          setSelectedMonthIndex(nextState.activeTooltipIndex)
+                        }
+                      }}
+                      className="cursor-pointer"
+                    >
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" className="dark:stroke-slate-800" />
+                      <XAxis dataKey="monthName" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: 'gray' }} />
+                      <YAxis domain={[0, 100]} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: 'gray' }} />
+                      <Tooltip content={<CustomScoreTooltip />} />
+                      <Bar dataKey="overallScore" fill="#3b82f6" radius={[4, 4, 0, 0]} name="Overall Score" maxBarSize={40} />
+                      {activeCategoryDetail && (
+                        <Bar dataKey={activeCategory} fill={activeCategoryDetail.color} radius={[4, 4, 0, 0]} name={activeCategoryDetail.name} maxBarSize={40} />
+                      )}
+                    </BarChart>
+                  )}
                 </ResponsiveContainer>
               </div>
             </div>
 
             {/* Financial Trends Overlay (Revenue, Expenses, Net Profit) */}
             <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm flex flex-col gap-4">
-              <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <DollarSign className="text-emerald-500" size={16} /> Revenue vs Expenses vs Net Profit
-              </h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <DollarSign className="text-emerald-500" size={16} /> Revenue vs Expenses vs Net Profit
+                </h3>
+                <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 animate-fade-in">
+                  <button
+                    onClick={() => setFinancialChartType('line')}
+                    className={`px-2.5 py-1 text-[10px] font-semibold rounded-md transition ${
+                      financialChartType === 'line'
+                        ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    Line
+                  </button>
+                  <button
+                    onClick={() => setFinancialChartType('bar')}
+                    className={`px-2.5 py-1 text-[10px] font-semibold rounded-md transition ${
+                      financialChartType === 'bar'
+                        ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    Bar
+                  </button>
+                </div>
+              </div>
               <div className="h-[320px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={trendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" className="dark:stroke-slate-800" />
-                    <XAxis dataKey="monthName" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: 'gray' }} />
-                    <YAxis tickLine={false} axisLine={false} tickFormatter={(tick) => `₹${(tick / 1000).toFixed(0)}k`} tick={{ fontSize: 11, fill: 'gray' }} />
-                    <Tooltip content={<CustomFinancialTooltip />} />
-                    <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: 12 }} />
-                    <Line type="monotone" dataKey="revenue" stroke="#10b981" strokeWidth={2} activeDot={{ r: 6 }} name="Revenue" />
-                    <Line type="monotone" dataKey="totalExpenses" stroke="#f43f5e" strokeWidth={2} name="Total Expenses" />
-                    <Line type="monotone" dataKey="netProfit" stroke="#6366f1" strokeWidth={2.5} name="Net Profit" />
-                  </LineChart>
+                  {financialChartType === 'line' ? (
+                    <LineChart
+                      data={trendData}
+                      margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                      onClick={(nextState) => {
+                        if (nextState && nextState.activeTooltipIndex !== undefined) {
+                          setSelectedMonthIndex(nextState.activeTooltipIndex)
+                        }
+                      }}
+                      className="cursor-pointer"
+                    >
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" className="dark:stroke-slate-800" />
+                      <XAxis dataKey="monthName" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: 'gray' }} />
+                      <YAxis tickLine={false} axisLine={false} tickFormatter={(tick) => `₹${(tick / 1000).toFixed(0)}k`} tick={{ fontSize: 11, fill: 'gray' }} />
+                      <Tooltip content={<CustomFinancialTooltip />} />
+                      <Legend onClick={handleFinancialLegendClick} formatter={renderLegendText} verticalAlign="top" height={36} wrapperStyle={{ fontSize: 12 }} />
+                      <Line type="monotone" dataKey="revenue" stroke="#10b981" strokeWidth={2} dot={{ r: trendData.length === 1 ? 5 : 3 }} activeDot={{ r: 6 }} hide={!visibleFinancials.revenue} name="Revenue" />
+                      <Line type="monotone" dataKey="totalExpenses" stroke="#f43f5e" strokeWidth={2} dot={{ r: trendData.length === 1 ? 5 : 3 }} activeDot={{ r: 6 }} hide={!visibleFinancials.totalExpenses} name="Total Expenses" />
+                      <Line type="monotone" dataKey="netProfit" stroke="#6366f1" strokeWidth={2.5} dot={{ r: trendData.length === 1 ? 5 : 3 }} activeDot={{ r: 6 }} hide={!visibleFinancials.netProfit} name="Net Profit" />
+                    </LineChart>
+                  ) : (
+                    <BarChart
+                      data={trendData}
+                      margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                      onClick={(nextState) => {
+                        if (nextState && nextState.activeTooltipIndex !== undefined) {
+                          setSelectedMonthIndex(nextState.activeTooltipIndex)
+                        }
+                      }}
+                      className="cursor-pointer"
+                    >
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" className="dark:stroke-slate-800" />
+                      <XAxis dataKey="monthName" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: 'gray' }} />
+                      <YAxis tickLine={false} axisLine={false} tickFormatter={(tick) => `₹${(tick / 1000).toFixed(0)}k`} tick={{ fontSize: 11, fill: 'gray' }} />
+                      <Tooltip content={<CustomFinancialTooltip />} />
+                      <Legend onClick={handleFinancialLegendClick} formatter={renderLegendText} verticalAlign="top" height={36} wrapperStyle={{ fontSize: 12 }} />
+                      <Bar dataKey="revenue" fill="#10b981" radius={[4, 4, 0, 0]} hide={!visibleFinancials.revenue} name="Revenue" maxBarSize={25} />
+                      <Bar dataKey="totalExpenses" fill="#f43f5e" radius={[4, 4, 0, 0]} hide={!visibleFinancials.totalExpenses} name="Total Expenses" maxBarSize={25} />
+                      <Bar dataKey="netProfit" fill="#6366f1" radius={[4, 4, 0, 0]} hide={!visibleFinancials.netProfit} name="Net Profit" maxBarSize={25} />
+                    </BarChart>
+                  )}
                 </ResponsiveContainer>
               </div>
             </div>
           </div>
 
+          {/* Selected Month Details Section */}
+          {selectedData && (
+            <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm flex flex-col gap-4 animate-fade-in">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-3">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <Calendar className="text-blue-500" size={16} /> Selected Month Performance Profile
+                  </h3>
+                  <p className="text-slate-500 text-xs mt-0.5">
+                    Detailed analysis for <span className="font-semibold text-blue-600 dark:text-blue-400">{selectedData.monthName} {selectedData.year}</span> (Click points in the trend charts above to change month)
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500">Health Score:</span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${getScoreColor(selectedData.overallScore)} bg-slate-50 dark:bg-slate-950`}>
+                    {selectedData.overallScore ?? 'N/A'} / 100
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
+                {/* Radar Chart (Category Scores breakdown) */}
+                <div className="flex flex-col items-center justify-center p-4 border border-slate-100 dark:border-slate-850 rounded-lg bg-slate-50/50 dark:bg-slate-950/20 h-[300px]">
+                  <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 self-start uppercase tracking-wider">Strength Profile (Category Scores)</h4>
+                  <div className="w-full h-full max-h-[240px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RadarChart cx="50%" cy="50%" outerRadius="75%" data={radarData}>
+                        <PolarGrid stroke="#e2e8f0" className="dark:stroke-slate-800" />
+                        <PolarAngleAxis dataKey="subject" tick={{ fontSize: 10, fill: 'gray' }} />
+                        <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 9 }} />
+                        <Radar name="Score" dataKey="value" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} />
+                        <Tooltip formatter={(value) => [`${value} / 100`, 'Score']} />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Donut Chart (Financial share breakdown) */}
+                <div className="flex flex-col items-center justify-center p-4 border border-slate-100 dark:border-slate-850 rounded-lg bg-slate-50/50 dark:bg-slate-950/20 h-[300px] relative">
+                  <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 self-start uppercase tracking-wider">Revenue Allocation (Profit vs Expenses)</h4>
+                  {pieData.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-slate-400 text-xs">
+                      <span>No financial data for this month.</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="w-full h-full max-h-[220px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={pieData}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={55}
+                              outerRadius={75}
+                              paddingAngle={3}
+                              dataKey="value"
+                            >
+                              {pieData.map((entry, idx) => (
+                                <Cell key={`cell-${idx}`} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Tooltip formatter={(value) => [formatCurrency(value), '']} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none mt-6">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Revenue</span>
+                        <span className="text-sm font-bold text-slate-800 dark:text-slate-100">{formatCurrency(totalRevenue)}</span>
+                      </div>
+                      <div className="flex justify-center gap-4 text-xs mt-1">
+                        {(() => {
+                          const totalPieValue = pieData.reduce((sum, p) => sum + p.value, 0)
+                          return pieData.map((item, idx) => (
+                            <div key={idx} className="flex items-center gap-1">
+                              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }}></span>
+                              <span className="text-slate-600 dark:text-slate-400 font-semibold">
+                                {item.name} ({((item.value / (totalPieValue || 1)) * 100).toFixed(0)}%)
+                              </span>
+                            </div>
+                          ))
+                        })()}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Sub-scores Sparkline Grid */}
           <div className="flex flex-col gap-3">
             <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">Category Score Trends</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {[
-                { name: 'Profitability', key: 'profitabilityScore', color: '#10b981', icon: DollarSign },
-                { name: 'Cash Flow', key: 'cashFlowScore', color: '#3b82f6', icon: Activity },
-                { name: 'Inventory Efficiency', key: 'inventoryScore', color: '#f59e0b', icon: Package },
-                { name: 'Customer Engagement', key: 'customerScore', color: '#8b5cf6', icon: Users },
-                { name: 'Receivables Control', key: 'receivablesScore', color: '#f43f5e', icon: BookOpen },
-                { name: 'Suppliers Management', key: 'suppliersScore', color: '#06b6d4', icon: Truck }
-              ].map((sub, idx) => {
+              {categories.map((sub, idx) => {
                 const Icon = sub.icon
+                const isActive = activeCategory === sub.key
                 return (
-                  <div key={idx} className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm flex flex-col gap-3">
+                  <div
+                    key={idx}
+                    onClick={() => setActiveCategory(isActive ? null : sub.key)}
+                    className={`p-4 bg-white dark:bg-slate-900 border rounded-xl shadow-sm flex flex-col gap-3 cursor-pointer transition-all duration-300 hover:scale-[1.02] hover:shadow-md select-none ${
+                      isActive
+                        ? 'border-transparent shadow-lg'
+                        : 'border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600'
+                    }`}
+                    style={isActive ? { border: `2px solid ${sub.color}`, boxShadow: `0 4px 12px ${sub.color}20` } : {}}
+                  >
                     <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-2">
                       <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                         <Icon size={14} className="text-slate-400 dark:text-slate-500" /> {sub.name}
                       </span>
+                      {isActive && (
+                        <span className="text-[9px] font-bold px-2 py-0.5 rounded text-white" style={{ backgroundColor: sub.color }}>
+                          Comparing
+                        </span>
+                      )}
                     </div>
                     <div className="h-[100px] w-full">
                       <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={trendData} margin={{ top: 5, right: 5, left: -40, bottom: 5 }}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" className="dark:stroke-slate-850" />
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" className="dark:stroke-slate-855" />
                           <XAxis dataKey="monthName" hide />
                           <YAxis domain={[0, 100]} hide />
                           <Tooltip content={<CustomScoreTooltip />} />
-                          <Area type="monotone" dataKey={sub.key} stroke={sub.color} fill={sub.color} strokeWidth={2} fillOpacity={0.1} connectNulls={false} name={sub.name} />
+                          <Area type="monotone" dataKey={sub.key} stroke={sub.color} fill={sub.color} strokeWidth={2} fillOpacity={0.1} connectNulls={false} name={sub.name} dot={{ r: trendData.length === 1 ? 4 : 0 }} activeDot={{ r: 5 }} />
                         </AreaChart>
                       </ResponsiveContainer>
                     </div>

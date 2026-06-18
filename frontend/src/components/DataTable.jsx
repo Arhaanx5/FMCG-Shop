@@ -238,7 +238,7 @@ export default function DataTable({
                 >
                   {columns.map((col, colIdx) => {
                     const sticky = stickyOffsets[colIdx]
-                    const shouldWrap = col.wrap ?? (col.accessor === 'description' || col.accessor === 'details' || col.accessor === 'productName' || col.accessor === 'notes' || col.accessor === 'address' || col.accessor === 'remarks' || col.accessor === 'message');
+                    const shouldWrap = col.wrap ?? (col.accessor === 'description' || col.accessor === 'details' || col.accessor === 'notes' || col.accessor === 'address' || col.accessor === 'remarks' || col.accessor === 'message');
                     return (
                       <td
                         key={col.key || col.accessor}

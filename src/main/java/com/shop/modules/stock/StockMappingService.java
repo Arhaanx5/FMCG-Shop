@@ -33,6 +33,7 @@ public class StockMappingService {
         private BigDecimal buyPricePerPiece;
         private BigDecimal taxableValue;
         private BigDecimal gstPercent;
+        private int offerUnitsDetected; // free units detected from OCR
     }
 
     @Data
@@ -59,6 +60,7 @@ public class StockMappingService {
         private BigDecimal buyPriceWithoutTax; // Price per Primary BOX
         private boolean duplicateBatch;
         private boolean newProduct;
+        private int offerUnitsAdded; // free units detected from OCR (default 0, user can edit)
     }
 
     public List<MappedStockPreview> mapInvoiceItems(List<RawInvoiceItem> rawItems) {
@@ -116,7 +118,8 @@ public class StockMappingService {
                         .primaryAdded(rawItem.getInvoiceCases())
                         .secondaryAdded(secondaryAdded)
                         .openBoxAdded(0)
-                        .buyPriceWithoutTax(buyPriceWithoutTax);
+                        .buyPriceWithoutTax(buyPriceWithoutTax)
+                        .offerUnitsAdded(rawItem.getOfferUnitsDetected());
             } else {
                 // Map based on existing product's DB configurations
                 int ratio = bestMatch.getSecondaryPerPrimary() != null ? bestMatch.getSecondaryPerPrimary() : 1;
@@ -160,7 +163,8 @@ public class StockMappingService {
                         .primaryAdded(primaryAdded)
                         .secondaryAdded(totalSecondaryUnits)
                         .openBoxAdded(openBoxAdded)
-                        .buyPriceWithoutTax(buyPriceWithoutTax);
+                        .buyPriceWithoutTax(buyPriceWithoutTax)
+                        .offerUnitsAdded(rawItem.getOfferUnitsDetected());
             }
 
             previewList.add(builder.build());
@@ -173,6 +177,8 @@ public class StockMappingService {
         if (name == null) return "";
         return name.toLowerCase()
                 .replaceAll("[-/\\\\*|().,;:&+_]", " ")
+                .replaceAll("(\\d+)([a-zA-Z]+)", "$1 $2")
+                .replaceAll("([a-zA-Z]+)(\\d+)", "$1 $2")
                 .replaceAll("\\s+", " ")
                 .trim();
     }
@@ -242,6 +248,11 @@ public class StockMappingService {
                 continue;
             }
 
+            // Check for flavor mismatch
+            if (isFlavorMismatch(rawName, product.getName())) {
+                continue;
+            }
+
             String dbNameLower = product.getName().toLowerCase();
             String normalizedDb = normalizeName(product.getName());
 
@@ -303,25 +314,18 @@ public class StockMappingService {
             foundPriceIndicator = true;
             String valStr = m.group(1);
             if (valStr.equals(rawMrpStr)) {
-                return false; // Exact match found
-            }
-            // Handle OCR noise (e.g. "20155" matches raw "20", "513" matches raw "5")
-            if (valStr.startsWith(rawMrpStr) || rawMrpStr.startsWith(valStr)) {
-                return false; // Valid prefix/suffix match under OCR noise
+                return false; // Exact match only — Rs5 != Rs50, Rs20 != Rs200
             }
         }
 
-        // 2. Match patterns like "/X" or "-X" at the end of the name or before word boundaries (e.g. "/5" or "-20")
-        java.util.regex.Pattern pEnd = java.util.regex.Pattern.compile("[/-]\\s*(\\d+)(?:\\s|$|gm|kg)");
+        // 2. Match patterns like "/X" or "-X" at the end of the name or before word boundaries (e.g. "/5" or "-20"), excluding weight/volume units
+        java.util.regex.Pattern pEnd = java.util.regex.Pattern.compile("[/-]\\s*(\\d+)(?!\\s*(?:gm|kg|ml|l|g)\\b)(?:\\s|$|/)");
         java.util.regex.Matcher mEnd = pEnd.matcher(nameLower);
         while (mEnd.find()) {
             foundPriceIndicator = true;
             String valStr = mEnd.group(1);
             if (valStr.equals(rawMrpStr)) {
-                return false; // Exact match found
-            }
-            if (valStr.startsWith(rawMrpStr) || rawMrpStr.startsWith(valStr)) {
-                return false; // Valid prefix/suffix match under OCR noise
+                return false; // Exact match only — Rs5 != Rs50, Rs20 != Rs200
             }
         }
 
@@ -330,6 +334,34 @@ public class StockMappingService {
             return true;
         }
 
+        return false;
+    }
+
+    private boolean isFlavorMismatch(String rawName, String dbName) {
+        String[] flavors = {"tomato", "salted", "classic", "masala", "pudina", "onion", "chilli", "thai", "cream"};
+        String rawLower = rawName.toLowerCase();
+        String dbLower = dbName.toLowerCase();
+        
+        String rawFlavor = null;
+        String dbFlavor = null;
+        
+        for (String f : flavors) {
+            if (rawLower.contains(f)) {
+                rawFlavor = f;
+            }
+            if (dbLower.contains(f)) {
+                dbFlavor = f;
+            }
+        }
+        
+        if (rawFlavor != null && dbFlavor != null && !rawFlavor.equals(dbFlavor)) {
+            // "classic" and "salted" are allowed to overlap (e.g. "classic salted" vs "salted")
+            if ((rawFlavor.equals("classic") && dbFlavor.equals("salted")) || 
+                (rawFlavor.equals("salted") && dbFlavor.equals("classic"))) {
+                return false;
+            }
+            return true;
+        }
         return false;
     }
 

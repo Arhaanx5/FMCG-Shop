@@ -53,6 +53,16 @@ public class StockBatch {
     @Builder.Default
     private Integer secondarySoftReserved = 0;
 
+    // Offer/free units received from distributor (cost = ₹0, tracked separately)
+    @Column(name = "offer_secondary_received")
+    @Builder.Default
+    private Integer offerSecondaryReceived = 0;
+
+    // Offer units remaining (deducted when given to customer at ₹0)
+    @Column(name = "offer_secondary_remaining")
+    @Builder.Default
+    private Integer offerSecondaryRemaining = 0;
+
     // Buy price without tax per PRIMARY unit
     @Column(name = "buy_price_without_tax")
     private BigDecimal buyPriceWithoutTax;

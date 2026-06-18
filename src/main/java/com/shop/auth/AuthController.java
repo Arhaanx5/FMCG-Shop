@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -26,19 +27,22 @@ public class AuthController {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final TotpUtil totpUtil;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     // ── Simple in-memory rate limiter (no external dep needed) ──
     // Tracks failed attempts per phone number
     private final ConcurrentHashMap<String, long[]> failedAttempts = new ConcurrentHashMap<>();
-    private static final int MAX_ATTEMPTS    = 5;
-    private static final long WINDOW_MS      = 15 * 60 * 1000L; // 15 minutes
+    private static final int MAX_ATTEMPTS = 5;
+    private static final long WINDOW_MS = 15 * 60 * 1000L; // 15 minutes
 
     private boolean isRateLimited(String phone) {
         long now = System.currentTimeMillis();
         failedAttempts.compute(phone, (k, v) -> {
-            if (v == null) return new long[]{0, now};
+            if (v == null)
+                return new long[] { 0, now };
             // Reset window if expired
-            if (now - v[1] > WINDOW_MS) return new long[]{0, now};
+            if (now - v[1] > WINDOW_MS)
+                return new long[] { 0, now };
             return v;
         });
         long[] state = failedAttempts.get(phone);
@@ -49,7 +53,8 @@ public class AuthController {
     private void recordFailedAttempt(String phone) {
         long now = System.currentTimeMillis();
         failedAttempts.compute(phone, (k, v) -> {
-            if (v == null || (now - v[1]) > WINDOW_MS) return new long[]{1, now};
+            if (v == null || (now - v[1]) > WINDOW_MS)
+                return new long[] { 1, now };
             v[0]++;
             return v;
         });
@@ -65,14 +70,14 @@ public class AuthController {
         if (req.getPhone() != null && isRateLimited(req.getPhone())) {
             log.warn("SECURITY: Rate limit exceeded for phone: {}", req.getPhone());
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
-                .body(Map.of("error", "Too many failed attempts. Please try again after 15 minutes."));
+                    .body(Map.of("error", "Too many failed attempts. Please try again after 15 minutes."));
         }
 
         // ── Input validation: password max length to prevent BCrypt DoS ──
         if (req.getPassword() != null && req.getPassword().length() > 72) {
             recordFailedAttempt(req.getPhone());
             return ResponseEntity.status(401)
-                .body(Map.of("error", "Invalid credentials"));
+                    .body(Map.of("error", "Invalid credentials"));
         }
 
         User user = userRepository.findByPhone(req.getPhone())
@@ -82,7 +87,7 @@ public class AuthController {
             recordFailedAttempt(req.getPhone() != null ? req.getPhone() : "unknown");
             log.warn("SECURITY: Failed login — user not found or inactive: {}", req.getPhone());
             return ResponseEntity.status(401)
-                .body(Map.of("error", "Invalid credentials"));
+                    .body(Map.of("error", "Invalid credentials"));
         }
 
         if (!passwordEncoder.matches(req.getPassword(),
@@ -90,7 +95,7 @@ public class AuthController {
             recordFailedAttempt(req.getPhone());
             log.warn("SECURITY: Failed login — wrong password for: {}", req.getPhone());
             return ResponseEntity.status(401)
-                .body(Map.of("error", "Invalid credentials"));
+                    .body(Map.of("error", "Invalid credentials"));
         }
 
         // ── Success ──────────────────────────────────────────────
@@ -103,23 +108,20 @@ public class AuthController {
             return ResponseEntity.ok(Map.of(
                     "mfaRequired", true,
                     "mfaToken", mfaToken,
-                    "phone", user.getPhone()
-            ));
+                    "phone", user.getPhone()));
         }
 
         String token = jwtUtil.generateToken(
                 user.getPhone(),
                 user.getRole().name(),
-                user.getId().toString()
-        );
+                user.getId().toString());
 
         return ResponseEntity.ok(Map.of(
                 "token", token,
                 "role", user.getRole(),
                 "name", user.getName(),
                 "userId", user.getId(),
-                "mustChangePassword", user.getMustChangePassword()
-        ));
+                "mustChangePassword", user.getMustChangePassword()));
     }
 
     @GetMapping("/me")
@@ -133,8 +135,7 @@ public class AuthController {
                 "phone", user.getPhone(),
                 "role", user.getRole(),
                 "mustChangePassword", user.getMustChangePassword(),
-                "mfaEnabled", Boolean.TRUE.equals(user.getMfaEnabled())
-        ));
+                "mfaEnabled", Boolean.TRUE.equals(user.getMfaEnabled())));
     }
 
     @PostMapping("/change-password")
@@ -145,11 +146,11 @@ public class AuthController {
         // ── Password length guard (DoS prevention) ───────────────
         if (req.getCurrentPassword() != null && req.getCurrentPassword().length() > 72) {
             return ResponseEntity.status(400)
-                .body(Map.of("error", "Invalid current password"));
+                    .body(Map.of("error", "Invalid current password"));
         }
         if (req.getNewPassword() != null && req.getNewPassword().length() > 72) {
             return ResponseEntity.status(400)
-                .body(Map.of("error", "New password must not exceed 72 characters"));
+                    .body(Map.of("error", "New password must not exceed 72 characters"));
         }
 
         String token = header.substring(7);
@@ -159,11 +160,11 @@ public class AuthController {
         if (!passwordEncoder.matches(req.getCurrentPassword(),
                 user.getPasswordHash())) {
             return ResponseEntity.status(400)
-                .body(Map.of("error", "Current password is incorrect"));
+                    .body(Map.of("error", "Current password is incorrect"));
         }
 
         user.setPasswordHash(
-            passwordEncoder.encode(req.getNewPassword()));
+                passwordEncoder.encode(req.getNewPassword()));
         user.setMustChangePassword(false);
         userRepository.save(user);
         log.info("SECURITY: Password changed for: {}", phone);
@@ -188,8 +189,7 @@ public class AuthController {
         String qrCodeUrl = totpUtil.getQrCodeUrl(secret, user.getPhone());
         return ResponseEntity.ok(Map.of(
                 "secret", secret,
-                "qrCodeUrl", qrCodeUrl
-        ));
+                "qrCodeUrl", qrCodeUrl));
     }
 
     @PostMapping("/mfa/enable")
@@ -289,8 +289,7 @@ public class AuthController {
         String token = jwtUtil.generateToken(
                 user.getPhone(),
                 user.getRole().name(),
-                user.getId().toString()
-        );
+                user.getId().toString());
 
         log.info("SECURITY: Successful MFA login verification for: {}", phone);
         return ResponseEntity.ok(Map.of(
@@ -298,8 +297,7 @@ public class AuthController {
                 "role", user.getRole(),
                 "name", user.getName(),
                 "userId", user.getId(),
-                "mustChangePassword", user.getMustChangePassword()
-        ));
+                "mustChangePassword", user.getMustChangePassword()));
     }
 
     // ── Inner DTOs ───────────────────────────────────────────────
@@ -314,13 +312,43 @@ public class AuthController {
 
     @Data
     static class ChangePasswordRequest {
-        @Size(max = 72) private String currentPassword;
+        @Size(max = 72)
+        private String currentPassword;
         @NotBlank(message = "New password cannot be blank")
         @Size(min = 8, max = 72, message = "New password must be between 8 and 72 characters")
-        @jakarta.validation.constraints.Pattern(
-                regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]{8,72}$",
-                message = "New password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character"
-        )
+        @jakarta.validation.constraints.Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]{8,72}$", message = "New password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character")
         private String newPassword;
+    }
+
+    @GetMapping("/temp-stocks-debug")
+    public ResponseEntity<?> getTempStocksDebug() {
+        try {
+            // 1. Fetch all stock batches starting with TEMP
+            String batchSql = "SELECT sb.id, sb.batch_number, sb.invoice_number, sb.primary_received, " +
+                    "sb.secondary_received, sb.secondary_remaining, sb.buy_price_with_tax, " +
+                    "sb.supplier_name, sb.received_at, p.name AS product_name " +
+                    "FROM stock_batches sb " +
+                    "JOIN products p ON sb.product_id = p.id " +
+                    "WHERE sb.batch_number ILIKE 'TEMP%' " +
+                    "ORDER BY sb.received_at DESC";
+            List<Map<String, Object>> batches = jdbcTemplate.queryForList(batchSql);
+
+            // 2. Fetch all expenses related to TEMP batches
+            String expenseSql = "SELECT id, category, amount, description, expense_date, created_at " +
+                    "FROM expenses " +
+                    "WHERE description ILIKE '%TEMP%' " +
+                    "ORDER BY expense_date DESC, created_at DESC";
+            List<Map<String, Object>> expenses = jdbcTemplate.queryForList(expenseSql);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "batches", batches,
+                    "expenses", expenses));
+        } catch (Exception e) {
+            log.error("Failed to query temp stocks debug info", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+                    "success", false,
+                    "error", e.getMessage()));
+        }
     }
 }

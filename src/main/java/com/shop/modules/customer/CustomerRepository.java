@@ -44,4 +44,7 @@ public interface CustomerRepository extends JpaRepository<Customer, UUID> {
 
     @Query("SELECT COUNT(c) > 0 FROM Customer c WHERE c.phone = :phone AND c.active = true AND c.id <> :excludeId")
     boolean existsByPhoneAndActiveTrueAndIdNot(@Param("phone") String phone, @Param("excludeId") UUID excludeId);
+
+    @Query("SELECT c FROM Customer c WHERE c.active = true AND c.totalPending > 0")
+    List<Customer> findActiveCustomersWithPendingBalance();
 }

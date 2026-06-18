@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Plus, AlertTriangle, Clock, Package, Edit2, History, Trash2, Settings, PlayCircle, CheckCircle, XCircle, Camera, Upload } from 'lucide-react'
+import { Plus, AlertTriangle, Clock, Package, Edit2, History, Trash2, Settings, PlayCircle, CheckCircle, XCircle, Camera, Upload, Calendar } from 'lucide-react'
 import api from '../services/api'
 import DataTable from '../components/DataTable'
 import Pagination from '../components/Pagination'
@@ -17,6 +17,7 @@ const emptyForm = {
   invoiceNumber: '',
   primaryReceived: '', 
   extraSecondaryReceived: '', 
+  offerSecondaryReceived: '', 
   buyPriceWithoutTax: '', 
   buyPriceWithTax: '', 
   expiryDate: '', 
@@ -98,6 +99,18 @@ export default function Stock() {
   
   // Quick Add Product states
   const [showQuickProductModal, setShowQuickProductModal] = useState(false)
+  
+  // Daily Inward states
+  const getLocalDateString = () => {
+    const d = new Date()
+    const year = d.getFullYear()
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+  const [inwardDate, setInwardDate] = useState(getLocalDateString())
+  const [inwardBatches, setInwardBatches] = useState([])
+  const [inwardLoading, setInwardLoading] = useState(false)
   const [quickProductIndex, setQuickProductIndex] = useState(null)
   const [quickProductForm, setQuickProductForm] = useState({
     name: '', brand: '', category: 'SNACKS', otherCategoryDetail: '', gstPercent: '5', cessPercent: '0', isCessApplicable: false,
@@ -139,6 +152,19 @@ export default function Stock() {
     }
   }
 
+  const loadInwardBatches = async (dateVal) => {
+    if (!dateVal) return
+    setInwardLoading(true)
+    try {
+      const res = await api.get(`/stock/batches?date=${dateVal}`)
+      setInwardBatches(res.data.data || [])
+    } catch {
+      toast.error('Failed to load inward stock batches')
+    } finally {
+      setInwardLoading(false)
+    }
+  }
+
   const loadSchedulerStatus = async () => {
     setSchedulerLoading(true)
     try {
@@ -169,7 +195,8 @@ export default function Stock() {
   useEffect(() => {
     if (activeTab === 'audit' && isAdmin) loadAuditLogs(0)
     if (activeTab === 'scheduler' && isAdmin) loadSchedulerStatus()
-  }, [activeTab])
+    if (activeTab === 'daily-inward') loadInwardBatches(inwardDate)
+  }, [activeTab, inwardDate])
 
   const handleAdjustPriceChange = (type, value) => {
     if (!adjustingBatch) return
@@ -224,6 +251,9 @@ export default function Stock() {
         loadBatches(batchProduct.id, batchProduct.name)
       }
       loadAll()
+      if (activeTab === 'daily-inward') {
+        loadInwardBatches(inwardDate)
+      }
     } catch (err) {
       if (err.response?.status === 400 && err.response?.data?.data && typeof err.response.data.data === 'object') {
         setValidationErrors(err.response.data.data)
@@ -713,6 +743,7 @@ export default function Stock() {
           invoiceNumber: scannerInvoiceNumber || null,
           primaryReceived: item.primaryAdded,
           extraSecondaryReceived: item.openBoxAdded,
+          offerSecondaryReceived: item.offerUnitsAdded || 0,
           buyPriceWithoutTax: item.buyPriceWithoutTax,
           expiryDate: item.expiryDate,
           supplierName: scannerSupplier,
@@ -773,6 +804,7 @@ export default function Stock() {
         ...form,
         primaryReceived: Number(form.primaryReceived || 0),
         extraSecondaryReceived: Number(form.extraSecondaryReceived || 0),
+        offerSecondaryReceived: Number(form.offerSecondaryReceived || 0),
         buyPriceWithoutTax: Number(form.buyPriceWithoutTax || 0),
         buyPriceWithTax: form.buyPriceWithTax ? Number(form.buyPriceWithTax) : null,
         sellPricePrimary: form.sellPricePrimary ? Number(form.sellPricePrimary) : null,
@@ -785,6 +817,9 @@ export default function Stock() {
       setForm({ ...emptyForm })
       setValidationErrors({})
       loadAll()
+      if (activeTab === 'daily-inward') {
+        loadInwardBatches(inwardDate)
+      }
     } catch (err) {
       if (err.response?.status === 400 && err.response?.data?.data && typeof err.response.data.data === 'object') {
         setValidationErrors(err.response.data.data)
@@ -898,6 +933,54 @@ export default function Stock() {
     return true
   })
 
+  const getBatchTotalValue = (batch) => {
+    const ratio = batch.secondaryPerPrimary || 1
+    const buyPrice = Number(batch.buyPriceWithTax || 0)
+    const totalSec = batch.secondaryReceived || 0
+    return totalSec * (buyPrice / ratio)
+  }
+
+  const inwardColumns = [
+    { header: 'Time', accessor: 'receivedAt', render: (row) => row.receivedAt ? new Date(row.receivedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—' },
+    { header: 'Product', accessor: 'productName', render: (row) => (
+      <div>
+        <div className="font-medium">{row.productName}</div>
+        {row.brand && <div className="text-xs text-muted">{row.brand}</div>}
+      </div>
+    )},
+    { header: 'Batch #', accessor: 'batchNumber', render: (row) => <span className="font-mono text-xs font-semibold">{row.batchNumber}</span> },
+    { header: 'Invoice No', accessor: 'invoiceNumber', render: (row) => row.invoiceNumber || <span className="text-muted">Manual</span> },
+    { header: 'Supplier', accessor: 'supplierName' },
+    { header: 'Qty Received', key: 'qtyReceived', render: (row) => {
+      const primary = row.primaryReceived || 0
+      const totalSec = row.secondaryReceived || 0
+      const ratio = row.secondaryPerPrimary || 1
+      const extra = Math.max(0, totalSec - (primary * ratio))
+      if (primary > 0 && extra > 0) {
+        return `${primary} ${row.primaryUnit || 'BOX'} + ${extra} ${row.secondaryUnit || 'LADI'}`
+      } else if (primary > 0) {
+        return `${primary} ${row.primaryUnit || 'BOX'}`
+      } else {
+        return `${totalSec} ${row.secondaryUnit || 'LADI'}`
+      }
+    }},
+    { header: 'Buy Price', key: 'buyPrice', render: (row) => (
+      <div>
+        <div>₹{Number(row.buyPriceWithTax || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+        <div className="text-xs text-muted">₹{Number(row.buyPriceWithoutTax || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })} (Ex.)</div>
+      </div>
+    )},
+    { header: 'Total Value', key: 'totalValue', render: (row) => {
+      const val = getBatchTotalValue(row)
+      return <span className="font-semibold text-success">₹{val.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+    }}
+  ].filter(col => {
+    if (isMobile) {
+      return !['receivedAt', 'invoiceNumber', 'supplierName', 'buyPrice'].includes(col.accessor || col.key)
+    }
+    return true
+  })
+
   const batchColumns = [
     { header: 'Batch #', accessor: 'batchNumber' },
     { header: 'Received', key: 'received', render: (row) => {
@@ -947,6 +1030,39 @@ export default function Stock() {
     return true
   })
 
+  const getInwardStats = () => {
+    let totalValueWithTax = 0
+    let totalValueWithoutTax = 0
+    let distinctProductIds = new Set()
+    let totalPrimary = 0
+    let totalExtraSecondary = 0
+
+    inwardBatches.forEach(b => {
+      const ratio = b.secondaryPerPrimary || 1
+      const totalSec = b.secondaryReceived || 0
+      
+      const valWithTax = totalSec * (Number(b.buyPriceWithTax || 0) / ratio)
+      const valWithoutTax = totalSec * (Number(b.buyPriceWithoutTax || 0) / ratio)
+      
+      totalValueWithTax += valWithTax
+      totalValueWithoutTax += valWithoutTax
+      
+      if (b.productId) distinctProductIds.add(b.productId)
+      
+      totalPrimary += b.primaryReceived || 0
+      const extra = Math.max(0, totalSec - ((b.primaryReceived || 0) * ratio))
+      totalExtraSecondary += extra
+    })
+
+    return {
+      totalValueWithTax,
+      totalValueWithoutTax,
+      distinctProductsCount: distinctProductIds.size,
+      totalPrimary,
+      totalExtraSecondary
+    }
+  }
+
   return (
     <div className="page-container">
       <div className="page-header">
@@ -977,6 +1093,9 @@ export default function Stock() {
       <div className="tabs">
         <button className={`tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>
           <Package size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Stock Overview
+        </button>
+        <button className={`tab ${activeTab === 'daily-inward' ? 'active' : ''}`} onClick={() => setActiveTab('daily-inward')}>
+          <Calendar size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Daily Inward
         </button>
         <button className={`tab ${activeTab === 'expiring' ? 'active' : ''}`} onClick={() => setActiveTab('expiring')}>
           <Clock size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Expiring Soon ({expiring.length})
@@ -1017,6 +1136,155 @@ export default function Stock() {
           />
         </>
       )}
+
+      {activeTab === 'daily-inward' && (() => {
+        const stats = getInwardStats()
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+            {/* Date Picker and Quick Actions */}
+            <div style={{
+              background: 'var(--color-surface)',
+              border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius-lg)',
+              padding: 'var(--space-4) var(--space-5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 'var(--space-3)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                <span className="font-semibold" style={{ fontSize: '14px', color: 'var(--color-text-secondary)' }}>Select Date:</span>
+                <input
+                  type="date"
+                  className="form-input"
+                  style={{ width: '160px', height: '38px', padding: '6px 12px', fontSize: '13px', margin: 0 }}
+                  value={inwardDate}
+                  onChange={e => setInwardDate(e.target.value)}
+                />
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    style={{ height: '38px', minHeight: 0, padding: '0 12px', fontSize: '12px' }}
+                    onClick={() => {
+                      const d = new Date()
+                      d.setDate(d.getDate() - 1)
+                      const y = d.getFullYear()
+                      const m = String(d.getMonth() + 1).padStart(2, '0')
+                      const day = String(d.getDate()).padStart(2, '0')
+                      setInwardDate(`${y}-${m}-${day}`)
+                    }}
+                  >
+                    Yesterday
+                  </button>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    style={{ height: '38px', minHeight: 0, padding: '0 12px', fontSize: '12px' }}
+                    onClick={() => setInwardDate(getLocalDateString())}
+                  >
+                    Today
+                  </button>
+                </div>
+              </div>
+              <span className="text-xs text-muted">Showing inward stock records for {new Date(inwardDate).toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+            </div>
+
+            {/* Summary Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 'var(--space-4)' }}>
+              {/* Card 1: Total Value */}
+              <div style={{
+                background: 'var(--color-surface)',
+                border: '1px solid var(--color-border)',
+                borderRadius: 'var(--radius-lg)',
+                padding: 'var(--space-5)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 'var(--space-2)',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
+              }}>
+                <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 'bold' }}>Total Value (Tax Incl.)</span>
+                <span style={{ fontSize: '24px', fontWeight: '700', color: 'var(--color-success)' }}>
+                  ₹{stats.totalValueWithTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
+                  ₹{stats.totalValueWithoutTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Excl. Tax)
+                </span>
+              </div>
+
+              {/* Card 2: Distinct Products */}
+              <div style={{
+                background: 'var(--color-surface)',
+                border: '1px solid var(--color-border)',
+                borderRadius: 'var(--radius-lg)',
+                padding: 'var(--space-5)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 'var(--space-2)',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
+              }}>
+                <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 'bold' }}>Unique Products</span>
+                <span style={{ fontSize: '24px', fontWeight: '700', color: 'var(--color-primary)' }}>
+                  {stats.distinctProductsCount} Products
+                </span>
+                <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
+                  Across {inwardBatches.length} batch entries
+                </span>
+              </div>
+
+              {/* Card 3: Total Quantity */}
+              <div style={{
+                background: 'var(--color-surface)',
+                border: '1px solid var(--color-border)',
+                borderRadius: 'var(--radius-lg)',
+                padding: 'var(--space-5)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 'var(--space-2)',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
+              }}>
+                <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 'bold' }}>Total Quantity</span>
+                <span style={{ fontSize: '20px', fontWeight: '700', color: 'var(--color-accent)' }}>
+                  {stats.totalPrimary} BOX {stats.totalExtraSecondary > 0 ? `+ ${stats.totalExtraSecondary} units` : ''}
+                </span>
+                <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
+                  Total received stock items
+                </span>
+              </div>
+            </div>
+
+            {/* Inward Data Table */}
+            <DataTable
+              columns={inwardColumns}
+              data={inwardBatches}
+              loading={inwardLoading}
+              searchable={true}
+              searchPlaceholder="Filter daily entries..."
+              emptyMessage="Is tareekh me koi stock receive nahi hua."
+              actions={(row) => (
+                <>
+                  {(isAdmin || isManager) && (
+                    <button
+                      className="btn btn-ghost btn-icon btn-sm"
+                      onClick={() => {
+                        setAdjustingBatch(row)
+                        const ratio = row.secondaryPerPrimary || 1
+                        setAdjustPrimary(Math.floor(row.secondaryRemaining / ratio).toString())
+                        setAdjustBuyPrice(row.buyPriceWithoutTax || '')
+                        setAdjustBuyPriceWithTax(row.buyPriceWithTax || '')
+                        setValidationErrors({})
+                      }}
+                      title="Correct / Adjust Stock"
+                      style={{ color: 'var(--color-accent)' }}
+                    >
+                      <Edit2 size={15} />
+                    </button>
+                  )}
+                </>
+              )}
+            />
+          </div>
+        )
+      })()}
 
       {aiEnabled && activeTab === 'scanner' && (isAdmin || isManager) && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
@@ -1147,9 +1415,9 @@ export default function Stock() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
               {invoiceAlreadyScanned && (
                 <div style={{
-                  background: 'rgba(239, 68, 68, 0.1)',
-                  border: '1px solid var(--color-danger)',
-                  color: 'var(--color-danger)',
+                  background: 'var(--color-warning-soft)',
+                  border: '1px solid var(--color-warning)',
+                  color: 'var(--color-warning)',
                   padding: 'var(--space-3) var(--space-4)',
                   borderRadius: 'var(--radius-md)',
                   display: 'flex',
@@ -1160,7 +1428,7 @@ export default function Stock() {
                 }}>
                   <AlertTriangle size={18} />
                   <span>
-                    This invoice (<strong>{scannerInvoiceNumber}</strong>) from supplier <strong>{scannerSupplier}</strong> has already been scanned. Duplicate entries are blocked!
+                    This invoice (<strong>{scannerInvoiceNumber}</strong>) from supplier <strong>{scannerSupplier}</strong> has already been scanned.
                   </span>
                 </div>
               )}
@@ -1211,15 +1479,16 @@ export default function Stock() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-secondary)', fontWeight: '600' }}>
-                      <th style={{ padding: '12px 16px' }}>Invoice Item</th>
-                      <th style={{ padding: '12px 16px' }}>Category</th>
-                      <th style={{ padding: '12px 16px' }}>Primary</th>
-                      <th style={{ padding: '12px 16px' }}>Secondary</th>
-                      <th style={{ padding: '12px 16px' }}>Open Box</th>
-                      <th style={{ padding: '12px 16px' }}>Batch No</th>
-                      <th style={{ padding: '12px 16px' }}>Expiry</th>
-                      <th style={{ padding: '12px 16px' }}>Buy (BOX)</th>
-                      <th style={{ padding: '12px 16px' }}>Status</th>
+                      <th style={{ padding: '12px 16px', minWidth: '250px' }}>Invoice Item</th>
+                      <th style={{ padding: '12px 16px', minWidth: '120px' }}>Category</th>
+                      <th style={{ padding: '12px 16px', minWidth: '100px' }}>Primary</th>
+                      <th style={{ padding: '12px 16px', minWidth: '100px' }}>Secondary</th>
+                      <th style={{ padding: '12px 16px', minWidth: '100px' }}>Open Box</th>
+                      <th style={{ padding: '12px 16px', minWidth: '110px' }}>Offer LADI (Free)</th>
+                      <th style={{ padding: '12px 16px', minWidth: '110px' }}>Batch No</th>
+                      <th style={{ padding: '12px 16px', minWidth: '140px' }}>Expiry</th>
+                      <th style={{ padding: '12px 16px', minWidth: '110px' }}>Buy (BOX)</th>
+                      <th style={{ padding: '12px 16px', minWidth: '110px' }}>Status</th>
                       <th style={{ padding: '12px 16px', minWidth: '220px' }}>Mapped DB Product</th>
                       <th style={{ padding: '12px 16px', textAlign: 'center' }}>Action</th>
                     </tr>
@@ -1227,7 +1496,7 @@ export default function Stock() {
                   <tbody>
                     {scannerPreview.map((item, index) => (
                       <tr key={index} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                        <td style={{ padding: '8px 16px', verticalAlign: 'middle' }}>
+                        <td style={{ padding: '8px 16px', verticalAlign: 'middle', minWidth: '250px' }}>
                           {editingNameIndex === index ? (
                             <textarea
                               className="form-input"
@@ -1268,7 +1537,8 @@ export default function Stock() {
                                 border: '1px dashed transparent',
                                 minHeight: '32px',
                                 display: 'flex',
-                                alignItems: 'center'
+                                alignItems: 'center',
+                                whiteSpace: 'nowrap'
                               }}
                               onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--color-border)'}
                               onMouseLeave={e => e.currentTarget.style.borderColor = 'transparent'}
@@ -1339,6 +1609,24 @@ export default function Stock() {
                               }}
                             />
                             <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>left</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '8px 16px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <input
+                              type="number"
+                              className="form-input"
+                              style={{ width: '60px', padding: '4px 8px', fontSize: '12px', margin: 0 }}
+                              value={item.offerUnitsAdded ?? ''}
+                              min="0"
+                              onChange={e => {
+                                const val = e.target.value;
+                                const updated = [...scannerPreview];
+                                updated[index].offerUnitsAdded = val === '' ? '' : (parseInt(val) || 0);
+                                setScannerPreview(updated);
+                              }}
+                            />
+                            <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{item.secondaryUnit || 'LADI'}</span>
                           </div>
                         </td>
                         <td style={{ padding: '8px 16px' }}>
@@ -1452,7 +1740,7 @@ export default function Stock() {
                 <motion.button
                   onClick={handleScannerSubmit}
                   className="btn btn-primary"
-                  disabled={saving || invoiceAlreadyScanned}
+                  disabled={saving}
                   whileTap={{ scale: 0.95 }}
                 >
                   {saving ? 'Saving Stock...' : 'Confirm & Save Stock to DB'}
@@ -1832,7 +2120,7 @@ export default function Stock() {
                   />
                 </div>
               </div>
-              <div className="form-row-4">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 'var(--space-4)' }}>
                 <div className="form-group">
                   <label className="form-label">Primary Units ({primaryUnit})</label>
                   <input 
@@ -1864,6 +2152,17 @@ export default function Stock() {
                       {validationErrors.extraSecondaryReceived}
                     </span>
                   )}
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Offer LADI (Free)</label>
+                  <input 
+                    className="form-input" 
+                    type="number" 
+                    min="0" 
+                    value={form.offerSecondaryReceived} 
+                    onChange={e => updateField('offerSecondaryReceived', e.target.value)} 
+                    placeholder="0"
+                  />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Buy Price (Excl. Tax) ₹ *</label>

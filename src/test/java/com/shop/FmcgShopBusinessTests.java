@@ -122,7 +122,7 @@ public class FmcgShopBusinessTests {
                 aiReminderGenerator
         );
 
-        this.dashboardService = new DashboardService(
+        this.dashboardService = spy(new DashboardService(
                 billRepository,
                 customerRepository,
                 productRepository,
@@ -137,7 +137,7 @@ public class FmcgShopBusinessTests {
                 billServiceMock,
                 customerServiceMock,
                 backupServiceMock
-        );
+        ));
 
         this.routeOptimizationService = new RouteOptimizationService(deliveryRepository, userRepository);
         
@@ -969,7 +969,7 @@ public class FmcgShopBusinessTests {
                 .netProfit(BigDecimal.valueOf(40000))
                 .totalExpenses(BigDecimal.valueOf(60000))
                 .build();
-        when(dashboardService.getMonthlyReport(2026, 6)).thenReturn(monthlyReport);
+        doReturn(monthlyReport).when(dashboardService).getMonthlyReport(2026, 6);
 
         // Act - first call triggers backfill and repository.save
         com.shop.modules.dashboard.dto.TrendSummaryResponse summary = dashboardAiService.getTrendData(12);
@@ -1015,6 +1015,7 @@ public class FmcgShopBusinessTests {
         c1.setName("Customer A");
         c1.setPhone("9876543210");
         c1.setIsNpa(false);
+        c1.setTotalPending(new BigDecimal("5000.00"));
 
         UUID customerId2 = UUID.randomUUID();
         Customer c2 = new Customer();
@@ -1022,6 +1023,7 @@ public class FmcgShopBusinessTests {
         c2.setName("Customer B");
         c2.setPhone("9876543211");
         c2.setIsNpa(true);
+        c2.setTotalPending(new BigDecimal("10000.00"));
 
         Bill b1 = new Bill();
         b1.setId(UUID.randomUUID());
@@ -1035,6 +1037,7 @@ public class FmcgShopBusinessTests {
         b2.setPendingAmount(new BigDecimal("10000.00"));
         b2.setCreatedAt(LocalDateTime.now().minusDays(10)); // < 15 days overdue
 
+        when(customerRepository.findActiveCustomersWithPendingBalance()).thenReturn(Arrays.asList(c1, c2));
         when(billRepository.findPendingBills()).thenReturn(Arrays.asList(b1, b2));
         when(udharReminderLogRepository.findTopByCustomerIdOrderByReminderSentAtDesc(customerId1)).thenReturn(Optional.empty());
         when(udharReminderLogRepository.findTopByCustomerIdOrderByReminderSentAtDesc(customerId2)).thenReturn(Optional.empty());

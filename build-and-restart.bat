@@ -1,4 +1,7 @@
 @echo off
+:: Ensure standard Windows System32 paths are in the execution PATH
+set PATH=%PATH%;C:\Windows\System32;C:\Windows\System32\WindowsPowerShell\v1.0\
+
 :: Check for Administrator privileges
 net session >nul 2>&1
 if %errorLevel% neq 0 (
@@ -22,8 +25,6 @@ net stop fmcg-backend-uat
 echo.
 
 echo [2/3] Building new JAR package (skipping tests)...
-:: Ensure standard Windows System32 paths are in the execution PATH
-set PATH=%PATH%;C:\Windows\System32;C:\Windows\System32\WindowsPowerShell\v1.0\
 
 :: Try maven wrapper first (CMD syntax)
 call mvnw.cmd clean package -DskipTests

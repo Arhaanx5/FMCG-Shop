@@ -28,6 +28,10 @@ public class StockBatchResponse {
     private Integer secondaryReceived;
     private Integer secondaryRemaining;
 
+    // Offer (free) units from distributor
+    private Integer offerSecondaryReceived;
+    private Integer offerSecondaryRemaining;
+
     // Pricing
     private BigDecimal buyPriceWithoutTax;
     private BigDecimal buyPriceWithTax;

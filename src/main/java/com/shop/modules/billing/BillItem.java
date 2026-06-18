@@ -64,4 +64,8 @@ public class BillItem {
     private BigDecimal cessAmount = BigDecimal.ZERO;
 
     private BigDecimal total;
+
+    @Column(name = "is_offer")
+    @Builder.Default
+    private Boolean offer = false;
 }

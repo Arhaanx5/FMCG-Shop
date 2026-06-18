@@ -42,4 +42,9 @@ public interface StockBatchRepository
     List<StockBatch> findByInvoiceNumberIgnoreCase(String invoiceNumber);
 
     boolean existsByExhaustedFalse();
+
+    @Query("SELECT b FROM StockBatch b WHERE b.receivedAt >= :start AND b.receivedAt < :end ORDER BY b.receivedAt DESC")
+    List<StockBatch> findByReceivedAtBetweenOrderByReceivedAtDesc(
+            @Param("start") java.time.LocalDateTime start,
+            @Param("end") java.time.LocalDateTime end);
 }

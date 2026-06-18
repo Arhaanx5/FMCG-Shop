@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import base64
+import asyncio
 import requests
 from typing import List, Optional
 from fastapi import FastAPI, File, UploadFile, HTTPException
@@ -38,8 +39,11 @@ class InvoiceItem(BaseModel):
     invoice_cases: int = 1
     packs_per_case: int = 1
     buy_price_per_piece: float = 0.0
-    taxable_value: float = 0.0
+    net_amount: float = 0.0           # Gross before discount
+    cst_discount: float = 0.0         # CST/Scheme discount amount
+    taxable_value: float = 0.0        # After discount, before GST
     gst_percent: float = 5.0
+    offer_secondary_received: int = 0 # Free offer units detected
 
 class ScanResponse(BaseModel):
     invoice_number: Optional[str] = None
@@ -69,13 +73,24 @@ Please extract each item with:
 5. "invoice_cases": The quantity of cases purchased from the 'Total Invoice Cases' column.
 6. "packs_per_case": The packing quantity per case from the 'UOM' column (integer, e.g., 100, 516, 312).
 7. "buy_price_per_piece": The buy price per piece without tax. Read this strictly from the 'Price/Piece' column (numeric float).
-8. "taxable_value": The total taxable value of the row after discount but before GST tax. Read this strictly from the 'Taxable Value' column (numeric float). If the 'Taxable Value' column is missing or empty, use the 'Net Amt' minus any discount, or raw row total before tax.
-9. "gst_percent": The GST tax percentage applied to this item from the 'GST (%)' column (numeric float, e.g., 5.0, 12.0, 18.0).
+8. "net_amount": The gross amount BEFORE any discount. Read from the 'Net Amt.' column (numeric float).
+   This equals: invoice_cases x packs_per_case x buy_price_per_piece.
+9. "cst_discount": The total discount amount applied to this row (sum of 'GST Discount', 'CST Discount', 'Total Scheme Dis.', and any other scheme/trade discounts applied to this row). (numeric float)
+   If no discount exists, use 0.0.
+10. "taxable_value": The net taxable amount AFTER all discounts, BEFORE GST. Read STRICTLY from the 'Taxable Value' column.
+    CRITICAL: taxable_value = net_amount - cst_discount. It is ALWAYS less than or equal to net_amount.
+    If 'Taxable Value' column is missing or empty, compute as: net_amount - cst_discount.
+11. "gst_percent": The GST tax percentage applied to this item from the 'GST (%)' column (numeric float, e.g., 5.0, 12.0, 18.0).
+12. "offer_secondary_received": Look for any FREE or OFFER rows in the invoice (rows where Price/Piece = 0 or marked as 'Free'/'Scheme'/'Offer'/'0.00' price).
+    If a free row matches an item above (same product name), set this field to the quantity of free units.
+    Otherwise use 0.
 
 CRITICAL MATHEMATICAL CHECK FOR ACCURACY:
 Before outputting, you MUST mathematically verify each row.
 For every row, ensure that:
-`taxable_value` is approximately equal to `invoice_cases * packs_per_case * buy_price_per_piece` (minus any GST discount if applicable).
+`net_amount` is approximately equal to `invoice_cases * packs_per_case * buy_price_per_piece`.
+`taxable_value` is approximately equal to `net_amount - cst_discount`.
+If taxable_value > net_amount, you have read the wrong column. Recheck and fix.
 For example:
 - S No 1 (All In One): cases = 2, packs_per_case = 100, buy_price = 14.5407. Verification: 2 * 100 * 14.5407 = 2908.14. This matches the row's Taxable Value of 2,908.14. So cases MUST be 2 (NOT 3).
 - S No 2 (Aloo Bhujia): cases = 3, packs_per_case = 100, buy_price = 14.5407. Verification: 3 * 100 * 14.5407 = 4362.21. This matches the row's Taxable Value of 4,362.21. So cases MUST be 3 (NOT 2).
@@ -97,16 +112,25 @@ def compress_image(image_bytes: bytes) -> bytes:
     try:
         img = Image.open(io.BytesIO(image_bytes))
         
+        # Auto-rotate image if it has orientation metadata
+        try:
+            from PIL import ImageOps
+            img = ImageOps.exif_transpose(img)
+            logger.info("Automatically transposed/rotated image based on EXIF orientation metadata.")
+        except Exception as rotation_err:
+            logger.warning(f"Failed to auto-rotate image using EXIF: {rotation_err}")
+        
         # Convert RGBA to RGB if necessary
         if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
             img = img.convert('RGB')
             
         # Max dimensions for fast OCR processing while preserving text clarity
-        max_size = (1800, 1800)
+        # Reduced from 1800 to 1400 — smaller upload = faster Gemini response
+        max_size = (1400, 1400)
         img.thumbnail(max_size, Image.Resampling.LANCZOS)
         
         out_io = io.BytesIO()
-        img.save(out_io, format="JPEG", quality=90)
+        img.save(out_io, format="JPEG", quality=82)
         compressed = out_io.getvalue()
         logger.info(f"Compressed image from {len(image_bytes)} to {len(compressed)} bytes.")
         return compressed
@@ -154,8 +178,9 @@ async def scan_invoice(file: UploadFile = File(...)):
             base64_data = base64.b64encode(processed_image).decode('utf-8')
             logger.info(f"Image file detected. Compressed size: {len(processed_image)} bytes.")
         
-        # Using gemini-flash-lite-latest to ensure fast response times, high rate limits and API compatibility
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={api_key}"
+        # Using gemini-2.5-flash with thinking DISABLED (thinkingBudget=0) for fast response
+        # Thinking mode adds 10-20s of latency — not needed for structured invoice extraction
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
         
         payload = {
             "contents": [{
@@ -168,12 +193,19 @@ async def scan_invoice(file: UploadFile = File(...)):
                         }
                     }
                 ]
-            }]
+            }],
+            "generationConfig": {
+                "responseMimeType": "application/json",
+                "thinkingConfig": {
+                    "thinkingBudget": 0
+                }
+            }
         }
         
-        logger.info("Calling Gemini REST API...")
+        logger.info("Calling Gemini REST API (thinking disabled for speed)...")
         headers = {"Content-Type": "application/json"}
-        response = requests.post(url, json=payload, headers=headers)
+        # Run blocking HTTP call in a thread pool so we don't block the async event loop
+        response = await asyncio.to_thread(requests.post, url, json=payload, headers=headers)
         
         if response.status_code != 200:
             logger.error(f"Gemini API returned error {response.status_code}: {response.text}")
@@ -201,16 +233,32 @@ async def scan_invoice(file: UploadFile = File(...)):
             
         parsed_json = json.loads(response_text)
         
+        # Server-side safety: fix taxable_value if AI read Net Amt instead of Taxable Value
+        def fix_taxable_value(items_list):
+            for item in items_list:
+                if isinstance(item, dict):
+                    net_amt = item.get("net_amount", 0) or 0
+                    cst_disc = item.get("cst_discount", 0) or 0
+                    taxable = item.get("taxable_value", 0) or 0
+                    # If taxable > net_amount, AI read wrong column — auto-correct
+                    if net_amt > 0 and taxable > net_amt:
+                        corrected = round(net_amt - cst_disc, 2)
+                        logger.warning(f"Auto-correcting taxable_value for '{item.get('name')}': {taxable} -> {corrected} (net={net_amt}, disc={cst_disc})")
+                        item["taxable_value"] = corrected
+            return items_list
+
         # Ensure it matches the ScanResponse model structure {"rawItems": [...]}
         if isinstance(parsed_json, list):
-            return {"rawItems": parsed_json}
+            return {"rawItems": fix_taxable_value(parsed_json)}
         elif isinstance(parsed_json, dict):
             if "rawItems" in parsed_json:
+                parsed_json["rawItems"] = fix_taxable_value(parsed_json.get("rawItems", []))
                 return parsed_json
             # Find any list value inside the dict and use it
-            for val in parsed_json.values():
+            for key, val in parsed_json.items():
                 if isinstance(val, list):
-                    return {"rawItems": val}
+                    parsed_json[key] = fix_taxable_value(val)
+                    return {"rawItems": parsed_json[key]}
             return {"rawItems": []}
         else:
             return {"rawItems": []}
@@ -237,7 +285,7 @@ async def generate_text(req: TextGenerationRequest):
     if not api_key:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not configured.")
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
         payload = {
             "contents": [{
                 "parts": [{"text": req.prompt}]
@@ -263,7 +311,7 @@ async def parse_structured(req: StructuredRequest):
     if not api_key:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not configured.")
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
         payload = {
             "contents": [{
                 "parts": [{"text": req.prompt}]

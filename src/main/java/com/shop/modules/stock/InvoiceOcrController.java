@@ -54,8 +54,11 @@ public class InvoiceOcrController {
         private int invoice_cases;
         private int packs_per_case;
         private BigDecimal buy_price_per_piece;
-        private BigDecimal taxable_value;
+        private BigDecimal net_amount;         // NEW: gross before discount
+        private BigDecimal cst_discount;       // NEW: CST/scheme discount amount
+        private BigDecimal taxable_value;      // after discount, before GST
         private BigDecimal gst_percent;
+        private int offer_secondary_received;  // NEW: free units detected from invoice
     }
 
     @PostMapping("/parse-invoice")
@@ -140,6 +143,7 @@ public class InvoiceOcrController {
                         .buyPricePerPiece(item.getBuy_price_per_piece())
                         .taxableValue(item.getTaxable_value())
                         .gstPercent(item.getGst_percent())
+                        .offerUnitsDetected(item.getOffer_secondary_received())
                         .build();
             }).collect(Collectors.toList());
 

@@ -30,6 +30,11 @@ public class ReceiveStockRequest {
             message = "Extra secondary cannot be negative")
     private int extraSecondaryReceived;
 
+    // Free offer units (LADI/PACK) from distributor — cost = ₹0
+    @Min(value = 0,
+            message = "Offer units cannot be negative")
+    private int offerSecondaryReceived = 0;
+
     // Buy price WITHOUT tax per primary unit
     @NotNull(message = "Buy price is required")
     @DecimalMin(value = "0.1",

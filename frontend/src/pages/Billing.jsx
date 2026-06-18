@@ -119,7 +119,10 @@ const generateInvoiceHtml = (bill) => {
       <tr>
         <td style="padding: 6px 8px; border-bottom: 1px solid #000; border-right: 1px solid #000; text-align: center;">${idx + 1}</td>
         <td style="padding: 6px 8px; border-bottom: 1px solid #000; border-right: 1px solid #000; text-align: left;">
-          <div style="font-weight: 600;">${item.productName}</div>
+          <div style="font-weight: 600; display: flex; align-items: center; gap: 4px;">
+            ${item.productName}
+            ${item.offer ? `<span style="font-size: 9px; font-weight: 700; color: #10b981; background: rgba(16, 185, 129, 0.1); padding: 1px 4px; border-radius: 3px; margin-left: 4px;">🎁 Offer</span>` : ''}
+          </div>
           ${item.brand ? `<div style="font-size: 11px; color: #555;">${item.brand}</div>` : ''}
         </td>
         <td style="padding: 6px 8px; border-bottom: 1px solid #000; border-right: 1px solid #000; text-align: center; white-space: nowrap;">
@@ -490,9 +493,17 @@ export default function Billing() {
       const totalPhysical = batches.reduce((sum, b) => {
         return sum + Number(b.secondaryRemaining || 0)
       }, 0)
+      const totalOffer = batches.reduce((sum, b) => {
+        return sum + Number(b.offerSecondaryRemaining || 0)
+      }, 0)
       setVirtualStockCache(prev => ({ 
         ...prev, 
-        [productId]: { virtual: totalVirtualAvailable, physical: totalPhysical } 
+        [productId]: { 
+          virtual: totalVirtualAvailable, 
+          physical: totalPhysical, 
+          offer: totalOffer,
+          batches: batches 
+        } 
       }))
     } catch (err) {
       console.error('Failed to load virtual stock cache', err)
@@ -549,9 +560,60 @@ export default function Billing() {
     }
   }
 
+  const addOfferToCart = (productId) => {
+    const product = products.find(p => p.id === productId)
+    if (!product) return
+    loadProductBatches(productId)
+    const offerId = productId + "-offer"
+    const exists = cart.find(item => item.productId === offerId)
+    const availableOffer = virtualStockCache[productId]?.offer || 0
+
+    if (exists) {
+      if (exists.quantitySecondary + 1 > availableOffer) {
+        toast.error(`Cannot add more. Only ${availableOffer} offer units available in stock.`)
+        return
+      }
+      setCart(cart.map(item => {
+        if (item.productId === offerId) {
+          return { ...item, quantitySecondary: item.quantitySecondary + 1 }
+        }
+        return item
+      }))
+    } else {
+      if (availableOffer < 1) {
+        toast.error('No offer stock available.')
+        return
+      }
+      setCart([...cart, {
+        productId: offerId,
+        realProductId: productId,
+        name: product.name + " (Offer)",
+        brand: product.brand,
+        quantityPrimary: 0,
+        quantitySecondary: 1,
+        sellPricePrimary: 0,
+        sellPriceSecondary: 0,
+        gstPercent: 0,
+        cessPercent: 0,
+        primaryUnit: product.primaryUnit,
+        secondaryUnit: product.secondaryUnit,
+        canSellPrimary: false,
+        canSellSecondary: true,
+        isOffer: true
+      }])
+    }
+  }
+
   const updateCartItem = (productId, field, value) => {
     setCart(cart.map(item => {
       if (item.productId !== productId) return item
+      if (item.isOffer && field === 'quantitySecondary') {
+        const availableOffer = virtualStockCache[item.realProductId]?.offer || 0
+        if (value > availableOffer) {
+          toast.error(`Cannot exceed available offer units limit of ${availableOffer}`)
+          return item
+        }
+      }
       return { ...item, [field]: value }
     }))
   }
@@ -631,12 +693,13 @@ export default function Billing() {
         }
         if (qSec > 0) {
           itemsPayload.push({
-            productId: item.productId,
+            productId: item.isOffer ? (item.realProductId || item.productId) : item.productId,
             unitType: mapToBackendUnitType(item.secondaryUnit),
             quantity: qSec,
             freeQuantity: 0,
-            gstPercent: Number(item.gstPercent || 0),
-            cessPercent: Number(item.cessPercent || 0),
+            gstPercent: item.isOffer ? 0 : Number(item.gstPercent || 0),
+            cessPercent: item.isOffer ? 0 : Number(item.cessPercent || 0),
+            offer: !!item.isOffer,
           })
         }
       })
@@ -1075,17 +1138,25 @@ Thank you for doing business with Lari Traders!`
                             {item.brand}
                           </span>
                         )}
+                        {item.isOffer && (
+                          <span style={{
+                            background: 'rgba(16, 185, 129, 0.1)',
+                            color: 'var(--color-success)',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontWeight: 'bold',
+                            fontSize: '10px'
+                          }}>
+                            🎁 Offer Unit
+                          </span>
+                        )}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', width: '100%' }}>
-                        {virtualStockCache[item.productId] !== undefined ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%' }}>
+                        {item.isOffer ? (
                           (() => {
-                            const cacheItem = virtualStockCache[item.productId];
-                            const virtual = typeof cacheItem === 'object' && cacheItem !== null ? cacheItem.virtual : Number(cacheItem || 0);
-                            const physical = typeof cacheItem === 'object' && cacheItem !== null ? cacheItem.physical : Number(cacheItem || 0);
-                            
-                            if (physical <= 0) {
-                              const p = products.find(prod => prod.id === item.productId);
-                              const unit = p ? (p.secondaryUnit || 'units') : 'units';
+                            const cacheItem = virtualStockCache[item.realProductId];
+                            const offerStock = cacheItem?.offer || 0;
+                            if (offerStock <= 0) {
                               return (
                                 <span style={{
                                   display: 'inline-flex',
@@ -1099,28 +1170,10 @@ Thank you for doing business with Lari Traders!`
                                   fontWeight: '700',
                                   whiteSpace: 'normal',
                                   wordBreak: 'break-word',
-                                  lineHeight: '1.3'
+                                  lineHeight: '1.3',
+                                  width: 'fit-content'
                                 }}>
-                                  ⚠️ Out of Stock (0 {unit})
-                                </span>
-                              );
-                            } else if (virtual <= 0) {
-                              return (
-                                <span style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  padding: '4px 8px',
-                                  background: 'rgba(245, 158, 11, 0.1)',
-                                  color: 'var(--color-warning)',
-                                  borderRadius: 'var(--radius-sm)',
-                                  border: '1px solid rgba(245, 158, 11, 0.2)',
-                                  fontSize: '10px',
-                                  fontWeight: '700',
-                                  whiteSpace: 'normal',
-                                  wordBreak: 'break-word',
-                                  lineHeight: '1.3'
-                                }}>
-                                  ⚠️ Low Stock (Soft-Reserved)
+                                  ⚠️ No Offer Units Available
                                 </span>
                               );
                             } else {
@@ -1137,15 +1190,115 @@ Thank you for doing business with Lari Traders!`
                                   fontWeight: '700',
                                   whiteSpace: 'normal',
                                   wordBreak: 'break-word',
-                                  lineHeight: '1.3'
+                                  lineHeight: '1.3',
+                                  width: 'fit-content'
                                 }}>
-                                  ✓ Available: {formatStock(virtual, item.productId)}
+                                  ✓ Available Offer: {offerStock} {item.secondaryUnit}
                                 </span>
                               );
                             }
                           })()
                         ) : (
-                          <span className="text-muted" style={{ fontSize: '11px' }}>Checking available stock...</span>
+                          virtualStockCache[item.productId] !== undefined ? (
+                            (() => {
+                              const cacheItem = virtualStockCache[item.productId];
+                              const virtual = typeof cacheItem === 'object' && cacheItem !== null ? cacheItem.virtual : Number(cacheItem || 0);
+                              const physical = typeof cacheItem === 'object' && cacheItem !== null ? cacheItem.physical : Number(cacheItem || 0);
+                              const offerStock = typeof cacheItem === 'object' && cacheItem !== null ? (cacheItem.offer || 0) : 0;
+                              
+                              return (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', width: '100%' }}>
+                                    {physical <= 0 ? (
+                                      <span style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        padding: '4px 8px',
+                                        background: 'rgba(239, 68, 68, 0.1)',
+                                        color: 'var(--color-danger)',
+                                        borderRadius: 'var(--radius-sm)',
+                                        border: '1px solid rgba(239, 68, 68, 0.2)',
+                                        fontSize: '10px',
+                                        fontWeight: '700',
+                                        whiteSpace: 'normal',
+                                        wordBreak: 'break-word',
+                                        lineHeight: '1.3'
+                                      }}>
+                                        ⚠️ Out of Stock (0 {item.secondaryUnit})
+                                      </span>
+                                    ) : virtual <= 0 ? (
+                                      <span style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        padding: '4px 8px',
+                                        background: 'rgba(245, 158, 11, 0.1)',
+                                        color: 'var(--color-warning)',
+                                        borderRadius: 'var(--radius-sm)',
+                                        border: '1px solid rgba(245, 158, 11, 0.2)',
+                                        fontSize: '10px',
+                                        fontWeight: '700',
+                                        whiteSpace: 'normal',
+                                        wordBreak: 'break-word',
+                                        lineHeight: '1.3'
+                                      }}>
+                                        ⚠️ Low Stock (Soft-Reserved)
+                                      </span>
+                                    ) : (
+                                      <span style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        padding: '4px 8px',
+                                        background: 'rgba(16, 185, 129, 0.1)',
+                                        color: 'var(--color-success)',
+                                        borderRadius: 'var(--radius-sm)',
+                                        border: '1px solid rgba(16, 185, 129, 0.2)',
+                                        fontSize: '10px',
+                                        fontWeight: '700',
+                                        whiteSpace: 'normal',
+                                        wordBreak: 'break-word',
+                                        lineHeight: '1.3'
+                                      }}>
+                                        ✓ Available: {formatStock(virtual, item.productId)}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {offerStock > 0 && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '2px' }}>
+                                      <span style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        padding: '2px 6px',
+                                        background: 'rgba(124, 58, 237, 0.1)',
+                                        color: 'var(--color-primary, #7c3aed)',
+                                        borderRadius: 'var(--radius-sm)',
+                                        fontSize: '10px',
+                                        fontWeight: '600'
+                                      }}>
+                                        🎁 Offer Available: {offerStock} {item.secondaryUnit}
+                                      </span>
+                                      <button 
+                                        type="button"
+                                        className="btn btn-primary btn-sm"
+                                        onClick={() => addOfferToCart(item.productId)}
+                                        style={{ 
+                                          padding: '2px 8px', 
+                                          fontSize: '10px', 
+                                          height: 'auto',
+                                          background: 'var(--color-primary, #7c3aed)',
+                                          border: 'none',
+                                          cursor: 'pointer'
+                                        }}
+                                      >
+                                        + Add Offer LADI to Bill
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()
+                          ) : (
+                            <span className="text-muted" style={{ fontSize: '11px' }}>Checking available stock...</span>
+                          )
                         )}
                       </div>
                     </div>
@@ -1540,7 +1693,14 @@ Thank you for doing business with Lari Traders!`
                 <tbody>
                   {(viewBill.items || []).map((item, idx) => (
                     <tr key={idx}>
-                      <td>{item.productName} {item.brand && <span className="text-muted text-xs">({item.brand})</span>}</td>
+                      <td>
+                        {item.productName} {item.brand && <span className="text-muted text-xs">({item.brand})</span>}
+                        {item.offer && (
+                          <span className="badge badge-success" style={{ marginLeft: 6, fontSize: '9px', padding: '2px 4px' }}>
+                            🎁 Offer
+                          </span>
+                        )}
+                      </td>
                       <td>
                         {item.quantity} {item.unitType || ''} {item.freeQuantity > 0 && (
                           <span className="text-success text-xs">+{item.freeQuantity} {item.unitType || ''} free</span>

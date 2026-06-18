@@ -89,6 +89,7 @@ public class BillService {
                     .cessPercent(item.getCessPercent())
                     .cessAmount(item.getCessAmount())
                     .total(item.getTotal())
+                    .offer(item.getOffer() != null ? item.getOffer() : false)
                     .build());
         }
 
@@ -325,34 +326,48 @@ public class BillService {
                     itemGstPercent.add(itemCessPercent).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)
             );
 
-            // 1. Calculate line total inclusive of tax (exact expected sum)
-            BigDecimal itemTotal = inclusivePrice
-                    .multiply(BigDecimal.valueOf(itemReq.getQuantity()))
-                    .setScale(2, RoundingMode.HALF_UP);
+            BigDecimal itemTotal;
+            BigDecimal itemSubtotal;
+            BigDecimal gstAmount;
+            BigDecimal cessAmount;
+            BigDecimal rate;
 
-            // 2. Back-calculate line subtotal (excluding tax)
-            BigDecimal itemSubtotal = itemTotal.divide(taxDivisor, 2, RoundingMode.HALF_UP);
+            if (itemReq.isOffer()) {
+                rate = BigDecimal.ZERO;
+                itemTotal = BigDecimal.ZERO;
+                itemSubtotal = BigDecimal.ZERO;
+                gstAmount = BigDecimal.ZERO;
+                cessAmount = BigDecimal.ZERO;
+            } else {
+                // 1. Calculate line total inclusive of tax (exact expected sum)
+                itemTotal = inclusivePrice
+                        .multiply(BigDecimal.valueOf(itemReq.getQuantity()))
+                        .setScale(2, RoundingMode.HALF_UP);
 
-            // 3. Calculate GST and Cess at line level
-            BigDecimal gstRate = itemGstPercent.divide(BigDecimal.valueOf(100));
-            BigDecimal gstAmount = itemSubtotal
-                    .multiply(gstRate)
-                    .setScale(2, RoundingMode.HALF_UP);
+                // 2. Back-calculate line subtotal (excluding tax)
+                itemSubtotal = itemTotal.divide(taxDivisor, 2, RoundingMode.HALF_UP);
 
-            BigDecimal cessRate = itemCessPercent.divide(BigDecimal.valueOf(100));
-            BigDecimal cessAmount = itemSubtotal
-                    .multiply(cessRate)
-                    .setScale(2, RoundingMode.HALF_UP);
+                // 3. Calculate GST and Cess at line level
+                BigDecimal gstRate = itemGstPercent.divide(BigDecimal.valueOf(100));
+                gstAmount = itemSubtotal
+                        .multiply(gstRate)
+                        .setScale(2, RoundingMode.HALF_UP);
 
-            // 4. Adjust rounding discrepancy to match itemTotal exactly
-            BigDecimal calculatedTotal = itemSubtotal.add(gstAmount).add(cessAmount);
-            if (calculatedTotal.compareTo(itemTotal) != 0) {
-                BigDecimal diff = itemTotal.subtract(calculatedTotal);
-                gstAmount = gstAmount.add(diff);
+                BigDecimal cessRate = itemCessPercent.divide(BigDecimal.valueOf(100));
+                cessAmount = itemSubtotal
+                        .multiply(cessRate)
+                        .setScale(2, RoundingMode.HALF_UP);
+
+                // 4. Adjust rounding discrepancy to match itemTotal exactly
+                BigDecimal calculatedTotal = itemSubtotal.add(gstAmount).add(cessAmount);
+                if (calculatedTotal.compareTo(itemTotal) != 0) {
+                    BigDecimal diff = itemTotal.subtract(calculatedTotal);
+                    gstAmount = gstAmount.add(diff);
+                }
+
+                // 5. Back-calculate the base unit rate for display / storage
+                rate = itemSubtotal.divide(BigDecimal.valueOf(itemReq.getQuantity()), 4, RoundingMode.HALF_UP);
             }
-
-            // 5. Back-calculate the base unit rate for display / storage
-            BigDecimal rate = itemSubtotal.divide(BigDecimal.valueOf(itemReq.getQuantity()), 4, RoundingMode.HALF_UP);
 
             // Get source batch
             StockBatch linkedBatch = null;
@@ -360,10 +375,17 @@ public class BillService {
                 linkedBatch = stockService.getBatchById(itemReq.getBatchId());
             } else {
                 List<StockBatch> activeBatches = stockService.getBatchesByProduct(product.getId());
-                linkedBatch = activeBatches.stream()
-                        .filter(b -> b.getSecondaryRemaining() > 0)
-                        .findFirst()
-                        .orElse(!activeBatches.isEmpty() ? activeBatches.get(0) : null);
+                if (itemReq.isOffer()) {
+                    linkedBatch = activeBatches.stream()
+                            .filter(b -> b.getOfferSecondaryRemaining() != null && b.getOfferSecondaryRemaining() > 0)
+                            .findFirst()
+                            .orElse(!activeBatches.isEmpty() ? activeBatches.get(0) : null);
+                } else {
+                    linkedBatch = activeBatches.stream()
+                            .filter(b -> b.getSecondaryRemaining() > 0)
+                            .findFirst()
+                            .orElse(!activeBatches.isEmpty() ? activeBatches.get(0) : null);
+                }
             }
 
             BillItem item = BillItem.builder()
@@ -375,11 +397,12 @@ public class BillService {
                     .freeQuantity(
                             itemReq.getFreeQuantity())
                     .rate(rate)
-                    .gstPercent(itemGstPercent)
+                    .gstPercent(itemReq.isOffer() ? BigDecimal.ZERO : itemGstPercent)
                     .gstAmount(gstAmount)
-                    .cessPercent(itemCessPercent)
+                    .cessPercent(itemReq.isOffer() ? BigDecimal.ZERO : itemCessPercent)
                     .cessAmount(cessAmount)
                     .total(itemTotal)
+                    .offer(itemReq.isOffer())
                     .build();
 
             bill.getItems().add(item);
@@ -396,26 +419,33 @@ public class BillService {
 
             int totalQtyToDeduct = itemReq.getQuantity() + itemReq.getFreeQuantity();
 
-            if (isDraft) {
-                if (linkedBatch != null) {
-                    int totalSecondaryRequested = isPrimary
-                            ? totalQtyToDeduct * product.getSecondaryPerPrimary()
-                            : totalQtyToDeduct;
-                    linkedBatch.setSecondarySoftReserved(
-                            (linkedBatch.getSecondarySoftReserved() != null ? linkedBatch.getSecondarySoftReserved() : 0) + totalSecondaryRequested);
-                    stockBatchRepository.save(linkedBatch);
+            if (itemReq.isOffer()) {
+                if (!isDraft) {
+                    int secondaryQty = isPrimary ? totalQtyToDeduct * product.getSecondaryPerPrimary() : totalQtyToDeduct;
+                    stockService.deductOfferUnits(linkedBatch.getId(), secondaryQty);
                 }
             } else {
-                if (isPrimary) {
-                    stockService.deductByPrimary(
-                            product.getId(),
-                            totalQtyToDeduct,
-                            itemReq.getBatchId());
+                if (isDraft) {
+                    if (linkedBatch != null) {
+                        int totalSecondaryRequested = isPrimary
+                                ? totalQtyToDeduct * product.getSecondaryPerPrimary()
+                                : totalQtyToDeduct;
+                        linkedBatch.setSecondarySoftReserved(
+                                (linkedBatch.getSecondarySoftReserved() != null ? linkedBatch.getSecondarySoftReserved() : 0) + totalSecondaryRequested);
+                        stockBatchRepository.save(linkedBatch);
+                    }
                 } else {
-                    stockService.deductBySecondary(
-                            product.getId(),
-                            totalQtyToDeduct,
-                            itemReq.getBatchId());
+                    if (isPrimary) {
+                        stockService.deductByPrimary(
+                                product.getId(),
+                                totalQtyToDeduct,
+                                itemReq.getBatchId());
+                    } else {
+                        stockService.deductBySecondary(
+                                product.getId(),
+                                totalQtyToDeduct,
+                                itemReq.getBatchId());
+                    }
                 }
             }
         }
@@ -535,6 +565,36 @@ public class BillService {
         int totalSecondaryRequested = isPrimary
                 ? totalQtyRequested * product.getSecondaryPerPrimary()
                 : totalQtyRequested;
+
+        if (itemReq.isOffer()) {
+            if (itemReq.getBatchId() != null) {
+                StockBatch batch = stockService.getBatchById(itemReq.getBatchId());
+                int reserved = 0;
+                int available = batch.getOfferSecondaryRemaining() != null ? batch.getOfferSecondaryRemaining() : 0;
+                if (available < totalSecondaryRequested) {
+                    throw new RuntimeException("Insufficient offer stock in batch " + batch.getBatchNumber()
+                            + " for: " + product.getName()
+                            + " | Available: " + available
+                            + " | Requested: " + totalSecondaryRequested);
+                }
+            } else {
+                List<StockBatch> activeBatches = stockService.getBatchesByProduct(product.getId());
+                int totalAvailable = 0;
+                for (StockBatch b : activeBatches) {
+                    int avail = b.getOfferSecondaryRemaining() != null ? b.getOfferSecondaryRemaining() : 0;
+                    if (avail > 0) {
+                        totalAvailable += avail;
+                    }
+                }
+                if (totalAvailable < totalSecondaryRequested) {
+                    throw new RuntimeException("Insufficient offer stock"
+                            + " for: " + product.getName()
+                            + " | Available: " + totalAvailable
+                            + " | Requested: " + totalSecondaryRequested);
+                }
+            }
+            return;
+        }
 
         if (itemReq.getBatchId() != null) {
             StockBatch batch = stockService.getBatchById(itemReq.getBatchId());
@@ -671,14 +731,18 @@ public class BillService {
                 secondaryQty = totalItemQty;
             }
 
-            stockService.addBackStock(
-                    item.getProduct().getId(),
-                    primaryQty,
-                    secondaryQty);
+            if (item.getOffer() != null && item.getOffer()) {
+                stockService.addBackOfferStock(item.getProduct().getId(), item.getBatch().getId(), secondaryQty);
+            } else {
+                stockService.addBackStock(
+                        item.getProduct().getId(),
+                        primaryQty,
+                        secondaryQty);
 
-            stockService.restoreStockToBatches(
-                    item.getProduct().getId(),
-                    secondaryQty);
+                stockService.restoreStockToBatches(
+                        item.getProduct().getId(),
+                        secondaryQty);
+            }
         }
 
         bill.setStatus(BillStatus.CANCELLED);
@@ -747,13 +811,17 @@ public class BillService {
             }
 
             // Add stock back to inventory
-            stockService.addBackStock(item.getProduct().getId(), primaryQty, secondaryQty);
-
-            // Restore stock to specific batch
-            if (item.getBatch() != null) {
-                stockService.addBackStockToSpecificBatch(item.getBatch().getId(), secondaryQty);
+            if (item.getOffer() != null && item.getOffer()) {
+                stockService.addBackOfferStock(item.getProduct().getId(), item.getBatch().getId(), secondaryQty);
             } else {
-                stockService.restoreStockToBatches(item.getProduct().getId(), secondaryQty);
+                stockService.addBackStock(item.getProduct().getId(), primaryQty, secondaryQty);
+
+                // Restore stock to specific batch
+                if (item.getBatch() != null) {
+                    stockService.addBackStockToSpecificBatch(item.getBatch().getId(), secondaryQty);
+                } else {
+                    stockService.restoreStockToBatches(item.getProduct().getId(), secondaryQty);
+                }
             }
 
             // Update item record
@@ -962,6 +1030,18 @@ public class BillService {
 
             if (batch == null) {
                 throw new RuntimeException("Sourced stock batch missing for product: " + product.getName());
+            }
+
+            if (item.getOffer() != null && item.getOffer()) {
+                int available = batch.getOfferSecondaryRemaining() != null ? batch.getOfferSecondaryRemaining() : 0;
+                if (available < secondaryQty) {
+                    throw new RuntimeException("Insufficient offer stock in batch " + batch.getBatchNumber()
+                            + " for product: " + product.getName()
+                            + " | Available: " + available
+                            + " | Requested: " + secondaryQty);
+                }
+                stockService.deductOfferUnits(batch.getId(), secondaryQty);
+                continue;
             }
 
             if (batch.getSecondaryRemaining() < secondaryQty) {

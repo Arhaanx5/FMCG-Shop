@@ -78,6 +78,8 @@ public class StockController {
                 .primaryReceived(batch.getPrimaryReceived())
                 .secondaryReceived(batch.getSecondaryReceived())
                 .secondaryRemaining(batch.getSecondaryRemaining())
+                .offerSecondaryReceived(batch.getOfferSecondaryReceived() != null ? batch.getOfferSecondaryReceived() : 0)
+                .offerSecondaryRemaining(batch.getOfferSecondaryRemaining() != null ? batch.getOfferSecondaryRemaining() : 0)
                 .buyPriceWithoutTax(batch.getBuyPriceWithoutTax())
                 .buyPriceWithTax(batch.getBuyPriceWithTax())
                 .gstPercent(batch.getGstPercent())
@@ -158,6 +160,7 @@ public class StockController {
         serviceReq.setBatchNumber(req.getBatchNumber());
         serviceReq.setPrimaryReceived(req.getPrimaryReceived());
         serviceReq.setExtraSecondaryReceived(req.getExtraSecondaryReceived());
+        serviceReq.setOfferSecondaryReceived(req.getOfferSecondaryReceived());
         serviceReq.setBuyPriceWithoutTax(req.getBuyPriceWithoutTax());
         serviceReq.setExpiryDate(req.getExpiryDate());
         serviceReq.setSupplierName(req.getSupplierName());
@@ -194,6 +197,7 @@ public class StockController {
             serviceReq.setBatchNumber(req.getBatchNumber());
             serviceReq.setPrimaryReceived(req.getPrimaryReceived());
             serviceReq.setExtraSecondaryReceived(req.getExtraSecondaryReceived());
+            serviceReq.setOfferSecondaryReceived(req.getOfferSecondaryReceived());
             serviceReq.setBuyPriceWithoutTax(req.getBuyPriceWithoutTax());
             serviceReq.setExpiryDate(req.getExpiryDate());
             serviceReq.setSupplierName(req.getSupplierName());
@@ -207,6 +211,25 @@ public class StockController {
         }
 
         return ResponseEntity.ok(ApiResponse.success("Bulk stock received successfully", responses));
+    }
+
+    @GetMapping("/batches")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<?>> getBatches(
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        if (date != null) {
+            List<StockBatchResponse> responses = stockService.getBatchesByDate(date)
+                    .stream()
+                    .map(this::toBatchResponse)
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(ApiResponse.success(responses));
+        } else {
+            Page<StockBatchResponse> responses = stockService.getRecentBatchesPaged(page, size)
+                    .map(this::toBatchResponse);
+            return ResponseEntity.ok(ApiResponse.success(responses));
+        }
     }
 
     @GetMapping("/batches/invoice/{invoiceNumber}")
@@ -232,6 +255,17 @@ public class StockController {
         stockService.adjustStock(batchId, req.getNewSecondaryRemaining(), req.getNewBuyPriceWithoutTax(), req.getReason(), username);
         
         return ResponseEntity.ok(ApiResponse.success("Stock batch adjusted successfully", null));
+    }
+
+    // ── Deduct offer (free) units from a batch ──
+    // Used by billing screen when user clicks "Add Offer to Bill"
+    @PostMapping("/batches/{batchId}/deduct-offer")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<Void>> deductOfferUnits(
+            @PathVariable UUID batchId,
+            @RequestParam int quantity) {
+        stockService.deductOfferUnits(batchId, quantity);
+        return ResponseEntity.ok(ApiResponse.success("Offer units deducted successfully", null));
     }
 
     // ── Write off expired stock batch to Damage Log (Admin & Manager only) ──

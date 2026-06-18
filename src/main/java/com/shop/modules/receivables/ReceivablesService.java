@@ -35,31 +35,40 @@ public class ReceivablesService {
     private final AiReminderGenerator aiReminderGenerator;
 
     public List<ReceivablesPendingResponse> getPendingReceivables(String sortBy) {
+        List<Customer> customersWithBalance = customerRepository.findActiveCustomersWithPendingBalance();
         List<Bill> pendingBills = billRepository.findPendingBills();
         
-        // Group bills by customer
-        Map<Customer, List<Bill>> groupedByCustomer = pendingBills.stream()
+        // Group bills by customer ID
+        Map<UUID, List<Bill>> billsByCustomerId = pendingBills.stream()
                 .filter(b -> b.getCustomer() != null)
-                .collect(Collectors.groupingBy(Bill::getCustomer));
+                .collect(Collectors.groupingBy(b -> b.getCustomer().getId()));
 
         List<ReceivablesPendingResponse> resultList = new ArrayList<>();
         LocalDateTime now = LocalDateTime.now();
 
-        for (Map.Entry<Customer, List<Bill>> entry : groupedByCustomer.entrySet()) {
-            Customer customer = entry.getKey();
-            List<Bill> customerBills = entry.getValue();
+        for (Customer customer : customersWithBalance) {
+            List<Bill> customerBills = billsByCustomerId.getOrDefault(customer.getId(), Collections.emptyList());
 
-            // Find oldest bill to determine daysOverdue
-            Bill oldestBill = customerBills.stream()
-                    .min(Comparator.comparing(Bill::getCreatedAt))
-                    .orElse(null);
+            // Find oldest bill to determine daysOverdue, fallback to customer creation date
+            LocalDateTime oldestDate = null;
+            UUID oldestBillId = null;
 
-            if (oldestBill == null || oldestBill.getCreatedAt() == null) continue;
+            if (!customerBills.isEmpty()) {
+                Bill oldestBill = customerBills.stream()
+                        .min(Comparator.comparing(Bill::getCreatedAt))
+                        .orElse(null);
+                if (oldestBill != null) {
+                    oldestDate = oldestBill.getCreatedAt();
+                    oldestBillId = oldestBill.getId();
+                }
+            }
 
-            int daysOverdue = (int) ChronoUnit.DAYS.between(oldestBill.getCreatedAt(), now);
-            BigDecimal totalPending = customerBills.stream()
-                    .map(b -> b.getPendingAmount() != null ? b.getPendingAmount() : BigDecimal.ZERO)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            if (oldestDate == null) {
+                oldestDate = customer.getCreatedAt() != null ? customer.getCreatedAt() : LocalDateTime.now();
+            }
+
+            int daysOverdue = (int) ChronoUnit.DAYS.between(oldestDate, now);
+            BigDecimal totalPending = customer.getTotalPending() != null ? customer.getTotalPending() : BigDecimal.ZERO;
 
             // Fetch last reminder log info
             Optional<UdharReminderLog> lastLogOpt = logRepository.findTopByCustomerIdOrderByReminderSentAtDesc(customer.getId());
@@ -76,7 +85,7 @@ public class ReceivablesService {
                     .pendingAmount(totalPending)
                     .daysOverdue(daysOverdue)
                     .lastReminderSentAt(lastSentAt)
-                    .billId(oldestBill.getId())
+                    .billId(oldestBillId)
                     .needsFollowUp(needsFollowUp)
                     .isNpa(customer.getIsNpa() != null ? customer.getIsNpa() : false)
                     .build());

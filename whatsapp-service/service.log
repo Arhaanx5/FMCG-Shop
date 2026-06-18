@@ -12061,8 +12061,8 @@ y — scan with WhatsApp phone app"}
 [36m[2026-06-17T21:41:40.898Z] [INFO] [API] GET /status[0m
 [36m[2026-06-17T21:41:44.839Z] [INFO] [API] GET /status[0m
 [36m[2026-06-17T21:41:48.901Z] [INFO] [API] GET /status[0m
-s"}
-{"ts":"2026-06-17T21:33:27.178Z","level":"INFO","module":"API","message":"GET /status"}
+[36m[2026-06-17T22:13:08.778Z] [INFO] [SYSTEM] Received SIGINT — shutting down[0m
+tus"}
 {"ts":"2026-06-17T21:33:31.234Z","level":"INFO","module":"API","message":"GET /status"}
 {"ts":"2026-06-17T21:33:35.169Z","level":"INFO","module":"API","message":"GET /status"}
 {"ts":"2026-06-17T21:33:40.124Z","level":"INFO","module":"API","message":"GET /status"}
@@ -12117,3 +12117,4 @@ s"}
 {"ts":"2026-06-17T21:41:40.898Z","level":"INFO","module":"API","message":"GET /status"}
 {"ts":"2026-06-17T21:41:44.839Z","level":"INFO","module":"API","message":"GET /status"}
 {"ts":"2026-06-17T21:41:48.901Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-17T22:13:08.778Z","level":"INFO","module":"SYSTEM","message":"Received SIGINT — shutting down"}

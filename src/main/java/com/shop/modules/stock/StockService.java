@@ -168,6 +168,9 @@ public class StockService {
                 req.getBuyPriceWithoutTax()
                         .add(taxAmount);
 
+        // Offer units from distributor (free, cost = ₹0)
+        int offerUnits = req.getOfferSecondaryReceived();
+
         // Create batch
         StockBatch batch = StockBatch.builder()
                 .product(product)
@@ -176,6 +179,8 @@ public class StockService {
                 .primaryReceived(req.getPrimaryReceived())
                 .secondaryReceived(totalSecondary)
                 .secondaryRemaining(totalSecondary)
+                .offerSecondaryReceived(offerUnits)
+                .offerSecondaryRemaining(offerUnits)
                 .buyPriceWithoutTax(
                         req.getBuyPriceWithoutTax())
                 .buyPriceWithTax(buyPriceWithTax)
@@ -187,7 +192,7 @@ public class StockService {
 
         batchRepository.save(batch);
 
-        // Update stock
+        // Update stock — include offer units in physical count
         Stock stock = stockRepository
                 .findByProductId(product.getId())
                 .orElse(Stock.builder()
@@ -198,9 +203,10 @@ public class StockService {
                         .hasOpenPrimary(false)
                         .build());
 
+        // Physical stock = billed units + offer units (both are on shelf)
         stock.setTotalSecondaryUnits(
                 stock.getTotalSecondaryUnits()
-                        + totalSecondary);
+                        + totalSecondary + offerUnits);
 
         normalizeStock(stock, product);
 
@@ -267,6 +273,40 @@ public class StockService {
         }
 
         return batch;
+    }
+
+    // ── Deduct offer units (free) from batch ──
+    // Called when billing screen user clicks "Add Offer to Bill"
+    @Transactional
+    public void deductOfferUnits(UUID batchId, int quantity) {
+        StockBatch batch = getBatchById(batchId);
+        int available = batch.getOfferSecondaryRemaining() != null ? batch.getOfferSecondaryRemaining() : 0;
+        if (available < quantity) {
+            throw new RuntimeException(
+                "Insufficient offer units in batch " + batch.getBatchNumber()
+                + " | Available: " + available + " | Requested: " + quantity);
+        }
+        batch.setOfferSecondaryRemaining(available - quantity);
+        batchRepository.save(batch);
+
+        // Deduct from overall physical stock
+        Stock stock = getOrCreateStock(batch.getProduct().getId());
+        stock.setTotalSecondaryUnits(Math.max(0, stock.getTotalSecondaryUnits() - quantity));
+        normalizeStock(stock, batch.getProduct());
+        stockRepository.save(stock);
+    }
+
+    @Transactional
+    public void addBackOfferStock(UUID productId, UUID batchId, int quantity) {
+        StockBatch batch = getBatchById(batchId);
+        int current = batch.getOfferSecondaryRemaining() != null ? batch.getOfferSecondaryRemaining() : 0;
+        batch.setOfferSecondaryRemaining(current + quantity);
+        batchRepository.save(batch);
+
+        Stock stock = getOrCreateStock(productId);
+        stock.setTotalSecondaryUnits(stock.getTotalSecondaryUnits() + quantity);
+        normalizeStock(stock, batch.getProduct());
+        stockRepository.save(stock);
     }
 
     // ── Deduct by PRIMARY unit (BOX/CRATE/CARTON) ──
@@ -660,6 +700,18 @@ public class StockService {
         stockAdjustmentLogRepository.save(log);
     }
 
+    public List<StockBatch> getBatchesByDate(LocalDate date) {
+        java.time.LocalDateTime start = date.atStartOfDay();
+        java.time.LocalDateTime end = date.plusDays(1).atStartOfDay();
+        return batchRepository.findByReceivedAtBetweenOrderByReceivedAtDesc(start, end);
+    }
+
+    public Page<StockBatch> getRecentBatchesPaged(int page, int size) {
+        return batchRepository.findAll(
+                org.springframework.data.domain.PageRequest.of(page, size, org.springframework.data.domain.Sort.by("receivedAt").descending())
+        );
+    }
+
     public List<StockBatch> getBatchesByInvoice(String invoiceNumber) {
         if (invoiceNumber == null || invoiceNumber.trim().isEmpty()) {
             return java.util.Collections.emptyList();
@@ -675,6 +727,7 @@ public class StockService {
         private String invoiceNumber;
         private int primaryReceived;
         private int extraSecondaryReceived;
+        private int offerSecondaryReceived = 0; // free units from distributor
         private BigDecimal buyPriceWithoutTax;
         private LocalDate expiryDate;
         private String supplierName;
