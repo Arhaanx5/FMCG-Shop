@@ -191,4 +191,8 @@ public class Product {
         }
         return alert;
     }
-}
+
+    public int getReorderLevel() {
+        return getLowStockAlertInSecondary();
+    }
+}

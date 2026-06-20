@@ -1646,11 +1646,8 @@ export default function Stock() {
                              <div className="text-[11px] text-slate-500">₹{item.sellingPrice} <span className="text-[10px] text-slate-400">/{item.secondaryUnit || 'LADI'}</span></div>
                            </td>
                            <td className="py-2 px-4 text-xs font-mono">
-                             <div className={`font-bold ${item.marginPercentPrimary < 5 ? 'text-red-550 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                               {item.marginPercentPrimary}% <span className="text-[9px] font-normal text-slate-450 dark:text-slate-500">({item.primaryUnit || 'BOX'})</span>
-                             </div>
-                             <div className={`text-[11px] ${item.marginPercent < 5 ? 'text-red-550 dark:text-red-450' : 'text-emerald-600/80 dark:text-emerald-450'}`}>
-                               {item.marginPercent}% <span className="text-[9px] font-normal text-slate-450 dark:text-slate-500">({item.secondaryUnit || 'LADI'})</span>
+                             <div className={`font-bold ${item.marginPercent < 5 ? 'text-red-500 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                               {item.marginPercent}%
                              </div>
                            </td>
                           <td className="py-2 px-4 font-mono text-emerald-600 dark:text-emerald-400 font-semibold">₹{item.inventoryValue}</td>

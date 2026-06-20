@@ -33,66 +33,12 @@ public class StockController {
     private final StockBatchRepository batchRepository;
     private final jakarta.validation.Validator validator;
 
-    public StockResponse toStockResponse(Stock stock) {
-        return reportService.toStockResponse(stock);
-    }
-
-    public StockBatchResponse toBatchResponse(StockBatch batch) {
-        if (batch == null) return null;
-        Product product = batch.getProduct();
-        boolean expiringSoon = batch.getExpiryDate() != null
-                && batch.getExpiryDate().isBefore(LocalDate.now().plusDays(7));
-
-        int ratio = product != null && product.getSecondaryPerPrimary() != null ? product.getSecondaryPerPrimary() : 1;
-        BigDecimal cost = batch.getBuyPricePerSecondary(ratio);
-        BigDecimal value = BigDecimal.valueOf(batch.getSecondaryRemaining()).multiply(cost);
-
-        LocalDate recDate = batch.getStockReceivedDate() != null ? batch.getStockReceivedDate() : batch.getReceivedAt().toLocalDate();
-        long age = ChronoUnit.DAYS.between(recDate, LocalDate.now());
-        int sold = Math.max(0, batch.getSecondaryReceived() - batch.getSecondaryRemaining());
-
-        return StockBatchResponse.builder()
-                .id(batch.getId())
-                .productId(product != null ? product.getId() : null)
-                .productName(product != null ? product.getName() : null)
-                .brand(product != null ? product.getBrand() : null)
-                .batchNumber(batch.getBatchNumber())
-                .primaryUnit(product != null ? product.getPrimaryUnit() : null)
-                .secondaryUnit(product != null ? product.getSecondaryUnit() : null)
-                .secondaryPerPrimary(ratio)
-                .primaryReceived(batch.getPrimaryReceived())
-                .secondaryReceived(batch.getSecondaryReceived())
-                .secondaryRemaining(batch.getSecondaryRemaining())
-                .offerSecondaryReceived(batch.getOfferSecondaryReceived() != null ? batch.getOfferSecondaryReceived() : 0)
-                .offerSecondaryRemaining(batch.getOfferSecondaryRemaining() != null ? batch.getOfferSecondaryRemaining() : 0)
-                .buyPriceWithoutTax(batch.getBuyPriceWithoutTax())
-                .buyPriceWithTax(batch.getBuyPriceWithTax())
-                .gstPercent(batch.getGstPercent())
-                .expiryDate(batch.getExpiryDate())
-                .supplierName(batch.getSupplierName())
-                .invoiceNumber(batch.getInvoiceNumber())
-                .exhausted(batch.getExhausted() != null && batch.getExhausted())
-                .expiringSoon(expiringSoon)
-                .receivedAt(batch.getReceivedAt())
-                // Redesign properties
-                .supplierInvoiceDate(batch.getSupplierInvoiceDate())
-                .stockReceivedDate(batch.getStockReceivedDate())
-                .manufacturingDate(batch.getManufacturingDate())
-                .remarks(batch.getRemarks())
-                .batchStatus(batch.getBatchStatus() != null ? batch.getBatchStatus().name() : "ACTIVE")
-                .sellingPrice(product != null && product.getSellPriceSecondary() != null ? product.getSellPriceSecondary() : BigDecimal.ZERO)
-                .quantitySold(sold)
-                .batchValue(value.setScale(2, RoundingMode.HALF_UP))
-                .stockAgeDays(age)
-                .build();
-    }
-
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<ApiResponse<List<StockResponse>>> getAllStock() {
         List<StockResponse> stockList = stockService.getAllStock()
                 .stream()
-                .map(this::toStockResponse)
+                .map(reportService::toStockResponse)
                 .collect(Collectors.toList());
         return ResponseEntity.ok(ApiResponse.success(stockList));
     }
@@ -103,7 +49,7 @@ public class StockController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         Page<StockResponse> result = stockService.getAllStockPaged(page, size)
-                .map(this::toStockResponse);
+                .map(reportService::toStockResponse);
         return ResponseEntity.ok(ApiResponse.success(result));
     }
 
@@ -112,7 +58,7 @@ public class StockController {
     public ResponseEntity<ApiResponse<StockResponse>> getByProduct(
             @PathVariable UUID productId) {
         Stock stock = stockService.getStockByProduct(productId);
-        return ResponseEntity.ok(ApiResponse.success(toStockResponse(stock)));
+        return ResponseEntity.ok(ApiResponse.success(reportService.toStockResponse(stock)));
     }
 
     @GetMapping("/batches/{productId}")
@@ -122,7 +68,7 @@ public class StockController {
         List<StockBatchResponse> batches = stockService
                 .getBatchesByProduct(productId)
                 .stream()
-                .map(this::toBatchResponse)
+                .map(reportService::toBatchResponse)
                 .collect(Collectors.toList());
         return ResponseEntity.ok(ApiResponse.success(batches));
     }
@@ -132,7 +78,7 @@ public class StockController {
     public ResponseEntity<ApiResponse<List<StockBatchResponse>>> getExpiringSoon() {
         List<StockBatchResponse> batches = stockService.getExpiringSoon()
                 .stream()
-                .map(this::toBatchResponse)
+                .map(reportService::toBatchResponse)
                 .collect(Collectors.toList());
         return ResponseEntity.ok(ApiResponse.success(batches));
     }
@@ -174,7 +120,7 @@ public class StockController {
         StockBatch batch = stockService.receiveStock(serviceReq, username);
 
         return ResponseEntity.ok(
-                ApiResponse.success("Stock received successfully", toBatchResponse(batch)));
+                ApiResponse.success("Stock received successfully", reportService.toBatchResponse(batch)));
     }
 
     @PostMapping("/receive-bulk")
@@ -227,7 +173,7 @@ public class StockController {
             serviceReq.setRemarks(req.getRemarks());
 
             StockBatch batch = stockService.receiveStock(serviceReq, username);
-            responses.add(toBatchResponse(batch));
+            responses.add(reportService.toBatchResponse(batch));
         }
 
         return ResponseEntity.ok(ApiResponse.success("Bulk stock received successfully", responses));
@@ -242,12 +188,12 @@ public class StockController {
         if (date != null) {
             List<StockBatchResponse> responses = stockService.getBatchesByDate(date)
                     .stream()
-                    .map(this::toBatchResponse)
+                    .map(reportService::toBatchResponse)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(ApiResponse.success(responses));
         } else {
             Page<StockBatchResponse> responses = stockService.getRecentBatchesPaged(page, size)
-                    .map(this::toBatchResponse);
+                    .map(reportService::toBatchResponse);
             return ResponseEntity.ok(ApiResponse.success(responses));
         }
     }
@@ -258,10 +204,11 @@ public class StockController {
             @PathVariable String invoiceNumber) {
         List<StockBatchResponse> responses = stockService.getBatchesByInvoice(invoiceNumber)
                 .stream()
-                .map(this::toBatchResponse)
+                .map(reportService::toBatchResponse)
                 .collect(Collectors.toList());
         return ResponseEntity.ok(ApiResponse.success(responses));
     }
+
 
     @PutMapping("/batches/{batchId}/adjust")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
