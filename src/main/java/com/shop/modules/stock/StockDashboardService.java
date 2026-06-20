@@ -25,6 +25,7 @@ public class StockDashboardService {
     @Builder
     public static class DashboardSummary {
         private BigDecimal totalCostValue;
+        private BigDecimal totalCostValueWithTax;
         private BigDecimal totalMrpValue;
         private BigDecimal expectedProfit;
         private long totalProducts;
@@ -38,7 +39,18 @@ public class StockDashboardService {
         private BigDecimal deadStockValue;
         private int healthScore;
         private String healthClassification;
-        private List<StockBatch> recentBatches;
+        private List<RecentBatchDTO> recentBatches;
+    }
+
+    @Data
+    @Builder
+    public static class RecentBatchDTO {
+        private String id;
+        private String productName;
+        private String batchNumber;
+        private String supplierName;
+        private Integer secondaryReceived;
+        private String receivedAt;
     }
 
     public DashboardSummary getDashboardSummary() {
@@ -48,6 +60,7 @@ public class StockDashboardService {
                 .collect(Collectors.toList());
 
         BigDecimal costValue = BigDecimal.ZERO;
+        BigDecimal costValueWithTax = BigDecimal.ZERO;
         BigDecimal mrpValue = BigDecimal.ZERO;
         long totalStockQty = 0;
         long expiringCount = 0;
@@ -57,9 +70,17 @@ public class StockDashboardService {
         LocalDate today = LocalDate.now();
         LocalDate thirtyDaysLater = today.plusDays(30);
 
-        List<StockBatch> recent = batchRepository.findAll().stream()
+        List<RecentBatchDTO> recentDtos = batchRepository.findAll().stream()
                 .sorted((a, b) -> b.getReceivedAt().compareTo(a.getReceivedAt()))
-                .limit(5)
+                .limit(10)
+                .map(b -> RecentBatchDTO.builder()
+                        .id(b.getId() != null ? b.getId().toString() : null)
+                        .productName(b.getProduct() != null ? b.getProduct().getName() : "Unknown Product")
+                        .batchNumber(b.getBatchNumber())
+                        .supplierName(b.getSupplierName())
+                        .secondaryReceived(b.getSecondaryReceived())
+                        .receivedAt(b.getReceivedAt() != null ? b.getReceivedAt().toString() : null)
+                        .build())
                 .collect(Collectors.toList());
 
         StockBIService.HealthScoreBreakdown score = biService.calculateHealthScore();
@@ -75,6 +96,13 @@ public class StockDashboardService {
             totalStockQty += remaining;
 
             costValue = costValue.add(BigDecimal.valueOf(remaining).multiply(costPrice));
+
+            // Incl. GST cost
+            BigDecimal buyPriceWithTaxPerSec = (b.getBuyPriceWithTax() != null)
+                    ? b.getBuyPriceWithTax().divide(BigDecimal.valueOf(ratio), 4, RoundingMode.HALF_UP)
+                    : costPrice.multiply(BigDecimal.ONE.add((b.getGstPercent() != null ? b.getGstPercent() : BigDecimal.ZERO).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)));
+            costValueWithTax = costValueWithTax.add(BigDecimal.valueOf(remaining).multiply(buyPriceWithTaxPerSec));
+
             mrpValue = mrpValue.add(BigDecimal.valueOf(remaining).multiply(sellPrice));
 
             if (b.getExpiryDate() != null) {
@@ -109,6 +137,7 @@ public class StockDashboardService {
 
         return DashboardSummary.builder()
                 .totalCostValue(costValue.setScale(2, RoundingMode.HALF_UP))
+                .totalCostValueWithTax(costValueWithTax.setScale(2, RoundingMode.HALF_UP))
                 .totalMrpValue(mrpValue.setScale(2, RoundingMode.HALF_UP))
                 .expectedProfit(expectedProfit.setScale(2, RoundingMode.HALF_UP))
                 .totalProducts(products.size())
@@ -122,7 +151,7 @@ public class StockDashboardService {
                 .deadStockValue(deadStockValue.setScale(2, RoundingMode.HALF_UP))
                 .healthScore(score.getOverallScore())
                 .healthClassification(score.getClassification())
-                .recentBatches(recent)
+                .recentBatches(recentDtos)
                 .build();
     }
 

@@ -118,6 +118,8 @@ export default function Stock() {
   const [batchPage, setBatchPage] = useState(0)
   const [batchTotalPages, setBatchTotalPages] = useState(0)
   const [batchSearchTerm, setBatchSearchTerm] = useState('')
+  const [batchView, setBatchView] = useState('list') // 'list' | 'invoices'
+  const [allBatchList, setAllBatchList] = useState([]) // all batches for invoice grouping
 
   // 5. Stock Movement Ledger
   const [movementList, setMovementList] = useState([])
@@ -192,7 +194,7 @@ export default function Stock() {
     }
   }
 
-  // Fetch Batches
+  // Fetch Batches (paginated)
   const loadBatches = async (page = 0) => {
     try {
       const res = await api.get(`/stock/batches?page=${page}&size=15`)
@@ -200,6 +202,16 @@ export default function Stock() {
       setBatchTotalPages(res.data.data?.totalPages || 0)
     } catch {
       toast.error('Failed to load batches')
+    }
+  }
+
+  // Fetch ALL Batches for Invoice Summary (unpaginated)
+  const loadAllBatches = async () => {
+    try {
+      const res = await api.get(`/stock/batches?page=0&size=2000`)
+      setAllBatchList(res.data.data?.content || res.data.data || [])
+    } catch {
+      toast.error('Failed to load all batches for invoice summary')
     }
   }
 
@@ -273,7 +285,7 @@ export default function Stock() {
   useEffect(() => {
     if (activeTab === 'dashboard') loadDashboard()
     else if (activeTab === 'overview') loadInventory(invPage)
-    else if (activeTab === 'batches') loadBatches(batchPage)
+    else if (activeTab === 'batches' || activeTab === 'invoices') loadBatches(batchPage)
     else if (activeTab === 'movements') loadMovements(movementPage)
     else if (activeTab === 'audit' && isAdmin) loadAuditLogs(auditPage)
     else if (activeTab === 'bi') loadBI()
@@ -999,6 +1011,8 @@ export default function Stock() {
                 // Clear previews when switching tabs
                 setScannerPreview([])
                 setScannerFile(null)
+                // Reset batch sub-view when going to Batches tab
+                if (tab.id === 'batches') { setBatchView('list'); }
               }}
               className={`flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-medium text-xs md:text-sm transition-all duration-300 ${
                 activeTab === tab.id
@@ -1401,10 +1415,23 @@ export default function Stock() {
               <>
                 {/* Metrics Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  {/* Inventory Cost Value — Incl. GST as primary, Excl. GST as secondary */}
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-2xl shadow-sm relative overflow-hidden group hover:border-slate-300 dark:hover:border-slate-700 transition duration-300">
+                    <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-indigo-500 to-sky-500"></div>
+                    <span className="text-slate-400 text-sm font-semibold">Inventory Cost Value</span>
+                    <h3 className="text-2xl font-black mt-2 tracking-tight text-indigo-600 dark:text-indigo-400">
+                      ₹{Number(dashboardData.totalCostValueWithTax || dashboardData.totalCostValue).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Incl. GST (total purchase value)</p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                      ₹{Number(dashboardData.totalCostValue).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <span className="ml-1">Excl. GST</span>
+                    </p>
+                  </div>
+
                   {[
-                    { label: 'Inventory Cost Value', val: `₹${dashboardData.totalCostValue}`, desc: 'Total asset cost value', color: 'text-indigo-600 dark:text-indigo-400' },
-                    { label: 'MRP Valuation', val: `₹${dashboardData.totalMrpValue}`, desc: 'Total retail price potential', color: 'text-sky-600 dark:text-sky-400' },
-                    { label: 'Profit Potential', val: `₹${dashboardData.expectedProfit}`, desc: 'Expected gross margin profits', color: 'text-emerald-600 dark:text-emerald-400' },
+                    { label: 'MRP Valuation', val: `₹${Number(dashboardData.totalMrpValue).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, desc: 'Total retail price potential', color: 'text-sky-600 dark:text-sky-400' },
+                    { label: 'Profit Potential', val: `₹${Number(dashboardData.expectedProfit).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, desc: 'Expected gross margin profits', color: 'text-emerald-600 dark:text-emerald-400' },
                     { label: 'Inventory Health Score', val: `${dashboardData.healthScore}/100`, desc: `Score Status: ${dashboardData.healthClassification}`, color: 'text-rose-600 dark:text-rose-400' }
                   ].map((card, i) => (
                     <div key={i} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-2xl shadow-sm relative overflow-hidden group hover:border-slate-300 dark:hover:border-slate-700 transition duration-300">
@@ -1473,12 +1500,12 @@ export default function Stock() {
                         dashboardData.recentBatches.map(batch => (
                           <div key={batch.id} className="flex justify-between items-center p-3 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
                             <div>
-                              <span className="font-semibold text-slate-800 dark:text-slate-200 block">{batch.product?.name || 'Unknown Product'}</span>
+                              <span className="font-semibold text-slate-800 dark:text-slate-200 block">{batch.productName || 'Unknown Product'}</span>
                               <span className="text-xs text-slate-500 dark:text-slate-400">Batch: {batch.batchNumber} | Supplier: {batch.supplierName}</span>
                             </div>
                             <div className="text-right">
                               <span className="font-mono text-emerald-500 dark:text-emerald-400 font-bold block">+{batch.secondaryReceived}</span>
-                              <span className="text-xs text-slate-400">{new Date(batch.receivedAt).toLocaleDateString()}</span>
+                              <span className="text-xs text-slate-400">{batch.receivedAt ? new Date(batch.receivedAt).toLocaleDateString() : ''}</span>
                             </div>
                           </div>
                         ))
@@ -1586,8 +1613,15 @@ export default function Stock() {
                             <span className="text-xs text-slate-505 dark:text-slate-400">{item.brand}</span>
                           </td>
                           <td className="py-2 px-4 text-slate-700 dark:text-slate-300">{item.category}</td>
-                          <td className="py-2 px-4 font-mono text-slate-800 dark:text-slate-200">
-                            {item.totalSecondaryUnits} {item.secondaryUnit || 'Units'}
+                          <td className="py-2 px-4 font-mono">
+                             <span className="text-slate-800 dark:text-slate-200 font-semibold">
+                               {item.totalSecondaryUnits} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">{item.secondaryUnit || 'Units'}</span>
+                             </span>
+                             {item.totalPrimaryUnits > 0 && (
+                               <span className="block text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                                 {item.totalPrimaryUnits} {item.primaryUnit || 'BOX'}
+                               </span>
+                             )}
                           </td>
                           <td className="py-2 px-4 font-mono text-indigo-600 dark:text-indigo-400">
                             {item.availableStock}
@@ -1622,9 +1656,8 @@ export default function Stock() {
 
               {/* Pagination */}
               {invTotalPages > 1 && (
-                <div className="p-4 bg-slate-50 dark:bg-slate-950/80 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center">
-                  <span className="text-slate-500 dark:text-slate-400 text-sm">Showing {filteredInventory.length} of {invTotalElements}</span>
-                  <Pagination currentPage={invPage} totalPages={invTotalPages} onPageChange={setInvPage} />
+                <div className="p-4 bg-slate-50 dark:bg-slate-950/80 border-t border-slate-200 dark:border-slate-800">
+                  <Pagination page={invPage} totalPages={invTotalPages} totalElements={invTotalElements} pageSize={INV_PAGE_SIZE} onPageChange={setInvPage} />
                 </div>
               )}
             </div>
@@ -1680,10 +1713,13 @@ export default function Stock() {
                     <div className="md:col-span-2">
                       <label className="text-slate-500 dark:text-slate-400 text-sm font-semibold mb-1 block">Choose Product <span className="text-red-500">*</span></label>
                       <SearchSelect
-                        options={products.map(p => ({ value: p.id, label: `${p.name} (${p.brand})` }))}
+                        options={products}
                         value={manualForm.productId}
                         onChange={(val) => setManualForm(f => ({ ...f, productId: val }))}
                         placeholder="Search and select product..."
+                        labelKey="name"
+                        valueKey="id"
+                        renderOption={(p) => `${p.name}${p.brand ? ` (${p.brand})` : ''}`}
                       />
                     </div>
 
@@ -2178,27 +2214,55 @@ export default function Stock() {
         )}
 
         {/* 4. BATCH INVENTORY TAB */}
-        {activeTab === 'batches' && (
+        {(activeTab === 'batches' || activeTab === 'invoices') && (
           <motion.div
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -15 }}
             className="space-y-6"
           >
-            {/* Search filter for batches */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-2xl flex flex-wrap gap-4 items-center shadow-sm">
-              <div className="relative flex-1 min-w-[280px]">
-                <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-450" />
-                <input
-                  type="text"
-                  placeholder="Filter by product name, batch number..."
-                  value={batchSearchTerm}
-                  onChange={(e) => setBatchSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-250 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-slate-100 text-sm"
-                />
+            {/* View toggle + Search */}
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-2xl flex flex-wrap gap-4 items-center shadow-sm">
+              {/* Toggle */}
+              <div className="flex bg-slate-100 dark:bg-slate-950 rounded-xl p-1 gap-1">
+                <button
+                  onClick={() => setBatchView('list')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
+                    batchView === 'list'
+                      ? 'bg-indigo-600 text-white shadow'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Clock className="w-3.5 h-3.5" /> Batch List
+                </button>
+                <button
+                  onClick={() => { setBatchView('invoices'); loadAllBatches(); }}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
+                    batchView === 'invoices'
+                      ? 'bg-indigo-600 text-white shadow'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" /> Invoice Summary
+                </button>
               </div>
+              {/* Search (only in batch list view) */}
+              {batchView === 'list' && (
+                <div className="relative flex-1 min-w-[240px]">
+                  <Search className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Filter by product name, batch number..."
+                    value={batchSearchTerm}
+                    onChange={(e) => setBatchSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-slate-100 text-sm"
+                  />
+                </div>
+              )}
             </div>
 
+            {/* Batch list table — hidden in Invoice Summary mode */}
+            {batchView === 'list' && (
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
@@ -2279,6 +2343,104 @@ export default function Stock() {
                 </table>
               </div>
             </div>
+            )}
+
+            {/* ─── INVOICE SUMMARY VIEW ─── */}
+            {batchView === 'invoices' && (() => {
+              // Group ALL batches by invoiceNumber (not just current page)
+              const allBatches = allBatchList
+              const grouped = {}
+              allBatches.forEach(b => {
+                const key = (b.invoiceNumber || '(No Invoice)') + '||' + (b.supplierName || '') + '||' + (b.supplierInvoiceDate || '')
+                if (!grouped[key]) {
+                  grouped[key] = {
+                    invoiceNumber: b.invoiceNumber || '—',
+                    supplierName: b.supplierName || '—',
+                    supplierInvoiceDate: b.supplierInvoiceDate || null,
+                    batches: []
+                  }
+                }
+                grouped[key].batches.push(b)
+              })
+              const invoiceRows = Object.values(grouped).map(grp => {
+                let totalExcl = 0, totalIncl = 0, totalItems = grp.batches.length
+                grp.batches.forEach(b => {
+                  const ratio = b.secondaryPerPrimary && b.secondaryPerPrimary > 0 ? b.secondaryPerPrimary : 1
+                  const priceExcl = b.buyPriceWithoutTax ? (Number(b.buyPriceWithoutTax) / ratio) : 0
+                  const priceIncl = b.buyPriceWithTax ? (Number(b.buyPriceWithTax) / ratio) : 0
+                  totalExcl += (b.secondaryReceived || 0) * priceExcl
+                  totalIncl += (b.secondaryReceived || 0) * priceIncl
+                })
+                return { ...grp, totalItems, totalExcl, totalGst: totalIncl - totalExcl, totalIncl }
+              }).sort((a, b) => b.totalIncl - a.totalIncl)
+              const grandExcl = invoiceRows.reduce((s, r) => s + r.totalExcl, 0)
+              const grandGst = invoiceRows.reduce((s, r) => s + r.totalGst, 0)
+              const grandIncl = invoiceRows.reduce((s, r) => s + r.totalIncl, 0)
+              return (
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+                  {/* Summary Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-5 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-r from-indigo-50 to-sky-50 dark:from-indigo-950/30 dark:to-sky-950/30">
+                    <div className="text-center">
+                      <div className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider mb-1">Total Taxable</div>
+                      <div className="text-2xl font-bold text-slate-800 dark:text-slate-100">₹{grandExcl.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider mb-1">Total GST</div>
+                      <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">₹{grandGst.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider mb-1">Grand Total (Incl. GST)</div>
+                      <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">₹{grandIncl.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</div>
+                    </div>
+                  </div>
+                  {/* Table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead>
+                        <tr className="bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                          <th className="py-3 px-5">#</th>
+                          <th className="py-3 px-5">Invoice No.</th>
+                          <th className="py-3 px-5">Supplier</th>
+                          <th className="py-3 px-5">Invoice Date</th>
+                          <th className="py-3 px-5 text-center">Items (SKUs)</th>
+                          <th className="py-3 px-5 text-right">Taxable Amt</th>
+                          <th className="py-3 px-5 text-right">GST</th>
+                          <th className="py-3 px-5 text-right">Grand Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {invoiceRows.map((inv, idx) => (
+                          <tr key={idx} className="hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10 transition-colors">
+                            <td className="py-3 px-5 text-slate-400 dark:text-slate-500 font-mono text-xs">{idx + 1}</td>
+                            <td className="py-3 px-5">
+                              <span className="font-mono font-semibold text-indigo-600 dark:text-indigo-400 text-sm">{inv.invoiceNumber}</span>
+                            </td>
+                            <td className="py-3 px-5 text-slate-700 dark:text-slate-300 font-medium">{inv.supplierName}</td>
+                            <td className="py-3 px-5 text-slate-500 dark:text-slate-400 text-xs">{inv.supplierInvoiceDate || <span className="italic text-slate-400">No Date</span>}</td>
+                            <td className="py-3 px-5 text-center">
+                              <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-400 font-bold text-xs">{inv.totalItems}</span>
+                            </td>
+                            <td className="py-3 px-5 text-right font-mono text-slate-700 dark:text-slate-300">₹{inv.totalExcl.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
+                            <td className="py-3 px-5 text-right font-mono text-amber-600 dark:text-amber-400">₹{inv.totalGst.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
+                            <td className="py-3 px-5 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">₹{inv.totalIncl.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      {/* Grand Total Footer */}
+                      <tfoot>
+                        <tr className="bg-slate-50 dark:bg-slate-900/80 border-t-2 border-slate-300 dark:border-slate-700 font-bold text-sm">
+                          <td colSpan={4} className="py-4 px-5 text-slate-600 dark:text-slate-300 uppercase tracking-wide text-xs">GRAND TOTAL — {invoiceRows.length} Invoices</td>
+                          <td className="py-4 px-5 text-center text-slate-700 dark:text-slate-300">{invoiceRows.reduce((s, r) => s + r.totalItems, 0)}</td>
+                          <td className="py-4 px-5 text-right text-slate-800 dark:text-slate-100">₹{grandExcl.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
+                          <td className="py-4 px-5 text-right text-amber-600 dark:text-amber-400">₹{grandGst.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
+                          <td className="py-4 px-5 text-right text-emerald-600 dark:text-emerald-400">₹{grandIncl.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              )
+            })()}
           </motion.div>
         )}
 
