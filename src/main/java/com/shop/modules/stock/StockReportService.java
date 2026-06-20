@@ -21,6 +21,8 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import com.shop.modules.billing.BillItem;
 import com.shop.modules.billing.BillRepository;
+import com.shop.modules.stock.dto.StockResponse;
+import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
@@ -77,6 +79,9 @@ public class StockReportService {
         private BigDecimal avgCost;
         private BigDecimal sellingPrice;
         private BigDecimal marginPercent;
+        private BigDecimal avgCostPrimary;
+        private BigDecimal sellingPricePrimary;
+        private BigDecimal marginPercentPrimary;
         private BigDecimal inventoryValue;
         private String status; // Healthy, Low Stock, Out of Stock, Overstock, Dead Stock
     }
@@ -102,6 +107,15 @@ public class StockReportService {
             int totalQty = stock.getTotalSecondaryUnits();
             int ratio = p.getSecondaryPerPrimary() != null ? p.getSecondaryPerPrimary() : 1;
 
+            BigDecimal avgCostPrimary = avgCost.multiply(BigDecimal.valueOf(ratio));
+            BigDecimal sellPricePrimary = p.getSellPricePrimary() != null ? p.getSellPricePrimary() : BigDecimal.ZERO;
+            BigDecimal marginPrimary = BigDecimal.ZERO;
+            if (sellPricePrimary.compareTo(BigDecimal.ZERO) > 0) {
+                marginPrimary = sellPricePrimary.subtract(avgCostPrimary)
+                        .divide(sellPricePrimary, 4, RoundingMode.HALF_UP)
+                        .multiply(BigDecimal.valueOf(100));
+            }
+
             if (totalQty <= 0) {
                 status = "Out Of Stock";
             } else if (totalQty <= alertThreshold) {
@@ -119,6 +133,9 @@ public class StockReportService {
                     .avgCost(avgCost)
                     .sellingPrice(sellPrice)
                     .marginPercent(margin.setScale(2, RoundingMode.HALF_UP))
+                    .avgCostPrimary(avgCostPrimary.setScale(2, RoundingMode.HALF_UP))
+                    .sellingPricePrimary(sellPricePrimary.setScale(2, RoundingMode.HALF_UP))
+                    .marginPercentPrimary(marginPrimary.setScale(2, RoundingMode.HALF_UP))
                     .inventoryValue(value.setScale(2, RoundingMode.HALF_UP))
                     .status(status)
                     .build();
@@ -271,5 +288,99 @@ public class StockReportService {
                     .build());
         }
         return report;
+    }
+
+    public StockResponse toStockResponse(Stock stock) {
+        if (stock == null) return null;
+        Product product = stock.getProduct();
+        if (product == null) {
+            return StockResponse.builder()
+                    .id(stock.getId())
+                    .totalPrimaryUnits(stock.getTotalPrimaryUnits())
+                    .totalSecondaryUnits(stock.getTotalSecondaryUnits())
+                    .hasOpenPrimary(stock.getHasOpenPrimary())
+                    .openPrimaryRemaining(stock.getOpenPrimaryRemaining())
+                    .lastUpdated(stock.getLastUpdated())
+                    .build();
+        }
+
+        List<StockBatch> activeBatches = batchRepository.findByProductId(product.getId());
+        int reserved = activeBatches.stream()
+                .mapToInt(b -> b.getSecondarySoftReserved() != null ? b.getSecondarySoftReserved() : 0)
+                .sum();
+        int available = Math.max(0, stock.getTotalSecondaryUnits() - reserved);
+
+        BigDecimal avgCost = calculateWeightedAvgCost(product.getId());
+        BigDecimal sellPrice = product.getSellPriceSecondary() != null ? product.getSellPriceSecondary() : BigDecimal.ZERO;
+
+        BigDecimal margin = BigDecimal.ZERO;
+        if (sellPrice.compareTo(BigDecimal.ZERO) > 0) {
+            margin = sellPrice.subtract(avgCost).divide(sellPrice, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100));
+        }
+
+        int ratio = product.getSecondaryPerPrimary() != null ? product.getSecondaryPerPrimary() : 1;
+        BigDecimal avgCostPrimary = avgCost.multiply(BigDecimal.valueOf(ratio));
+        BigDecimal sellPricePrimary = product.getSellPricePrimary() != null ? product.getSellPricePrimary() : BigDecimal.ZERO;
+
+        BigDecimal marginPrimary = BigDecimal.ZERO;
+        if (sellPricePrimary.compareTo(BigDecimal.ZERO) > 0) {
+            marginPrimary = sellPricePrimary.subtract(avgCostPrimary).divide(sellPricePrimary, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100));
+        }
+
+        LocalDate lastPurchase = activeBatches.stream()
+                .map(b -> b.getStockReceivedDate() != null ? b.getStockReceivedDate() : b.getReceivedAt().toLocalDate())
+                .max(LocalDate::compareTo)
+                .orElse(null);
+
+        LocalDateTime lastSaleTime = billRepository.findLastSaleDateForProduct(product.getId());
+        LocalDate lastSale = lastSaleTime != null ? lastSaleTime.toLocalDate() : null;
+
+        BigDecimal invVal = BigDecimal.valueOf(stock.getTotalSecondaryUnits()).multiply(avgCost);
+
+        int alertThreshold = product.getLowStockAlertInSecondary();
+        String status = "Healthy";
+        int totalQty = stock.getTotalSecondaryUnits();
+
+        if (totalQty <= 0) {
+            status = "Out Of Stock";
+        } else if (totalQty <= alertThreshold) {
+            status = "Low Stock";
+        } else if (totalQty > alertThreshold * 8 && totalQty > ratio * 5) {
+            status = "Overstock";
+        }
+
+        boolean isLowStock = totalQty <= alertThreshold || totalQty <= 0;
+
+        return StockResponse.builder()
+                .id(stock.getId())
+                .productId(product.getId())
+                .productName(product.getName())
+                .brand(product.getBrand())
+                .category(product.getCategory() != null ? product.getCategory().name() : null)
+                .primaryUnit(product.getPrimaryUnit())
+                .secondaryUnit(product.getSecondaryUnit())
+                .secondaryPerPrimary(product.getSecondaryPerPrimary())
+                .totalPrimaryUnits(stock.getTotalPrimaryUnits())
+                .totalSecondaryUnits(stock.getTotalSecondaryUnits())
+                .hasOpenPrimary(stock.getHasOpenPrimary())
+                .openPrimaryRemaining(stock.getOpenPrimaryRemaining())
+                .isLowStock(isLowStock)
+                .lowStockAlert(product.getLowStockAlert())
+                .lowStockUnit(product.getLowStockUnit())
+                .lastUpdated(stock.getLastUpdated())
+                .availableStock(available)
+                .reservedStock(reserved)
+                .avgCost(avgCost.setScale(2, RoundingMode.HALF_UP))
+                .sellingPrice(sellPrice.setScale(2, RoundingMode.HALF_UP))
+                .marginPercent(margin.setScale(2, RoundingMode.HALF_UP))
+                .avgCostPrimary(avgCostPrimary.setScale(2, RoundingMode.HALF_UP))
+                .sellingPricePrimary(sellPricePrimary.setScale(2, RoundingMode.HALF_UP))
+                .marginPercentPrimary(marginPrimary.setScale(2, RoundingMode.HALF_UP))
+                .lastPurchaseDate(lastPurchase)
+                .lastSaleDate(lastSale)
+                .inventoryValue(invVal.setScale(2, RoundingMode.HALF_UP))
+                .reorderLevel(product.getLowStockAlert())
+                .status(status)
+                .build();
     }
 }

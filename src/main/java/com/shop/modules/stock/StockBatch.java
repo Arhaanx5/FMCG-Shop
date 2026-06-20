@@ -125,9 +125,19 @@ public class StockBatch {
                 || secondaryPerPrimary == 0) {
             return BigDecimal.ZERO;
         }
-        return buyPriceWithoutTax.divide(
-                BigDecimal.valueOf(secondaryPerPrimary),
-                2,
-                java.math.RoundingMode.HALF_UP);
+        int secondary = (secondaryReceived != null) ? secondaryReceived : 0;
+        int offer = (offerSecondaryReceived != null) ? offerSecondaryReceived : 0;
+        int totalSecondary = secondary + offer;
+
+        if (totalSecondary > 0) {
+            BigDecimal baseSecondaryPrice = buyPriceWithoutTax.divide(
+                    BigDecimal.valueOf(secondaryPerPrimary),
+                    4,
+                    java.math.RoundingMode.HALF_UP
+            );
+            BigDecimal totalCost = baseSecondaryPrice.multiply(BigDecimal.valueOf(secondary));
+            return totalCost.divide(BigDecimal.valueOf(totalSecondary), 4, java.math.RoundingMode.HALF_UP);
+        }
+        return BigDecimal.ZERO;
     }
 }

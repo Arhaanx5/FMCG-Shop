@@ -1631,19 +1631,28 @@ export default function Stock() {
                                </span>
                              )}
                           </td>
-                          <td className="py-2 px-4 font-mono text-indigo-600 dark:text-indigo-400">
+                  <td className="py-2 px-4 font-mono text-indigo-600 dark:text-indigo-400">
                             {item.availableStock}
                           </td>
                           <td className="py-2 px-4 font-mono text-amber-600 dark:text-amber-500">
                             {item.reservedStock}
                           </td>
-                          <td className="py-2 px-4 font-mono text-slate-700 dark:text-slate-300">₹{item.avgCost}</td>
-                          <td className="py-2 px-4 font-mono text-slate-700 dark:text-slate-300">₹{item.sellingPrice}</td>
-                          <td className="py-2 px-4">
-                            <span className={`font-semibold ${item.marginPercent < 5 ? 'text-red-550 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                              {item.marginPercent}%
-                            </span>
-                          </td>
+                          <td className="py-2 px-4 font-mono text-slate-700 dark:text-slate-300 text-xs">
+                             <div className="font-semibold text-slate-800 dark:text-slate-200">₹{item.avgCostPrimary} <span className="text-[10px] text-slate-400">/{item.primaryUnit || 'BOX'}</span></div>
+                             <div className="text-[11px] text-slate-500">₹{item.avgCost} <span className="text-[10px] text-slate-400">/{item.secondaryUnit || 'LADI'}</span></div>
+                           </td>
+                           <td className="py-2 px-4 font-mono text-slate-700 dark:text-slate-300 text-xs">
+                             <div className="font-semibold text-slate-800 dark:text-slate-200">₹{item.sellingPricePrimary} <span className="text-[10px] text-slate-400">/{item.primaryUnit || 'BOX'}</span></div>
+                             <div className="text-[11px] text-slate-500">₹{item.sellingPrice} <span className="text-[10px] text-slate-400">/{item.secondaryUnit || 'LADI'}</span></div>
+                           </td>
+                           <td className="py-2 px-4 text-xs font-mono">
+                             <div className={`font-bold ${item.marginPercentPrimary < 5 ? 'text-red-550 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                               {item.marginPercentPrimary}% <span className="text-[9px] font-normal text-slate-450 dark:text-slate-500">({item.primaryUnit || 'BOX'})</span>
+                             </div>
+                             <div className={`text-[11px] ${item.marginPercent < 5 ? 'text-red-550 dark:text-red-450' : 'text-emerald-600/80 dark:text-emerald-450'}`}>
+                               {item.marginPercent}% <span className="text-[9px] font-normal text-slate-450 dark:text-slate-500">({item.secondaryUnit || 'LADI'})</span>
+                             </div>
+                           </td>
                           <td className="py-2 px-4 font-mono text-emerald-600 dark:text-emerald-400 font-semibold">₹{item.inventoryValue}</td>
                           <td className="py-2 px-4 text-center">
                             <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
