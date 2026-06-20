@@ -15,10 +15,10 @@ public interface StockMovementRepository extends JpaRepository<StockMovement, UU
     Page<StockMovement> findAllByOrderByTimestampDesc(Pageable pageable);
 
     @Query("SELECT m FROM StockMovement m WHERE " +
-           "(:productId IS NULL OR m.product.id = :productId) AND " +
-           "(:movementType IS NULL OR m.movementType = :movementType) AND " +
-           "(:start IS NULL OR m.timestamp >= :start) AND " +
-           "(:end IS NULL OR m.timestamp <= :end) " +
+           "(cast(:productId as String) IS NULL OR m.product.id = :productId) AND " +
+           "(cast(:movementType as String) IS NULL OR m.movementType = :movementType) AND " +
+           "(cast(:start as String) IS NULL OR m.timestamp >= :start) AND " +
+           "(cast(:end as String) IS NULL OR m.timestamp <= :end) " +
            "ORDER BY m.timestamp DESC")
     Page<StockMovement> findFilteredMovements(
             @Param("productId") UUID productId,
