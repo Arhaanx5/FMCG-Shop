@@ -1615,11 +1615,11 @@ export default function Stock() {
                           <td className="py-2 px-4 text-slate-700 dark:text-slate-300">{item.category}</td>
                           <td className="py-2 px-4 font-mono">
                              <span className="text-slate-800 dark:text-slate-200 font-semibold">
-                               {item.totalSecondaryUnits} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">{item.secondaryUnit || 'Units'}</span>
+                               {item.totalPrimaryUnits || 0} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">{item.primaryUnit || 'BOX'}</span>
                              </span>
-                             {item.totalPrimaryUnits > 0 && (
+                             {item.totalSecondaryUnits > 0 && (
                                <span className="block text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                                 {item.totalPrimaryUnits} {item.primaryUnit || 'BOX'}
+                                 {item.totalSecondaryUnits} {item.secondaryUnit || 'Units'}
                                </span>
                              )}
                           </td>
