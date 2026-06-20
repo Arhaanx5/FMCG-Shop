@@ -117,9 +117,12 @@ export default function Stock() {
   const [batchList, setBatchList] = useState([])
   const [batchPage, setBatchPage] = useState(0)
   const [batchTotalPages, setBatchTotalPages] = useState(0)
+  const [batchTotalElements, setBatchTotalElements] = useState(0)
   const [batchSearchTerm, setBatchSearchTerm] = useState('')
   const [batchView, setBatchView] = useState('list') // 'list' | 'invoices'
   const [allBatchList, setAllBatchList] = useState([]) // all batches for invoice grouping
+  const [invoicePage, setInvoicePage] = useState(0)
+  const INVOICE_PAGE_SIZE = 15
 
   // 5. Stock Movement Ledger
   const [movementList, setMovementList] = useState([])
@@ -200,6 +203,7 @@ export default function Stock() {
       const res = await api.get(`/stock/batches?page=${page}&size=15`)
       setBatchList(res.data.data?.content || res.data.data || [])
       setBatchTotalPages(res.data.data?.totalPages || 0)
+      setBatchTotalElements(res.data.data?.totalElements || 0)
     } catch {
       toast.error('Failed to load batches')
     }
@@ -208,7 +212,7 @@ export default function Stock() {
   // Fetch ALL Batches for Invoice Summary (unpaginated)
   const loadAllBatches = async () => {
     try {
-      const res = await api.get(`/stock/batches?page=0&size=2000`)
+      const res = await api.get(`/stock/batches?page=0&size=10000`)
       setAllBatchList(res.data.data?.content || res.data.data || [])
     } catch {
       toast.error('Failed to load all batches for invoice summary')
@@ -1011,8 +1015,12 @@ export default function Stock() {
                 // Clear previews when switching tabs
                 setScannerPreview([])
                 setScannerFile(null)
-                // Reset batch sub-view when going to Batches tab
-                if (tab.id === 'batches') { setBatchView('list'); }
+                // Reset batch sub-view and pages when going to Batches tab
+                if (tab.id === 'batches') { 
+                  setBatchView('list'); 
+                  setBatchPage(0);
+                  setInvoicePage(0);
+                }
               }}
               className={`flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-medium text-xs md:text-sm transition-all duration-300 ${
                 activeTab === tab.id
@@ -2226,7 +2234,7 @@ export default function Stock() {
               {/* Toggle */}
               <div className="flex bg-slate-100 dark:bg-slate-950 rounded-xl p-1 gap-1">
                 <button
-                  onClick={() => setBatchView('list')}
+                  onClick={() => { setBatchView('list'); setBatchPage(0); }}
                   className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
                     batchView === 'list'
                       ? 'bg-indigo-600 text-white shadow'
@@ -2236,7 +2244,7 @@ export default function Stock() {
                   <Clock className="w-3.5 h-3.5" /> Batch List
                 </button>
                 <button
-                  onClick={() => { setBatchView('invoices'); loadAllBatches(); }}
+                  onClick={() => { setBatchView('invoices'); setInvoicePage(0); loadAllBatches(); }}
                   className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
                     batchView === 'invoices'
                       ? 'bg-indigo-600 text-white shadow'
@@ -2371,6 +2379,13 @@ export default function Stock() {
                   </tbody>
                 </table>
               </div>
+
+              {/* Pagination */}
+              {batchTotalPages > 1 && (
+                <div className="p-4 bg-slate-50 dark:bg-slate-950/80 border-t border-slate-200 dark:border-slate-800">
+                  <Pagination page={batchPage} totalPages={batchTotalPages} totalElements={batchTotalElements} pageSize={15} onPageChange={setBatchPage} />
+                </div>
+              )}
             </div>
             )}
 
@@ -2405,6 +2420,9 @@ export default function Stock() {
               const grandExcl = invoiceRows.reduce((s, r) => s + r.totalExcl, 0)
               const grandGst = invoiceRows.reduce((s, r) => s + r.totalGst, 0)
               const grandIncl = invoiceRows.reduce((s, r) => s + r.totalIncl, 0)
+
+              const paginatedInvoiceRows = invoiceRows.slice(invoicePage * INVOICE_PAGE_SIZE, (invoicePage + 1) * INVOICE_PAGE_SIZE)
+
               return (
                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
                   {/* Summary Cards */}
@@ -2438,9 +2456,9 @@ export default function Stock() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {invoiceRows.map((inv, idx) => (
+                        {paginatedInvoiceRows.map((inv, idx) => (
                           <tr key={idx} className="hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10 transition-colors">
-                            <td className="py-3 px-5 text-slate-400 dark:text-slate-500 font-mono text-xs">{idx + 1}</td>
+                            <td className="py-3 px-5 text-slate-400 dark:text-slate-500 font-mono text-xs">{invoicePage * INVOICE_PAGE_SIZE + idx + 1}</td>
                             <td className="py-3 px-5">
                               <span className="font-mono font-semibold text-indigo-600 dark:text-indigo-400 text-sm">{inv.invoiceNumber}</span>
                             </td>
@@ -2467,6 +2485,19 @@ export default function Stock() {
                       </tfoot>
                     </table>
                   </div>
+
+                  {/* Pagination */}
+                  {invoiceRows.length > INVOICE_PAGE_SIZE && (
+                    <div className="p-4 bg-slate-50 dark:bg-slate-950/80 border-t border-slate-200 dark:border-slate-800">
+                      <Pagination 
+                        page={invoicePage} 
+                        totalPages={Math.ceil(invoiceRows.length / INVOICE_PAGE_SIZE)} 
+                        totalElements={invoiceRows.length} 
+                        pageSize={INVOICE_PAGE_SIZE} 
+                        onPageChange={setInvoicePage} 
+                      />
+                    </div>
+                  )}
                 </div>
               )
             })()}
