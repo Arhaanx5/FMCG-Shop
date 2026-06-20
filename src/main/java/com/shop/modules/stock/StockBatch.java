@@ -82,6 +82,23 @@ public class StockBatch {
     @Column(name = "received_at")
     private LocalDateTime receivedAt;
 
+    @Column(name = "supplier_invoice_date")
+    private LocalDate supplierInvoiceDate;
+
+    @Column(name = "stock_received_date")
+    private LocalDate stockReceivedDate;
+
+    @Column(name = "manufacturing_date")
+    private LocalDate manufacturingDate;
+
+    @Column(name = "remarks", length = 500)
+    private String remarks;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "batch_status", length = 50)
+    @Builder.Default
+    private BatchStatus batchStatus = BatchStatus.ACTIVE;
+
     @Column(name = "supplier_name")
     private String supplierName;
 
@@ -92,6 +109,12 @@ public class StockBatch {
     @PrePersist
     public void prePersist() {
         receivedAt = LocalDateTime.now();
+        if (stockReceivedDate == null) {
+            stockReceivedDate = LocalDate.now();
+        }
+        if (batchStatus == null) {
+            batchStatus = BatchStatus.ACTIVE;
+        }
     }
 
     // Get buy price per secondary unit

@@ -28,8 +28,7 @@ public interface ProductRepository
     // Low stock — check against secondary units
     @Query("SELECT p FROM Product p " +
             "JOIN Stock s ON s.product.id = p.id " +
-            "WHERE s.totalSecondaryUnits " +
-            "< p.lowStockAlert " +
+            "WHERE (s.totalSecondaryUnits <= p.lowStockAlert OR s.totalSecondaryUnits <= 0) " +
             "AND p.active = true")
     List<Product> findLowStockProducts();
 

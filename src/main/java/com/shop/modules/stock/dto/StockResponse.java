@@ -2,6 +2,8 @@ package com.shop.modules.stock.dto;
 
 import lombok.Builder;
 import lombok.Data;
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -25,4 +27,16 @@ public class StockResponse {
     private Integer lowStockAlert;
     private String lowStockUnit;
     private LocalDateTime lastUpdated;
+
+    // Redesign properties
+    private Integer availableStock;
+    private Integer reservedStock;
+    private BigDecimal avgCost;
+    private BigDecimal sellingPrice;
+    private BigDecimal marginPercent;
+    private LocalDate lastPurchaseDate;
+    private LocalDate lastSaleDate;
+    private BigDecimal inventoryValue;
+    private Integer reorderLevel;
+    private String status;
 }

@@ -47,6 +47,9 @@ public interface BillRepository extends JpaRepository<Bill, UUID> {
     @Query("SELECT COALESCE(SUM(b.paidAmount), 0) FROM Bill b WHERE b.customer.id = :customerId AND b.status IN ('CONFIRMED', 'PARTIAL', 'PAID')")
     java.math.BigDecimal sumPaidAmountByCustomerId(@Param("customerId") UUID customerId);
 
+    @Query("SELECT MAX(b.createdAt) FROM Bill b JOIN b.items i WHERE i.product.id = :productId AND b.status <> 'CANCELLED'")
+    java.time.LocalDateTime findLastSaleDateForProduct(@Param("productId") UUID productId);
+
     @Query("SELECT DISTINCT b.customer FROM Bill b WHERE " +
            "b.pendingAmount > 0 AND (b.status = 'CONFIRMED' OR b.status = 'PARTIAL') AND b.createdAt < :cutoff")
     List<com.shop.modules.customer.Customer> findCustomersWithOverdueBills(@Param("cutoff") LocalDateTime cutoff);

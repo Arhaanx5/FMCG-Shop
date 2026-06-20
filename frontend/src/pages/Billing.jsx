@@ -510,6 +510,45 @@ export default function Billing() {
     }
   }
 
+  const prefetchStock = async (productList) => {
+    // Background fetch in chunks of 5 parallel requests
+    for (let i = 0; i < productList.length; i += 5) {
+      const chunk = productList.slice(i, i + 5)
+      await Promise.all(chunk.map(p => loadProductBatches(p.id)))
+    }
+  }
+
+  const getSearchOptions = () => {
+    const list = []
+    products.filter(p => p.active !== false).forEach(p => {
+      // Regular Paid Option
+      list.push({ ...p, isSearchOfferOption: false, uniqueSearchId: p.id })
+      
+      // Offer Option if available in stock
+      const cached = virtualStockCache[p.id]
+      if (cached && cached.offer > 0) {
+        list.push({
+          ...p,
+          uniqueSearchId: p.id + "-offer-search",
+          name: `${p.name} (🎁 Free Offer)`,
+          isSearchOfferOption: true,
+          sellPriceSecondary: 0,
+          sellPricePrimary: 0
+        })
+      }
+    })
+    return list
+  }
+
+  const handleSearchSelectChange = (value) => {
+    if (typeof value === 'string' && value.endsWith('-offer-search')) {
+      const realId = value.replace('-offer-search', '')
+      addOfferToCart(realId)
+    } else {
+      addToCart(value)
+    }
+  }
+
   const loadAll = async (showSpinner = false) => {
     if (showSpinner) setLoading(true)
     try {
@@ -518,9 +557,12 @@ export default function Billing() {
         api.get('/customers?size=500'),
         api.get('/bills'),
       ])
-      setProducts(pRes.data.data?.content || pRes.data.data || [])
+      const loadedProducts = pRes.data.data?.content || pRes.data.data || []
+      setProducts(loadedProducts)
       setCustomers(cRes.data.data?.content || cRes.data.data || [])
       setBills(bRes.data.data || [])
+      // Background prefetch stock cache
+      prefetchStock(loadedProducts)
     } catch { toast.error('Failed to load data') }
     finally { if (showSpinner) setLoading(false) }
   }
@@ -629,22 +671,44 @@ export default function Billing() {
       const gstRate = Number(item.gstPercent || 0)
       const cessRate = Number(item.cessPercent || 0)
       
-      const lineTotalInclusive = (item.sellPricePrimary * qPri) + (item.sellPriceSecondary * qSec)
-      const taxDivisor = 1 + (gstRate + cessRate) / 100
-      const lineTotalBase = lineTotalInclusive / taxDivisor
-      const gst = lineTotalBase * (gstRate / 100)
-      const cess = lineTotalBase * (cessRate / 100)
+      let itemTotal = 0
+      let itemSubtotal = 0
+      let gstAmount = 0
+      let cessAmount = 0
+
+      if (item.isOffer) {
+        // Offer items are free (₹0)
+      } else {
+        // 1. Calculate line total inclusive of tax (exact expected sum)
+        const inclusivePrice = (item.sellPricePrimary * qPri) + (item.sellPriceSecondary * qSec)
+        itemTotal = Math.round(inclusivePrice * 100) / 100
+
+        // 2. Back-calculate line subtotal (excluding tax)
+        const taxDivisor = 1 + (gstRate + cessRate) / 100
+        itemSubtotal = Math.round((itemTotal / taxDivisor) * 100) / 100
+
+        // 3. Calculate GST and Cess at line level
+        gstAmount = Math.round(itemSubtotal * (gstRate / 100) * 100) / 100
+        cessAmount = Math.round(itemSubtotal * (cessRate / 100) * 100) / 100
+
+        // 4. Adjust rounding discrepancy to match itemTotal exactly
+        const calculatedTotal = Math.round((itemSubtotal + gstAmount + cessAmount) * 100) / 100
+        if (Math.abs(calculatedTotal - itemTotal) > 0.001) {
+          const diff = Math.round((itemTotal - calculatedTotal) * 100) / 100
+          gstAmount = Math.round((gstAmount + diff) * 100) / 100
+        }
+      }
       
-      acc.cartSubtotal += lineTotalBase
-      acc.gstTotal += gst
-      acc.cessTotal += cess
+      acc.cartSubtotal = Math.round((acc.cartSubtotal + itemSubtotal) * 100) / 100
+      acc.gstTotal = Math.round((acc.gstTotal + gstAmount) * 100) / 100
+      acc.cessTotal = Math.round((acc.cessTotal + cessAmount) * 100) / 100
       return acc
     }, { cartSubtotal: 0, gstTotal: 0, cessTotal: 0 })
   }, [cart])
 
-  const subtotal = cartSubtotal + gstTotal + cessTotal
+  const subtotal = Math.round((cartSubtotal + gstTotal + cessTotal) * 100) / 100
 
-  const grandTotal = Math.max(0, subtotal - Number(discount || 0))
+  const grandTotal = Math.max(0, Math.round((subtotal - Number(discount || 0)) * 100) / 100)
 
   const handleCreateBill = async () => {
     if (!customerId) { toast.error('Please select a customer'); return }
@@ -1069,19 +1133,19 @@ Thank you for doing business with Lari Traders!`
 
             <div style={{ marginBottom: 'var(--space-4)' }}>
               <SearchSelect
-                options={products.filter(p => p.active !== false)}
+                options={getSearchOptions()}
                 value=""
-                onChange={addToCart}
+                onChange={handleSearchSelectChange}
                 placeholder="Search products to add..."
                 labelKey="name"
-                valueKey="id"
+                valueKey="uniqueSearchId"
                 renderOption={(p) => (
                   <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', gap: 'var(--space-2)' }}>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                       {p.name} {p.brand && <span className="text-muted text-xs">({p.brand})</span>}
                     </span>
-                    <span className="text-accent text-sm" style={{ flexShrink: 0, fontWeight: '600' }}>
-                      ₹{p.sellPriceSecondary}
+                    <span className={p.isSearchOfferOption ? "text-success text-sm" : "text-accent text-sm"} style={{ flexShrink: 0, fontWeight: '600' }}>
+                      {p.isSearchOfferOption ? "🎁 Free Offer" : `₹${p.sellPriceSecondary}`}
                     </span>
                   </div>
                 )}

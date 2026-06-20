@@ -68,6 +68,7 @@ public class FmcgShopBusinessTests {
     @Mock private UdharReminderLogRepository udharReminderLogRepository;
     @Mock private WhatsAppService whatsAppService;
     @Mock private ReceivablesAgingService receivablesAgingService;
+    @Mock private StockMovementRepository movementRepository;
 
     // Mocks injected into BillService and DamageService
     @Mock private CustomerService customerServiceMock;
@@ -87,7 +88,28 @@ public class FmcgShopBusinessTests {
 
     @org.junit.jupiter.api.BeforeEach
     public void setUp() {
-        this.stockService = new StockService(stockRepository, batchRepository, productRepository, stockAdjustmentLogRepository, userRepository, damageLogRepository, expenseRepository);
+        lenient().when(batchRepository.findByIdForUpdate(any(UUID.class)))
+                .thenAnswer(invocation -> {
+                    UUID id = invocation.getArgument(0);
+                    return batchRepository.findById(id);
+                });
+
+        StockMovementService movementServiceMock = new StockMovementService(movementRepository);
+        StockInventoryService inventoryServiceMock = new StockInventoryService(stockRepository, batchRepository, productRepository, stockAdjustmentLogRepository, userRepository, movementServiceMock);
+        StockReceiveService receiveServiceMock = new StockReceiveService(batchRepository, productRepository, stockRepository, userRepository, expenseRepository, movementServiceMock, inventoryServiceMock);
+
+        this.stockService = new StockService(
+                stockRepository,
+                batchRepository,
+                productRepository,
+                stockAdjustmentLogRepository,
+                userRepository,
+                damageLogRepository,
+                expenseRepository,
+                receiveServiceMock,
+                movementServiceMock,
+                inventoryServiceMock
+        );
         
         this.damageService = new DamageService(
                 damageLogRepository,

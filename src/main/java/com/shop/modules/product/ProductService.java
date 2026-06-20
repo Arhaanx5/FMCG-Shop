@@ -33,8 +33,7 @@ public class ProductService {
                 && stock.getHasOpenPrimary() != null
                 && stock.getHasOpenPrimary();
 
-        boolean isLowStock = totalSecondary
-                < product.getLowStockAlert();
+        boolean isLowStock = totalSecondary <= product.getLowStockAlert() || totalSecondary <= 0;
 
         return ProductResponse.builder()
                 .id(product.getId())

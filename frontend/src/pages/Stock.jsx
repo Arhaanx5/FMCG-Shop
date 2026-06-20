@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
-import { Plus, AlertTriangle, Clock, Package, Edit2, History, Trash2, Settings, PlayCircle, CheckCircle, XCircle, Camera, Upload, Calendar } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { 
+  Plus, AlertTriangle, Clock, Package, Edit2, History, Trash2, 
+  Settings, PlayCircle, CheckCircle, XCircle, Camera, Upload, 
+  Calendar, FileText, ArrowRightLeft, TrendingUp, ShieldAlert,
+  BarChart2, Award, Download, Filter, Search, RotateCcw
+} from 'lucide-react'
 import api from '../services/api'
 import DataTable from '../components/DataTable'
 import Pagination from '../components/Pagination'
@@ -9,27 +14,17 @@ import SearchSelect from '../components/SearchSelect'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
 import ConfirmDialog from '../components/ConfirmDialog'
-const CATEGORIES = ['CHIPS', 'SNACKS', 'BEVERAGES', 'CIGARETTES', 'BISCUITS', 'NAMKEEN', 'OTHER']
+import { 
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, 
+  Tooltip, PieChart, Pie, Cell, LineChart, Line, CartesianGrid, Legend 
+} from 'recharts'
 
-const emptyForm = { 
-  productId: '', 
-  batchNumber: '', 
-  invoiceNumber: '',
-  primaryReceived: '', 
-  extraSecondaryReceived: '', 
-  offerSecondaryReceived: '', 
-  buyPriceWithoutTax: '', 
-  buyPriceWithTax: '', 
-  expiryDate: '', 
-  supplierName: '', 
-  sellPricePrimary: '', 
-  sellPriceSecondary: '', 
-  logAsExpense: true 
-}
+const CATEGORIES = ['CHIPS', 'SNACKS', 'BEVERAGES', 'CIGARETTES', 'BISCUITS', 'NAMKEEN', 'OTHER']
 
 export default function Stock() {
   const { isAdmin, isManager, aiEnabled } = useAuth()
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+  const toast = useToast()
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768)
@@ -37,2665 +32,1445 @@ export default function Stock() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-
-  const [stocks, setStocks] = useState([])
-  const [products, setProducts] = useState([])
-  const [expiring, setExpiring] = useState([])
-  const [loading, setLoading] = useState(true)
+  // Tabs: overview (Inventory), dashboard, receive, batches, movements, audit, reports, bi, automation
   const [activeTab, setActiveTab] = useState('overview')
-  const [showModal, setShowModal] = useState(false)
-  const [form, setForm] = useState({ ...emptyForm })
-  const [saving, setSaving] = useState(false)
-  // Batches for a selected product
-  const [batchProduct, setBatchProduct] = useState(null)
-  const [batches, setBatches] = useState([])
-  const [batchLoading, setBatchLoading] = useState(false)
-  const [writeOffTarget, setWriteOffTarget] = useState(null)
+
+  // Global list data states
+  const [products, setProducts] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  // Filters & Search
+  const [searchTerm, setSearchTerm] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState('')
+  const [selectedBrand, setSelectedBrand] = useState('')
+  const [selectedStatus, setSelectedStatus] = useState('')
+
+  // 1. Dashboard State
+  const [dashboardData, setDashboardData] = useState(null)
+  const [dashboardLoading, setDashboardLoading] = useState(false)
+
+  // 2. Receive Stock (Manual/Bulk) Form state
+  const [manualForm, setManualForm] = useState({
+    productId: '',
+    batchNumber: '',
+    supplierInvoiceNumber: '',
+    supplierInvoiceDate: '',
+    stockReceivedDate: new Date().toISOString().split('T')[0],
+    manufacturingDate: '',
+    remarks: '',
+    primaryReceived: '',
+    extraSecondaryReceived: '',
+    offerSecondaryReceived: '',
+    buyPriceWithoutTax: '',
+    expiryDate: '',
+    supplierName: '',
+    sellPricePrimary: '',
+    sellPriceSecondary: '',
+    gstPercent: '5',
+    logAsExpense: true
+  })
+  const [savingStock, setSavingStock] = useState(false)
+
+  // Bulk manual entry rows
+  const [bulkRows, setBulkRows] = useState([])
+
+  // 3. Inventory list pagination
+  const [inventoryList, setInventoryList] = useState([])
+  const [invPage, setInvPage] = useState(0)
+  const [invTotalPages, setInvTotalPages] = useState(0)
+  const [invTotalElements, setInvTotalElements] = useState(0)
+  const INV_PAGE_SIZE = 15
+
+  // 4. Batch Inventory Page
+  const [batchList, setBatchList] = useState([])
+  const [batchPage, setBatchPage] = useState(0)
+  const [batchTotalPages, setBatchTotalPages] = useState(0)
+  const [batchSearchTerm, setBatchSearchTerm] = useState('')
+
+  // 5. Stock Movement Ledger
+  const [movementList, setMovementList] = useState([])
+  const [movementPage, setMovementPage] = useState(0)
+  const [movementTotalPages, setMovementTotalPages] = useState(0)
+  const [selectedMovementType, setSelectedMovementType] = useState('')
+
+  // 6. Audit Logs Adjustments
+  const [auditLogs, setAuditLogs] = useState([])
+  const [auditPage, setAuditPage] = useState(0)
+  const [auditTotalPages, setAuditTotalPages] = useState(0)
+
+  // 7. Reports Module
+  const [selectedReport, setSelectedReport] = useState('valuation')
+  const [reportData, setReportData] = useState([])
+  const [reportPage, setReportPage] = useState(0)
+  const [reportTotalPages, setReportTotalPages] = useState(0)
+  const [reportLoading, setReportLoading] = useState(false)
+
+  // 8. BI & Forecasting State
+  const [biHealth, setBiHealth] = useState(null)
+  const [biReorders, setBiReorders] = useState([])
+  const [biLoading, setBiLoading] = useState(false)
 
   // Adjust stock states
   const [adjustingBatch, setAdjustingBatch] = useState(null)
   const [adjustPrimary, setAdjustPrimary] = useState('')
+  const [adjustSecondary, setAdjustSecondary] = useState('')
+  const [adjustOffer, setAdjustOffer] = useState('')
   const [adjustBuyPrice, setAdjustBuyPrice] = useState('')
-  const [adjustBuyPriceWithTax, setAdjustBuyPriceWithTax] = useState('')
   const [adjustReason, setAdjustReason] = useState('')
   const [adjusting, setAdjusting] = useState(false)
-  const [validationErrors, setValidationErrors] = useState({})
-  const [auditLogs, setAuditLogs] = useState([])
-  const [logsLoading, setLogsLoading] = useState(false)
 
-  // Stock overview pagination
-  const [stockPage, setStockPage] = useState(0)
-  const [stockTotalPages, setStockTotalPages] = useState(0)
-  const [stockTotalElements, setStockTotalElements] = useState(0)
-  const STOCK_PAGE_SIZE = 20
+  // Expiry Write-Off confirmation
+  const [writeOffTarget, setWriteOffTarget] = useState(null)
 
-  // Audit log pagination
-  const [auditPage, setAuditPage] = useState(0)
-  const [auditTotalPages, setAuditTotalPages] = useState(0)
-  const [auditTotalElements, setAuditTotalElements] = useState(0)
-  const AUDIT_PAGE_SIZE = 15
-
-  // Scheduler panel state
-  const [schedulerStatus, setSchedulerStatus] = useState(null)
-  const [schedulerLoading, setSchedulerLoading] = useState(false)
-  const [runNowLoading, setRunNowLoading] = useState(false)
-  const [showRunNowConfirm, setShowRunNowConfirm] = useState(false)
-
-  // Scanner states
-  const [scannerFile, setScannerFile] = useState(null)
-  const [scannerLoading, setScannerLoading] = useState(false)
-  const [scannerPreview, setScannerPreview] = useState([])
-  const [editingNameIndex, setEditingNameIndex] = useState(null)
-  const [scannerSupplier, setScannerSupplier] = useState('Saurabh Agency')
-  const [scannerInvoiceNumber, setScannerInvoiceNumber] = useState('')
-  const [invoiceAlreadyScanned, setInvoiceAlreadyScanned] = useState(false)
-  
-  // Invoice Lookup states
-  const [invoiceSearchTerm, setInvoiceSearchTerm] = useState('')
-  const [invoiceSearchBatches, setInvoiceSearchBatches] = useState([])
-  const [showInvoiceSearchModal, setShowInvoiceSearchModal] = useState(false)
-  const [invoiceSearchLoading, setInvoiceSearchLoading] = useState(false)
-
-  
-  // Quick Add Product states
-  const [showQuickProductModal, setShowQuickProductModal] = useState(false)
-  
-  // Daily Inward states
-  const getLocalDateString = () => {
-    const d = new Date()
-    const year = d.getFullYear()
-    const month = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
-  }
-  const [inwardDate, setInwardDate] = useState(getLocalDateString())
-  const [inwardBatches, setInwardBatches] = useState([])
-  const [inwardLoading, setInwardLoading] = useState(false)
-  const [quickProductIndex, setQuickProductIndex] = useState(null)
-  const [quickProductForm, setQuickProductForm] = useState({
-    name: '', brand: '', category: 'SNACKS', otherCategoryDetail: '', gstPercent: '5', cessPercent: '0', isCessApplicable: false,
-    primaryUnit: 'BOX', secondaryUnit: 'LADI', customSecondaryUnit: '', secondaryPerPrimary: '20',
-    canSellPrimary: true, canSellSecondary: true,
-    buyPriceWithoutTax: '', buyPriceWithTax: '',
-    sellPricePrimary: '', sellPriceSecondary: '',
-    sellPricePrimaryExcl: '', sellPricePrimaryIncl: '',
-    sellPriceSecondaryExcl: '', sellPriceSecondaryIncl: '',
-    lowStockAlert: '10', lowStockUnit: 'SECONDARY',
-  })
-
-  useEffect(() => {
-    if (!aiEnabled && activeTab === 'scanner') {
-      setActiveTab('overview')
-    }
-  }, [aiEnabled, activeTab])
-
-  const clearError = (field) => {
-    setValidationErrors(prev => ({ ...prev, [field]: null }))
-  }
-
-  const toast = useToast()
-
-  useEffect(() => { loadAll(0, true) }, [])
-
-  const loadAuditLogs = async (pg = 0) => {
-    setLogsLoading(true)
+  // Fetch Products for dropdowns
+  const loadProducts = async () => {
     try {
-      const res = await api.get(`/stock/adjustments?page=${pg}&size=${AUDIT_PAGE_SIZE}`)
-      const pageData = res.data.data
-      setAuditLogs(pageData?.content || [])
-      setAuditTotalPages(pageData?.totalPages || 0)
-      setAuditTotalElements(pageData?.totalElements || 0)
+      const res = await api.get('/products?size=500')
+      setProducts(res.data.data?.content || res.data.data || [])
     } catch {
-      toast.error('Failed to load stock audit logs')
-    } finally {
-      setLogsLoading(false)
+      toast.error('Failed to load products list')
     }
   }
 
-  const loadInwardBatches = async (dateVal) => {
-    if (!dateVal) return
-    setInwardLoading(true)
+  // Fetch Inventory List
+  const loadInventory = async (page = 0) => {
+    setLoading(true)
     try {
-      const res = await api.get(`/stock/batches?date=${dateVal}`)
-      setInwardBatches(res.data.data || [])
+      const res = await api.get(`/stock/paged?page=${page}&size=${INV_PAGE_SIZE}`)
+      setInventoryList(res.data.data?.content || [])
+      setInvTotalPages(res.data.data?.totalPages || 0)
+      setInvTotalElements(res.data.data?.totalElements || 0)
     } catch {
-      toast.error('Failed to load inward stock batches')
+      toast.error('Failed to load stock inventory')
     } finally {
-      setInwardLoading(false)
+      setLoading(false)
     }
   }
 
-  const loadSchedulerStatus = async () => {
-    setSchedulerLoading(true)
+  // Fetch Dashboard Stats
+  const loadDashboard = async () => {
+    setDashboardLoading(true)
     try {
-      const res = await api.get('/scheduler/expiry/status')
-      setSchedulerStatus(res.data.data)
+      const res = await api.get('/stock/dashboard')
+      setDashboardData(res.data.data)
     } catch {
-      toast.error('Failed to load scheduler status')
+      toast.error('Failed to load dashboard metrics')
     } finally {
-      setSchedulerLoading(false)
+      setDashboardLoading(false)
     }
   }
 
-  const handleRunNow = async () => {
-    setRunNowLoading(true)
+  // Fetch Batches
+  const loadBatches = async (page = 0) => {
     try {
-      const res = await api.post('/scheduler/expiry/run-now')
-      toast.success(res.data.message || 'Sweep completed!')
-      loadSchedulerStatus()
-      loadAll(0)
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Sweep failed')
+      const res = await api.get(`/stock/batches?page=${page}&size=15`)
+      setBatchList(res.data.data?.content || res.data.data || [])
+      setBatchTotalPages(res.data.data?.totalPages || 0)
+    } catch {
+      toast.error('Failed to load batches')
+    }
+  }
+
+  // Fetch Movements
+  const loadMovements = async (page = 0) => {
+    try {
+      const res = await api.get(`/stock/movements?page=${page}&size=15&movementType=${selectedMovementType}`)
+      setMovementList(res.data.data?.content || [])
+      setMovementTotalPages(res.data.data?.totalPages || 0)
+    } catch {
+      toast.error('Failed to load stock movement ledger')
+    }
+  }
+
+  // Fetch Adjustments Audit
+  const loadAuditLogs = async (page = 0) => {
+    try {
+      const res = await api.get(`/stock/adjustments?page=${page}&size=15`)
+      setAuditLogs(res.data.data?.content || [])
+      setAuditTotalPages(res.data.data?.totalPages || 0)
+    } catch {
+      toast.error('Failed to load audit logs')
+    }
+  }
+
+  // Fetch BI metrics
+  const loadBI = async () => {
+    setBiLoading(true)
+    try {
+      const hRes = await api.get('/stock/bi/health')
+      const rRes = await api.get('/stock/bi/reorder')
+      setBiHealth(hRes.data.data)
+      setBiReorders(rRes.data.data || [])
+    } catch {
+      toast.error('Failed to load business intelligence metrics')
     } finally {
-      setRunNowLoading(false)
-      setShowRunNowConfirm(false)
+      setBiLoading(false)
+    }
+  }
+
+  // Fetch Reports
+  const loadReports = async (page = 0) => {
+    setReportLoading(true)
+    try {
+      let endpoint = `/stock/reports/valuation?page=${page}&size=15`
+      if (selectedReport === 'expiry') endpoint = `/stock/reports/expiry?page=${page}&size=15`
+      else if (selectedReport === 'aging') endpoint = `/stock/reports/aging?page=${page}&size=15`
+      else if (selectedReport === 'profitability') endpoint = `/stock/reports/profitability/category`
+
+      const res = await api.get(endpoint)
+      if (selectedReport === 'profitability') {
+        setReportData(res.data.data || [])
+        setReportTotalPages(1)
+      } else {
+        setReportData(res.data.data?.content || [])
+        setReportTotalPages(res.data.data?.totalPages || 0)
+      }
+    } catch {
+      toast.error('Failed to generate report')
+    } finally {
+      setReportLoading(false)
     }
   }
 
   useEffect(() => {
-    if (activeTab === 'audit' && isAdmin) loadAuditLogs(0)
-    if (activeTab === 'scheduler' && isAdmin) loadSchedulerStatus()
-    if (activeTab === 'daily-inward') loadInwardBatches(inwardDate)
-  }, [activeTab, inwardDate])
+    loadProducts()
+    loadInventory(0)
+  }, [])
 
-  const handleAdjustPriceChange = (type, value) => {
-    if (!adjustingBatch) return
-    const gst = Number(adjustingBatch.gstPercent || 0)
-    if (type === 'without') {
-      const parsed = parseFloat(value)
-      if (isNaN(parsed) || !value) {
-        setAdjustBuyPrice(value)
-        setAdjustBuyPriceWithTax('')
-      } else {
-        const withTax = (parsed * (1 + gst / 100)).toFixed(2)
-        setAdjustBuyPrice(value)
-        setAdjustBuyPriceWithTax(withTax)
-      }
-    } else {
-      const parsed = parseFloat(value)
-      if (isNaN(parsed) || !value) {
-        setAdjustBuyPriceWithTax(value)
-        setAdjustBuyPrice('')
-      } else {
-        const withoutTax = (parsed / (1 + gst / 100)).toFixed(2)
-        setAdjustBuyPriceWithTax(value)
-        setAdjustBuyPrice(withoutTax)
-      }
-    }
-  }
+  // Trigger loads based on active tab
+  useEffect(() => {
+    if (activeTab === 'dashboard') loadDashboard()
+    else if (activeTab === 'overview') loadInventory(invPage)
+    else if (activeTab === 'batches') loadBatches(batchPage)
+    else if (activeTab === 'movements') loadMovements(movementPage)
+    else if (activeTab === 'audit' && isAdmin) loadAuditLogs(auditPage)
+    else if (activeTab === 'bi') loadBI()
+    else if (activeTab === 'reports') loadReports(reportPage)
+  }, [activeTab, invPage, batchPage, movementPage, auditPage, reportPage, selectedReport, selectedMovementType])
 
-  const handleAdjustStockSubmit = async (e) => {
+  // Handle Receive Stock form submit
+  const handleReceiveSubmit = async (e) => {
     e.preventDefault()
-    if (adjustPrimary === null || adjustPrimary === undefined || adjustPrimary === '') {
-      toast.error('Specify new remaining quantity in primary units')
+    if (!manualForm.productId || !manualForm.supplierInvoiceNumber || !manualForm.supplierInvoiceDate) {
+      toast.error('Please fill in all mandatory fields')
       return
     }
-    if (!adjustReason.trim()) { toast.error('Specify reason for correction'); return }
+
+    setSavingStock(true)
+    try {
+      const payload = {
+        ...manualForm,
+        primaryReceived: manualForm.primaryReceived === '' ? 0 : Number(manualForm.primaryReceived),
+        extraSecondaryReceived: manualForm.extraSecondaryReceived === '' ? 0 : Number(manualForm.extraSecondaryReceived),
+        offerSecondaryReceived: manualForm.offerSecondaryReceived === '' ? 0 : Number(manualForm.offerSecondaryReceived),
+        buyPriceWithoutTax: Number(manualForm.buyPriceWithoutTax)
+      }
+
+      await api.post('/stock/receive', payload)
+      toast.success('Stock received and registered successfully!')
+      setManualForm({
+        productId: '',
+        batchNumber: '',
+        supplierInvoiceNumber: '',
+        supplierInvoiceDate: '',
+        stockReceivedDate: new Date().toISOString().split('T')[0],
+        manufacturingDate: '',
+        remarks: '',
+        primaryReceived: '',
+        extraSecondaryReceived: '',
+        offerSecondaryReceived: '',
+        buyPriceWithoutTax: '',
+        expiryDate: '',
+        supplierName: '',
+        sellPricePrimary: '',
+        sellPriceSecondary: '',
+        gstPercent: '5',
+        logAsExpense: true
+      })
+      loadInventory(0)
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to receive stock')
+    } finally {
+      setSavingStock(false)
+    }
+  }
+
+  // Handle Adjust Stock Submit
+  const handleAdjustSubmit = async (e) => {
+    e.preventDefault()
+    if (!adjustReason.trim()) {
+      toast.error('Adjustment reason is mandatory')
+      return
+    }
     setAdjusting(true)
     try {
-      const ratio = adjustingBatch.secondaryPerPrimary || 1
-      const computedSecondary = Number(adjustPrimary) * ratio
+      const product = products.find(p => p.id === adjustingBatch.productId)
+      const ratio = product?.secondaryPerPrimary || 1
+      const totalSec = (Number(adjustPrimary || 0) * ratio) + Number(adjustSecondary || 0)
+
       await api.put(`/stock/batches/${adjustingBatch.id}/adjust`, {
-        newSecondaryRemaining: computedSecondary,
-        newBuyPriceWithoutTax: adjustBuyPrice ? Number(adjustBuyPrice) : null,
+        newSecondaryRemaining: totalSec,
+        newOfferSecondaryRemaining: adjustOffer === '' ? null : Number(adjustOffer),
+        newBuyPriceWithoutTax: adjustBuyPrice === '' ? null : Number(adjustBuyPrice),
         reason: adjustReason
       })
-      toast.success('Stock corrected successfully!')
+
+      toast.success('Stock adjusted successfully!')
       setAdjustingBatch(null)
-      setAdjustPrimary('')
-      setAdjustBuyPrice('')
-      setAdjustBuyPriceWithTax('')
       setAdjustReason('')
-      setValidationErrors({})
-      if (batchProduct) {
-        loadBatches(batchProduct.id, batchProduct.name)
-      }
-      loadAll()
-      if (activeTab === 'daily-inward') {
-        loadInwardBatches(inwardDate)
-      }
+      setAdjustPrimary('')
+      setAdjustSecondary('')
+      setAdjustOffer('')
+      setAdjustBuyPrice('')
+      loadBatches(batchPage)
+      loadInventory(invPage)
     } catch (err) {
-      if (err.response?.status === 400 && err.response?.data?.data && typeof err.response.data.data === 'object') {
-        setValidationErrors(err.response.data.data)
-        toast.error('Validation failed. Please correct the highlighted fields.')
-      } else {
-        toast.error(err.response?.data?.message || 'Failed to correct stock')
-      }
+      toast.error(err.response?.data?.message || 'Failed to adjust stock')
     } finally {
       setAdjusting(false)
     }
   }
 
-  const executeWriteOff = async (batchId) => {
+  // Handle Expiry Write-Off
+  const handleWriteOff = async (batchId) => {
     try {
       await api.post(`/stock/batches/${batchId}/write-off-expiry`)
-      toast.success('Expired stock written off to Damage Log successfully!')
+      toast.success('Expired stock written off successfully')
       setWriteOffTarget(null)
-      loadAll()
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to write off expired stock')
-    }
-  }
-
-  const openQuickProductModal = (index) => {
-    const item = scannerPreview[index]
-    if (!item) return
-
-    setQuickProductIndex(index)
-    
-    // Guess default values based on invoice item
-    const guessCategory = item.productName.toLowerCase().includes('chip') ? 'CHIPS' : 'SNACKS'
-    const guessSecUnit = (item.packsPerCase === 72 || item.packsPerCase === 216) ? 'PACK' : 'LADI'
-    let guessSecPerPri = 20
-    if (guessSecUnit === 'PACK') {
-      guessSecPerPri = item.packsPerCase || 72
-    } else {
-      const mrpVal = Number(item.mrp || 0)
-      const ladiSize = (mrpVal > 10) ? 10 : 12
-      guessSecPerPri = item.packsPerCase ? Math.floor(item.packsPerCase / ladiSize) : 20
-      if (guessSecPerPri <= 0) guessSecPerPri = 20
-    }
-
-    const knownSecondaryUnits = ['LADI', 'PACK', 'BOTTLE']
-    const cleanItemSecUnit = item.secondaryUnit ? item.secondaryUnit.trim().toUpperCase() : ''
-    const isKnown = knownSecondaryUnits.includes(cleanItemSecUnit)
-    
-    const initialSecUnit = isKnown ? cleanItemSecUnit : (cleanItemSecUnit ? 'OTHER' : guessSecUnit)
-    const initialCustomSecUnit = (!isKnown && cleanItemSecUnit) ? cleanItemSecUnit : ''
-
-    const buyPriceWithoutTaxVal = item.buyPriceWithoutTax !== undefined ? item.buyPriceWithoutTax.toString() : ''
-    const gstPercentVal = item.gstPercent !== undefined ? item.gstPercent.toString() : '5'
-    const buyPriceWithTaxVal = buyPriceWithoutTaxVal ? (Number(buyPriceWithoutTaxVal) * (1 + Number(gstPercentVal) / 100)).toFixed(2) : ''
-
-    setQuickProductForm({
-      name: item.productName || '',
-      brand: "Haldiram's",
-      category: guessCategory,
-      otherCategoryDetail: '',
-      gstPercent: gstPercentVal,
-      cessPercent: '0',
-      isCessApplicable: false,
-      primaryUnit: (item.primaryUnit && ['BOX', 'CRATE'].includes(item.primaryUnit.toUpperCase())) ? item.primaryUnit.toUpperCase() : 'BOX',
-      secondaryUnit: initialSecUnit,
-      customSecondaryUnit: initialCustomSecUnit,
-      secondaryPerPrimary: item.secondaryPerPrimary !== undefined ? item.secondaryPerPrimary.toString() : guessSecPerPri.toString(),
-      canSellPrimary: true,
-      canSellSecondary: true,
-      buyPriceWithoutTax: buyPriceWithoutTaxVal,
-      buyPriceWithTax: buyPriceWithTaxVal,
-      sellPricePrimary: '',
-      sellPriceSecondary: '',
-      sellPricePrimaryExcl: '',
-      sellPricePrimaryIncl: '',
-      sellPriceSecondaryExcl: '',
-      sellPriceSecondaryIncl: '',
-      lowStockAlert: '10',
-      lowStockUnit: 'SECONDARY'
-    })
-    setShowQuickProductModal(true)
-  }
-
-  const handleQuickPriceChange = (type, value) => {
-    const gst = Number(quickProductForm.gstPercent || 0)
-    const cess = Number(quickProductForm.cessPercent || 0)
-    const taxRate = 1 + (gst + cess) / 100
-    if (type === 'without') {
-      const parsed = parseFloat(value)
-      if (isNaN(parsed) || !value) {
-        setQuickProductForm(f => ({ ...f, buyPriceWithoutTax: value, buyPriceWithTax: '' }))
-      } else {
-        const withTax = (parsed * taxRate).toFixed(2)
-        setQuickProductForm(f => ({ ...f, buyPriceWithoutTax: value, buyPriceWithTax: withTax }))
-      }
-    } else {
-      const parsed = parseFloat(value)
-      if (isNaN(parsed) || !value) {
-        setQuickProductForm(f => ({ ...f, buyPriceWithTax: value, buyPriceWithoutTax: '' }))
-      } else {
-        const withoutTax = (parsed / taxRate).toFixed(2)
-        setQuickProductForm(f => ({ ...f, buyPriceWithTax: value, buyPriceWithoutTax: withoutTax }))
-      }
-    }
-  }
-
-  const handleQuickSellPriceChange = (unitType, fieldType, value) => {
-    const gst = Number(quickProductForm.gstPercent || 0)
-    const cess = Number(quickProductForm.cessPercent || 0)
-    const taxRate = 1 + (gst + cess) / 100
-
-    if (unitType === 'primary') {
-      if (fieldType === 'excl') {
-        const parsed = parseFloat(value)
-        if (isNaN(parsed) || !value) {
-          setQuickProductForm(f => ({ ...f, sellPricePrimaryExcl: value, sellPricePrimaryIncl: '' }))
-        } else {
-          const incl = (parsed * taxRate).toFixed(2)
-          setQuickProductForm(f => ({ ...f, sellPricePrimaryExcl: value, sellPricePrimaryIncl: incl }))
-        }
-      } else {
-        const parsed = parseFloat(value)
-        if (isNaN(parsed) || !value) {
-          setQuickProductForm(f => ({ ...f, sellPricePrimaryIncl: value, sellPricePrimaryExcl: '' }))
-        } else {
-          const excl = (parsed / taxRate).toFixed(2)
-          setQuickProductForm(f => ({ ...f, sellPricePrimaryIncl: value, sellPricePrimaryExcl: excl }))
-        }
-      }
-    } else {
-      if (fieldType === 'excl') {
-        const parsed = parseFloat(value)
-        if (isNaN(parsed) || !value) {
-          setQuickProductForm(f => ({ ...f, sellPriceSecondaryExcl: value, sellPriceSecondaryIncl: '' }))
-        } else {
-          const incl = (parsed * taxRate).toFixed(2)
-          setQuickProductForm(f => ({ ...f, sellPriceSecondaryExcl: value, sellPriceSecondaryIncl: incl }))
-        }
-      } else {
-        const parsed = parseFloat(value)
-        if (isNaN(parsed) || !value) {
-          setQuickProductForm(f => ({ ...f, sellPriceSecondaryIncl: value, sellPriceSecondaryExcl: '' }))
-        } else {
-          const excl = (parsed / taxRate).toFixed(2)
-          setQuickProductForm(f => ({ ...f, sellPriceSecondaryIncl: value, sellPriceSecondaryExcl: excl }))
-        }
-      }
-    }
-  }
-
-  const handleQuickGstChange = (gstValue) => {
-    const gst = Number(gstValue || 0)
-    const cess = Number(quickProductForm.cessPercent || 0)
-    const taxRate = 1 + (gst + cess) / 100
-    const withoutTax = parseFloat(quickProductForm.buyPriceWithoutTax)
-    let newBuyPriceWithTax = quickProductForm.buyPriceWithTax
-    if (!isNaN(withoutTax)) {
-      newBuyPriceWithTax = (withoutTax * taxRate).toFixed(2)
-    }
-
-    const sellPriIncl = parseFloat(quickProductForm.sellPricePrimaryIncl)
-    const sellPriExcl = !isNaN(sellPriIncl) ? (sellPriIncl / taxRate).toFixed(2) : ''
-
-    const sellSecIncl = parseFloat(quickProductForm.sellPriceSecondaryIncl)
-    const sellSecExcl = !isNaN(sellSecIncl) ? (sellSecIncl / taxRate).toFixed(2) : ''
-
-    setQuickProductForm(f => ({
-      ...f,
-      gstPercent: gstValue,
-      buyPriceWithTax: newBuyPriceWithTax,
-      sellPricePrimaryExcl: sellPriExcl,
-      sellPriceSecondaryExcl: sellSecExcl
-    }))
-  }
-
-  const handleQuickCessChange = (cessValue) => {
-    const cess = Number(cessValue || 0)
-    const gst = Number(quickProductForm.gstPercent || 0)
-    const taxRate = 1 + (gst + cess) / 100
-    const withoutTax = parseFloat(quickProductForm.buyPriceWithoutTax)
-    let newBuyPriceWithTax = quickProductForm.buyPriceWithTax
-    if (!isNaN(withoutTax)) {
-      newBuyPriceWithTax = (withoutTax * taxRate).toFixed(2)
-    }
-
-    const sellPriIncl = parseFloat(quickProductForm.sellPricePrimaryIncl)
-    const sellPriExcl = !isNaN(sellPriIncl) ? (sellPriIncl / taxRate).toFixed(2) : ''
-
-    const sellSecIncl = parseFloat(quickProductForm.sellPriceSecondaryIncl)
-    const sellSecExcl = !isNaN(sellSecIncl) ? (sellSecIncl / taxRate).toFixed(2) : ''
-
-    setQuickProductForm(f => ({
-      ...f,
-      cessPercent: cessValue,
-      buyPriceWithTax: newBuyPriceWithTax,
-      sellPricePrimaryExcl: sellPriExcl,
-      sellPriceSecondaryExcl: sellSecExcl
-    }))
-  }
-
-  const handleQuickCessApplicableChange = (applicable) => {
-    const gst = Number(quickProductForm.gstPercent || 0)
-    const newCess = applicable ? (Number(quickProductForm.cessPercent) > 0 ? Number(quickProductForm.cessPercent) : 12) : 0
-    const taxRate = 1 + (gst + newCess) / 100
-    const withoutTax = parseFloat(quickProductForm.buyPriceWithoutTax)
-    let newBuyPriceWithTax = quickProductForm.buyPriceWithTax
-    if (!isNaN(withoutTax)) {
-      newBuyPriceWithTax = (withoutTax * taxRate).toFixed(2)
-    }
-
-    const sellPriIncl = parseFloat(quickProductForm.sellPricePrimaryIncl)
-    const sellPriExcl = !isNaN(sellPriIncl) ? (sellPriIncl / taxRate).toFixed(2) : ''
-
-    const sellSecIncl = parseFloat(quickProductForm.sellPriceSecondaryIncl)
-    const sellSecExcl = !isNaN(sellSecIncl) ? (sellSecIncl / taxRate).toFixed(2) : ''
-
-    setQuickProductForm(f => ({
-      ...f,
-      isCessApplicable: applicable,
-      cessPercent: newCess,
-      buyPriceWithTax: newBuyPriceWithTax,
-      sellPricePrimaryExcl: sellPriExcl,
-      sellPriceSecondaryExcl: sellSecExcl
-    }))
-  }
-
-  const handleQuickProductSubmit = async (e) => {
-    e.preventDefault()
-    setSaving(true)
-    try {
-      const payload = {
-        name: quickProductForm.name,
-        brand: quickProductForm.brand,
-        category: quickProductForm.category,
-        otherCategoryDetail: quickProductForm.category === 'OTHER' ? quickProductForm.otherCategoryDetail : '',
-        gstPercent: Number(quickProductForm.gstPercent || 0),
-        cessPercent: quickProductForm.isCessApplicable ? Number(quickProductForm.cessPercent || 0) : 0,
-        primaryUnit: quickProductForm.primaryUnit,
-        secondaryUnit: quickProductForm.secondaryUnit === 'OTHER' ? (quickProductForm.customSecondaryUnit || 'PACK').toUpperCase().trim() : quickProductForm.secondaryUnit,
-        secondaryPerPrimary: Number(quickProductForm.secondaryPerPrimary || 1),
-        canSellPrimary: quickProductForm.canSellPrimary ?? true,
-        canSellSecondary: quickProductForm.canSellSecondary ?? true,
-        buyPriceWithoutTax: quickProductForm.buyPriceWithoutTax !== '' ? Number(quickProductForm.buyPriceWithoutTax) : null,
-        buyPriceWithTax: quickProductForm.buyPriceWithTax !== '' ? Number(quickProductForm.buyPriceWithTax) : null,
-        sellPricePrimary: quickProductForm.sellPricePrimaryIncl !== '' ? Number(quickProductForm.sellPricePrimaryIncl) : 0,
-        sellPriceSecondary: quickProductForm.sellPriceSecondaryIncl !== '' ? Number(quickProductForm.sellPriceSecondaryIncl) : 0,
-        lowStockAlert: quickProductForm.lowStockAlert !== '' ? Number(quickProductForm.lowStockAlert) : 10,
-        lowStockUnit: quickProductForm.lowStockUnit || 'SECONDARY'
-      }
-
-      const res = await api.post('/products', payload)
-      const newProduct = res.data.data
-
-      // Add to local product list
-      setProducts(prev => [...prev, newProduct])
-
-      // Directly map this scanner row with fresh newProduct — avoids stale `products` closure bug
-      if (quickProductIndex !== null) {
-        setScannerPreview(prev => {
-          const updated = [...prev]
-          const item = updated[quickProductIndex]
-          if (!item) return prev
-          const ratio = newProduct.secondaryPerPrimary || 1
-          const secUnit = newProduct.secondaryUnit ? newProduct.secondaryUnit.toUpperCase() : 'LADI'
-          let packPerSecondary = 1
-          if (secUnit === 'LADI') {
-            packPerSecondary = ratio > 0 ? Math.floor((item.packsPerCase || 1) / ratio) : 12
-          }
-          if (packPerSecondary <= 0) packPerSecondary = 1
-          const totalPacks = (item.invoiceCases || 0) * (item.packsPerCase || 1)
-          const totalSecondaryUnits = Math.floor(totalPacks / packPerSecondary)
-          const primaryAdded = Math.floor(totalSecondaryUnits / ratio)
-          const openBoxAdded = totalSecondaryUnits % ratio
-          const buyPricePerPiece = Number(item.buyPricePerPiece || 0)
-          const buyPriceWithoutTax = (item.taxableValue && item.invoiceCases > 0)
-            ? Number((item.taxableValue / item.invoiceCases).toFixed(2))
-            : (buyPricePerPiece > 0
-              ? Number((buyPricePerPiece * ratio * packPerSecondary).toFixed(2))
-              : Number(item.buyPriceWithoutTax || 0))
-          updated[quickProductIndex] = {
-            ...item,
-            productId: newProduct.id,
-            productName: newProduct.name,
-            brand: newProduct.brand,
-            category: newProduct.category,
-            primaryUnit: newProduct.primaryUnit || 'BOX',
-            secondaryUnit: newProduct.secondaryUnit || 'LADI',
-            secondaryPerPrimary: ratio,
-            primaryAdded,
-            secondaryAdded: totalSecondaryUnits,
-            openBoxAdded,
-            buyPriceWithoutTax,
-            newProduct: false,
-            duplicateBatch: false
-          }
-          return updated
-        })
-      }
-
-      toast.success('Product created and mapped successfully!')
-      setShowQuickProductModal(false)
-    } catch (err) {
-      const errMsg = err.response?.data?.message || '';
-      if (errMsg.toLowerCase().includes('already exists') || errMsg.toLowerCase().includes('already exist')) {
-        try {
-          const pRes = await api.get('/products?size=500')
-          const latestProducts = pRes.data.data?.content || pRes.data.data || []
-          setProducts(latestProducts)
-          
-          const matchedProduct = latestProducts.find(p => 
-            p.name.trim().toLowerCase() === quickProductForm.name.trim().toLowerCase() && 
-            (p.brand || '').trim().toLowerCase() === (quickProductForm.brand || '').trim().toLowerCase()
-          )
-          
-          if (matchedProduct && quickProductIndex !== null) {
-            setScannerPreview(prev => {
-              const updated = [...prev]
-              const item = updated[quickProductIndex]
-              if (!item) return prev
-              const ratio = matchedProduct.secondaryPerPrimary || 1
-              const secUnit = matchedProduct.secondaryUnit ? matchedProduct.secondaryUnit.toUpperCase() : 'LADI'
-              let packPerSecondary = 1
-              if (secUnit === 'LADI') {
-                packPerSecondary = ratio > 0 ? Math.floor((item.packsPerCase || 1) / ratio) : 12
-              }
-              if (packPerSecondary <= 0) packPerSecondary = 1
-              const totalPacks = (item.invoiceCases || 0) * (item.packsPerCase || 1)
-              const totalSecondaryUnits = Math.floor(totalPacks / packPerSecondary)
-              const primaryAdded = Math.floor(totalSecondaryUnits / ratio)
-              const openBoxAdded = totalSecondaryUnits % ratio
-              const buyPricePerPiece = Number(item.buyPricePerPiece || 0)
-              const buyPriceWithoutTax = (item.taxableValue && item.invoiceCases > 0)
-                ? Number((item.taxableValue / item.invoiceCases).toFixed(2))
-                : (buyPricePerPiece > 0
-                  ? Number((buyPricePerPiece * ratio * packPerSecondary).toFixed(2))
-                  : Number(item.buyPriceWithoutTax || 0))
-              updated[quickProductIndex] = {
-                ...item,
-                productId: matchedProduct.id,
-                productName: matchedProduct.name,
-                brand: matchedProduct.brand,
-                category: matchedProduct.category,
-                primaryUnit: matchedProduct.primaryUnit || 'BOX',
-                secondaryUnit: matchedProduct.secondaryUnit || 'LADI',
-                secondaryPerPrimary: ratio,
-                primaryAdded,
-                secondaryAdded: totalSecondaryUnits,
-                openBoxAdded,
-                buyPriceWithoutTax,
-                newProduct: false,
-                duplicateBatch: false
-              }
-              return updated
-            })
-            toast.success('Product already exists! Row successfully mapped.')
-            setShowQuickProductModal(false)
-            return
-          }
-        } catch (fetchErr) {
-          console.error("Failed to recover and map existing product", fetchErr)
-        }
-      }
-      toast.error(err.response?.data?.message || 'Failed to quick create product')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleScanInvoice = async (e) => {
-    e.preventDefault()
-    if (!scannerFile) { toast.error('Koi file select karein'); return }
-    setScannerLoading(true)
-    setScannerPreview([])
-    setScannerInvoiceNumber('')
-    setInvoiceAlreadyScanned(false)
-    try {
-      const formData = new FormData()
-      formData.append('file', scannerFile)
-      const res = await api.post(`/stock/parse-invoice?supplierName=${encodeURIComponent(scannerSupplier)}`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      })
-      const scanData = res.data.data || {}
-      setScannerPreview(scanData.items || [])
-      setScannerInvoiceNumber(scanData.invoiceNumber || '')
-      setInvoiceAlreadyScanned(scanData.alreadyScanned || false)
-      toast.success('Invoice successfully scan aur map ho gaya!')
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Invoice scanning failed. Please try again.')
-    } finally {
-
-      setScannerLoading(false)
-    }
-  }
-
-  const checkDuplicate = async (supplier, invoiceNo) => {
-    if (!supplier || !invoiceNo) {
-      setInvoiceAlreadyScanned(false)
-      return
-    }
-    try {
-      const res = await api.get(`/stock/check-duplicate-invoice?supplierName=${encodeURIComponent(supplier)}&invoiceNumber=${encodeURIComponent(invoiceNo)}`)
-      setInvoiceAlreadyScanned(res.data.data || false)
-    } catch (err) {
-      console.error("Failed to check duplicate status", err)
-    }
-  }
-
-  const handleInvoiceLookup = async (e) => {
-    e.preventDefault()
-    if (!invoiceSearchTerm.trim()) return
-    setInvoiceSearchLoading(true)
-    try {
-      const res = await api.get(`/stock/batches/invoice/${encodeURIComponent(invoiceSearchTerm.trim())}`)
-      setInvoiceSearchBatches(res.data.data || [])
-      setShowInvoiceSearchModal(true)
+      loadBatches(batchPage)
+      loadInventory(invPage)
     } catch {
-      toast.error('Invoice search failed')
-    } finally {
-      setInvoiceSearchLoading(false)
+      toast.error('Failed to write off expired stock')
     }
   }
 
-  const handleScannerRowProductChange = (index, newProductId) => {
-    const updated = [...scannerPreview]
-    const item = updated[index]
-    const product = products.find(p => p.id === newProductId)
-    
-    if (product) {
-      const ratio = product.secondaryPerPrimary || 1
-      const secUnit = product.secondaryUnit ? product.secondaryUnit.toUpperCase() : 'LADI'
-      let packPerSecondary = 1
-      if (secUnit === 'LADI') {
-        packPerSecondary = ratio > 0 ? Math.floor((item.packsPerCase || 1) / ratio) : 12
-      }
-      if (packPerSecondary <= 0) packPerSecondary = 1
-      
-      const totalPacks = item.invoiceCases * item.packsPerCase
-      const totalSecondaryUnits = Math.floor(totalPacks / packPerSecondary)
-      
-      const primaryAdded = Math.floor(totalSecondaryUnits / ratio)
-      const openBoxAdded = totalSecondaryUnits % ratio
-      
-      const buyPriceWithoutTax = (item.taxableValue && item.invoiceCases > 0)
-        ? Number((item.taxableValue / item.invoiceCases).toFixed(2))
-        : Number(item.buyPricePerPiece) * ratio * packPerSecondary
-      
-      updated[index] = {
-        ...item,
-        productId: product.id,
-        productName: product.name,
-        brand: product.brand,
-        category: product.category,
-        primaryUnit: product.primaryUnit || 'BOX',
-        secondaryUnit: product.secondaryUnit || 'LADI',
-        secondaryPerPrimary: ratio,
-        primaryAdded,
-        secondaryAdded: totalSecondaryUnits,
-        openBoxAdded,
-        buyPriceWithoutTax,
-        gstPercent: product.gstPercent,
-        newProduct: false
-      }
-    } else {
-      updated[index] = {
-        ...item,
-        productId: null,
-        newProduct: true
-      }
-    }
-    setScannerPreview(updated)
-  }
-
-  const handleScannerSubmit = async (e) => {
-    e.preventDefault()
-    
-    const unmapped = scannerPreview.filter(item => !item.productId)
-    if (unmapped.length > 0) {
-      toast.error('Kucch products mapped nahi hain. Pehle unhe sahi product se map karein.')
-      return
-    }
-    
-    setSaving(true)
-    try {
-      const payload = scannerPreview.map(item => {
-        const product = products.find(p => p.id === item.productId)
-        
-        return {
-          productId: item.productId,
-          batchNumber: item.batchNumber,
-          invoiceNumber: scannerInvoiceNumber || null,
-          primaryReceived: item.primaryAdded,
-          extraSecondaryReceived: item.openBoxAdded,
-          offerSecondaryReceived: item.offerUnitsAdded || 0,
-          buyPriceWithoutTax: item.buyPriceWithoutTax,
-          expiryDate: item.expiryDate,
-          supplierName: scannerSupplier,
-          gstPercent: Number(item.gstPercent || 0),
-          logAsExpense: true
-        }
+  // Export reports to CSV helper
+  const exportToCSV = () => {
+    if (reportData.length === 0) return
+    let csvContent = 'data:text/csv;charset=utf-8,'
+    if (selectedReport === 'valuation') {
+      csvContent += 'Product,Category,Brand,Stock,Avg Cost,Selling Price,Value,Status\n'
+      reportData.forEach(row => {
+        csvContent += `"${row.productName}","${row.category}","${row.brand}",${row.currentStock},${row.avgCost},${row.sellingPrice},${row.inventoryValue},"${row.status}"\n`
       })
-      
-      await api.post('/stock/receive-bulk', payload)
-      toast.success('Sare items stock me successfully add ho gaye hain!')
-      setScannerPreview([])
-      setScannerFile(null)
-      setScannerInvoiceNumber('')
-      setInvoiceAlreadyScanned(false)
-      loadAll()
-
-      setActiveTab('overview')
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to save stock batches')
-    } finally {
-      setSaving(false)
+    } else if (selectedReport === 'expiry') {
+      csvContent += 'Batch,Product,Expiry Date,Remaining,Cost Value,Days to Expiry,Risk\n'
+      reportData.forEach(row => {
+        csvContent += `"${row.batchNumber}","${row.productName}","${row.expiryDate}",${row.remainingQty},${row.costValue},${row.daysToExpiry},"${row.riskBucket}"\n`
+      })
+    } else if (selectedReport === 'aging') {
+      csvContent += 'Batch,Product,Received Date,Remaining,Age (Days),Bucket\n'
+      reportData.forEach(row => {
+        csvContent += `"${row.batchNumber}","${row.productName}","${row.stockReceivedDate}",${row.remainingQty},${row.ageDays},"${row.ageBucket}"\n`
+      })
+    } else if (selectedReport === 'profitability') {
+      csvContent += 'Category,Cost Value,Selling Value,Profit Potential,Margin %\n'
+      reportData.forEach(row => {
+        csvContent += `"${row.categoryName}",${row.costValue},${row.sellingValue},${row.profitPotential},${row.marginPercent}\n`
+      })
     }
+
+    const encodedUri = encodeURI(csvContent)
+    const link = document.createElement('a')
+    link.setAttribute('href', encodedUri)
+    link.setAttribute('download', `Stock_Report_${selectedReport}_${new Date().toISOString().split('T')[0]}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
   }
 
-  const loadAll = async (pg = 0, showSpinner = false) => {
-    if (showSpinner) setLoading(true)
-    try {
-      const [sRes, pRes, eRes] = await Promise.all([
-        api.get(`/stock/paged?page=${pg}&size=${STOCK_PAGE_SIZE}`),
-        api.get('/products?size=500'),
-        api.get('/stock/expiring-soon'),
-      ])
-      const stockPage = sRes.data.data
-      setStocks(stockPage?.content || [])
-      setStockTotalPages(stockPage?.totalPages || 0)
-      setStockTotalElements(stockPage?.totalElements || 0)
-      setProducts(pRes.data.data?.content || pRes.data.data || [])
-      setExpiring(eRes.data.data || [])
-    } catch { toast.error('Failed to load stock data') }
-    finally { if (showSpinner) setLoading(false) }
-  }
-
-  const loadBatches = async (productId, productName) => {
-    setBatchProduct({ id: productId, name: productName })
-    setBatchLoading(true)
-    try {
-      const res = await api.get(`/stock/batches/${productId}`)
-      setBatches(res.data.data || [])
-    } catch { toast.error('Failed to load batches') }
-    finally { setBatchLoading(false) }
-  }
-
-  const handleReceive = async (e) => {
-    e.preventDefault()
-    if (!form.productId) { toast.error('Select a product'); return }
-    setSaving(true)
-    try {
-      const selectedProduct = products.find(p => p.id === form.productId)
-      const gst = selectedProduct ? Number(selectedProduct.gstPercent || 0) : 0
-      const payload = {
-        ...form,
-        primaryReceived: Number(form.primaryReceived || 0),
-        extraSecondaryReceived: Number(form.extraSecondaryReceived || 0),
-        offerSecondaryReceived: Number(form.offerSecondaryReceived || 0),
-        buyPriceWithoutTax: Number(form.buyPriceWithoutTax || 0),
-        buyPriceWithTax: form.buyPriceWithTax ? Number(form.buyPriceWithTax) : null,
-        sellPricePrimary: form.sellPricePrimary ? Number(form.sellPricePrimary) : null,
-        sellPriceSecondary: form.sellPriceSecondary ? Number(form.sellPriceSecondary) : null,
-        gstPercent: gst,
-        logAsExpense: !!form.logAsExpense
-      }
-      await api.post('/stock/receive', payload)
-      toast.success('Stock received successfully!')
-      setShowModal(false)
-      setForm({ ...emptyForm })
-      setValidationErrors({})
-      loadAll()
-      if (activeTab === 'daily-inward') {
-        loadInwardBatches(inwardDate)
-      }
-    } catch (err) {
-      if (err.response?.status === 400 && err.response?.data?.data && typeof err.response.data.data === 'object') {
-        setValidationErrors(err.response.data.data)
-        toast.error('Validation failed. Please correct the highlighted fields.')
-      } else {
-        toast.error(err.response?.data?.message || 'Failed to receive stock')
-      }
-    } finally { setSaving(false) }
-  }
-
-  const updateField = (key, val) => {
-    setForm(f => ({ ...f, [key]: val }))
-    clearError(key)
-  }
-
-  const handlePriceChange = (type, value) => {
-    const selectedProduct = products.find(p => p.id === form.productId)
-    const gst = selectedProduct ? Number(selectedProduct.gstPercent || 0) : 0
-    if (type === 'without') {
-      const parsed = parseFloat(value)
-      if (isNaN(parsed) || !value) {
-        setForm(f => ({ ...f, buyPriceWithoutTax: value, buyPriceWithTax: '' }))
-      } else {
-        const withTax = (parsed * (1 + gst / 100)).toFixed(2)
-        setForm(f => ({ ...f, buyPriceWithoutTax: value, buyPriceWithTax: withTax }))
-      }
-    } else {
-      const parsed = parseFloat(value)
-      if (isNaN(parsed) || !value) {
-        setForm(f => ({ ...f, buyPriceWithTax: value, buyPriceWithoutTax: '' }))
-      } else {
-        const withoutTax = (parsed / (1 + gst / 100)).toFixed(2)
-        setForm(f => ({ ...f, buyPriceWithTax: value, buyPriceWithoutTax: withoutTax }))
-      }
-    }
-    clearError('buyPriceWithoutTax')
-  }
-
-  const handleProductChange = (productId) => {
-    const selectedProduct = products.find(p => p.id === productId)
-    const gst = selectedProduct ? Number(selectedProduct.gstPercent || 0) : 0
-    const withoutTax = parseFloat(form.buyPriceWithoutTax)
-    if (!isNaN(withoutTax)) {
-      const withTax = (withoutTax * (1 + gst / 100)).toFixed(2)
-      setForm(f => ({ ...f, productId, buyPriceWithTax: withTax }))
-    } else {
-      setForm(f => ({ ...f, productId }))
-    }
-    clearError('productId')
-  }
-
-  const stockColumns = [
-    { header: 'Product', accessor: 'productName', render: (row) => (
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-          <span className="font-medium">{row.productName}</span>
-          {row.isLowStock && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', color: 'var(--color-danger)', fontSize: '10px', fontWeight: 'bold' }}>
-              ⚠️
-            </span>
-          )}
-        </div>
-        {row.brand && <div className="text-xs text-muted">{row.brand}</div>}
-      </div>
-    )},
-    { header: 'Category', accessor: 'category', render: (row) => <span className="badge badge-accent">{row.category}</span> },
-    { header: 'Primary', key: 'primary', render: (row) => `${row.totalPrimaryUnits || 0} ${row.primaryUnit || ''}` },
-    { header: 'Secondary', key: 'secondary', render: (row) => `${row.totalSecondaryUnits || 0} ${row.secondaryUnit || ''}` },
-    { header: 'Open Box', key: 'openBox', render: (row) => row.hasOpenPrimary
-      ? <span className="badge badge-info">{row.openPrimaryRemaining} left</span>
-      : <span className="text-muted">—</span>
-    },
-    { header: 'Status', key: 'stockStatus', render: (row) =>
-      row.isLowStock
-        ? <span className="badge badge-danger"><AlertTriangle size={12} /> Low Stock</span>
-        : <span className="badge badge-success">OK</span>
-    },
-  ].filter(col => {
-    if (isMobile) {
-      return !['category', 'openBox', 'stockStatus'].includes(col.accessor || col.key)
-    }
-    return true
+  // Filter Inventory list locally based on search filters
+  const filteredInventory = inventoryList.filter(item => {
+    const matchesSearch = item.productName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          item.brand?.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesCategory = !selectedCategory || item.category === selectedCategory
+    const matchesBrand = !selectedBrand || item.brand === selectedBrand
+    const matchesStatus = !selectedStatus || item.status === selectedStatus
+    return matchesSearch && matchesCategory && matchesBrand && matchesStatus
   })
 
-  const expiringColumns = [
-    { header: 'Product', accessor: 'productName', render: (row) => (
-      <div>
-        <div className="font-medium">{row.productName}</div>
-        {row.brand && <div className="text-xs text-muted">{row.brand}</div>}
-      </div>
-    )},
-    { header: 'Batch #', accessor: 'batchNumber' },
-    { header: 'Remaining', accessor: 'secondaryRemaining', render: (row) => `${row.secondaryRemaining || 0} ${row.secondaryUnit || ''}` },
-    { header: 'Supplier', accessor: 'supplierName' },
-    { header: 'Expiry', accessor: 'expiryDate', render: (row) => {
-      const d = row.expiryDate ? new Date(row.expiryDate) : null
-      const daysLeft = d ? Math.ceil((d - new Date()) / 86400000) : null
-      return d ? (
-        <div>
-          <div>{d.toLocaleDateString('en-IN')}</div>
-          <div className={`text-xs ${daysLeft <= 3 ? 'text-danger' : 'text-warning'}`}>
-            {daysLeft <= 0 ? 'EXPIRED' : `${daysLeft} days left`}
-          </div>
-        </div>
-      ) : '—'
-    }},
-  ].filter(col => {
-    if (isMobile) {
-      return !['batchNumber', 'supplierName'].includes(col.accessor)
-    }
-    return true
-  })
-
-  const getBatchTotalValue = (batch) => {
-    const ratio = batch.secondaryPerPrimary || 1
-    const buyPrice = Number(batch.buyPriceWithTax || 0)
-    const totalSec = batch.secondaryReceived || 0
-    return totalSec * (buyPrice / ratio)
-  }
-
-  const inwardColumns = [
-    { header: 'Time', accessor: 'receivedAt', render: (row) => row.receivedAt ? new Date(row.receivedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—' },
-    { header: 'Product', accessor: 'productName', render: (row) => (
-      <div>
-        <div className="font-medium">{row.productName}</div>
-        {row.brand && <div className="text-xs text-muted">{row.brand}</div>}
-      </div>
-    )},
-    { header: 'Batch #', accessor: 'batchNumber', render: (row) => <span className="font-mono text-xs font-semibold">{row.batchNumber}</span> },
-    { header: 'Invoice No', accessor: 'invoiceNumber', render: (row) => row.invoiceNumber || <span className="text-muted">Manual</span> },
-    { header: 'Supplier', accessor: 'supplierName' },
-    { header: 'Qty Received', key: 'qtyReceived', render: (row) => {
-      const primary = row.primaryReceived || 0
-      const totalSec = row.secondaryReceived || 0
-      const ratio = row.secondaryPerPrimary || 1
-      const extra = Math.max(0, totalSec - (primary * ratio))
-      if (primary > 0 && extra > 0) {
-        return `${primary} ${row.primaryUnit || 'BOX'} + ${extra} ${row.secondaryUnit || 'LADI'}`
-      } else if (primary > 0) {
-        return `${primary} ${row.primaryUnit || 'BOX'}`
-      } else {
-        return `${totalSec} ${row.secondaryUnit || 'LADI'}`
-      }
-    }},
-    { header: 'Buy Price', key: 'buyPrice', render: (row) => (
-      <div>
-        <div>₹{Number(row.buyPriceWithTax || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-        <div className="text-xs text-muted">₹{Number(row.buyPriceWithoutTax || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })} (Ex.)</div>
-      </div>
-    )},
-    { header: 'Total Value', key: 'totalValue', render: (row) => {
-      const val = getBatchTotalValue(row)
-      return <span className="font-semibold text-success">₹{val.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-    }}
-  ].filter(col => {
-    if (isMobile) {
-      return !['receivedAt', 'invoiceNumber', 'supplierName', 'buyPrice'].includes(col.accessor || col.key)
-    }
-    return true
-  })
-
-  const batchColumns = [
-    { header: 'Batch #', accessor: 'batchNumber' },
-    { header: 'Received', key: 'received', render: (row) => {
-      const primary = row.primaryReceived || 0;
-      const totalSec = row.secondaryReceived || 0;
-      const ratio = row.secondaryPerPrimary || 1;
-      const extra = Math.max(0, totalSec - (primary * ratio));
-      if (primary > 0 && extra > 0) {
-        return `${primary} ${row.primaryUnit || 'BOX'} + ${extra} ${row.secondaryUnit || 'LADI'}`;
-      } else if (primary > 0) {
-        return `${primary} ${row.primaryUnit || 'BOX'}`;
-      } else {
-        return `${totalSec} ${row.secondaryUnit || 'LADI'}`;
-      }
-    }},
-    { header: 'Remaining', accessor: 'secondaryRemaining', render: (row) => `${row.secondaryRemaining || 0} ${row.secondaryUnit || ''}` },
-    { header: 'Buy ₹', accessor: 'buyPriceWithTax', render: (row) => `₹${Number(row.buyPriceWithTax || 0).toLocaleString('en-IN')}` },
-    { header: 'Supplier', accessor: 'supplierName' },
-    { header: 'Invoice No', accessor: 'invoiceNumber', render: (row) => row.invoiceNumber || <span className="text-muted">Manual</span> },
-    { header: 'Expiry', accessor: 'expiryDate', render: (row) => row.expiryDate ? new Date(row.expiryDate).toLocaleDateString('en-IN') : '—' },
-    { header: 'Status', key: 'batchStatus', render: (row) => (
-      <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-        {row.exhausted && <span className="badge badge-neutral">Exhausted</span>}
-        {row.expiringSoon && <span className="badge badge-warning">Expiring</span>}
-        {!row.exhausted && !row.expiringSoon && <span className="badge badge-success">Active</span>}
-      </div>
-    )},
-  ].filter(col => {
-    if (isMobile) {
-      return !['supplierName', 'invoiceNumber', 'received', 'batchStatus'].includes(col.accessor || col.key)
-    }
-    return true
-  })
-
-  const auditColumns = [
-    { header: 'Date', accessor: 'timestamp', render: (row) => row.timestamp ? new Date(row.timestamp).toLocaleString('en-IN') : '—' },
-    { header: 'Product', accessor: 'productName', render: (row) => <span className="font-semibold">{row.productName}</span> },
-    { header: 'Batch #', accessor: 'batchNumber' },
-    { header: 'Old Quantity', accessor: 'oldSecondaryRemaining', render: (row) => `${row.oldSecondaryRemaining} units` },
-    { header: 'New Quantity', accessor: 'newSecondaryRemaining', render: (row) => `${row.newSecondaryRemaining} units` },
-    { header: 'Changed By', accessor: 'adjustedBy', render: (row) => <span className="badge badge-info">{row.adjustedBy}</span> },
-    { header: 'Reason', accessor: 'reason' },
-  ].filter(col => {
-    if (isMobile) {
-      return !['batchNumber', 'oldSecondaryRemaining', 'reason'].includes(col.accessor)
-    }
-    return true
-  })
-
-  const getInwardStats = () => {
-    let totalValueWithTax = 0
-    let totalValueWithoutTax = 0
-    let distinctProductIds = new Set()
-    let totalPrimary = 0
-    let totalExtraSecondary = 0
-
-    inwardBatches.forEach(b => {
-      const ratio = b.secondaryPerPrimary || 1
-      const totalSec = b.secondaryReceived || 0
-      
-      const valWithTax = totalSec * (Number(b.buyPriceWithTax || 0) / ratio)
-      const valWithoutTax = totalSec * (Number(b.buyPriceWithoutTax || 0) / ratio)
-      
-      totalValueWithTax += valWithTax
-      totalValueWithoutTax += valWithoutTax
-      
-      if (b.productId) distinctProductIds.add(b.productId)
-      
-      totalPrimary += b.primaryReceived || 0
-      const extra = Math.max(0, totalSec - ((b.primaryReceived || 0) * ratio))
-      totalExtraSecondary += extra
-    })
-
-    return {
-      totalValueWithTax,
-      totalValueWithoutTax,
-      distinctProductsCount: distinctProductIds.size,
-      totalPrimary,
-      totalExtraSecondary
-    }
-  }
+  // Expiry risk pie chart colors
+  const COLORS = ['#ef4444', '#f97316', '#eab308', '#3b82f6', '#10b981']
 
   return (
-    <div className="page-container">
-      <div className="page-header">
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8 font-sans">
+      {/* Header and Branding */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div>
-          <h2 className="page-title">Stock Management</h2>
-          <p className="page-subtitle">{stockTotalElements} products in stock</p>
+          <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-400 via-sky-400 to-emerald-400 bg-clip-text text-transparent">
+            Stock Management Redesign
+          </h1>
+          <p className="text-slate-400 mt-1">Enterprise FMCG Wholesaler, Retailer, & BI Suite</p>
         </div>
-        <div className="page-actions" style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
-          <form onSubmit={handleInvoiceLookup} style={{ display: 'flex', gap: '8px' }}>
-            <input
-              className="form-input"
-              style={{ width: '180px', height: '36px', padding: '6px 12px', fontSize: '13px' }}
-              value={invoiceSearchTerm}
-              onChange={e => setInvoiceSearchTerm(e.target.value)}
-              placeholder="Search Invoice No..."
-              required
-            />
-            <button type="submit" className="btn btn-secondary" style={{ height: '36px', minHeight: 0, padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} disabled={invoiceSearchLoading}>
-              {invoiceSearchLoading ? 'Searching...' : 'Lookup'}
+
+        {/* Tab Buttons */}
+        <div className="flex flex-wrap gap-2 bg-slate-900/80 p-1.5 rounded-xl border border-slate-800 backdrop-blur">
+          {[
+            { id: 'overview', label: 'Inventory', icon: Package },
+            { id: 'dashboard', label: 'Dashboard', icon: BarChart2 },
+            { id: 'receive', label: 'Receive Stock', icon: Plus },
+            { id: 'batches', label: 'Batches', icon: Clock },
+            { id: 'movements', label: 'Movements', icon: ArrowRightLeft },
+            { id: 'bi', label: 'BI Analytics', icon: Award },
+            { id: 'reports', label: 'Reports', icon: FileText },
+            ...(isAdmin ? [{ id: 'audit', label: 'Audit Logs', icon: History }] : [])
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all duration-300 ${
+                activeTab === tab.id
+                  ? 'bg-gradient-to-r from-indigo-600 to-sky-600 text-white shadow-lg shadow-indigo-500/20 scale-105'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+            >
+              <tab.icon className="w-4 h-4" />
+              {tab.label}
             </button>
-          </form>
-          <motion.button className="btn btn-primary" onClick={() => { setForm({ ...emptyForm }); setValidationErrors({}); setShowModal(true); }} whileTap={{ scale: 0.95 }}>
-            <Plus size={18} /> Receive Stock
-          </motion.button>
+          ))}
         </div>
       </div>
 
-      <div className="tabs">
-        <button className={`tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>
-          <Package size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Stock Overview
-        </button>
-        <button className={`tab ${activeTab === 'daily-inward' ? 'active' : ''}`} onClick={() => setActiveTab('daily-inward')}>
-          <Calendar size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Daily Inward
-        </button>
-        <button className={`tab ${activeTab === 'expiring' ? 'active' : ''}`} onClick={() => setActiveTab('expiring')}>
-          <Clock size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Expiring Soon ({expiring.length})
-        </button>
-        {aiEnabled && (isAdmin || isManager) && (
-          <button className={`tab ${activeTab === 'scanner' ? 'active' : ''}`} onClick={() => setActiveTab('scanner')}>
-            <Camera size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Scan Invoice
-          </button>
-        )}
-        {isAdmin && (
-          <button className={`tab ${activeTab === 'audit' ? 'active' : ''}`} onClick={() => setActiveTab('audit')}>
-            <History size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Stock Audit Logs
-          </button>
-        )}
-        {isAdmin && (
-          <button className={`tab ${activeTab === 'scheduler' ? 'active' : ''}`} onClick={() => setActiveTab('scheduler')}>
-            <Settings size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Scheduler
-          </button>
-        )}
-      </div>
-
-      {activeTab === 'overview' && (
-        <>
-          <DataTable
-            columns={stockColumns}
-            data={stocks}
-            loading={loading}
-            searchPlaceholder="Search stock..."
-            emptyMessage="No stock data"
-            onRowClick={(row) => row.productId && loadBatches(row.productId, row.productName)}
-          />
-          <Pagination
-            page={stockPage}
-            totalPages={stockTotalPages}
-            totalElements={stockTotalElements}
-            pageSize={STOCK_PAGE_SIZE}
-            onPageChange={(p) => { setStockPage(p); loadAll(p) }}
-          />
-        </>
-      )}
-
-      {activeTab === 'daily-inward' && (() => {
-        const stats = getInwardStats()
-        return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
-            {/* Date Picker and Quick Actions */}
-            <div style={{
-              background: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: 'var(--radius-lg)',
-              padding: 'var(--space-4) var(--space-5)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: 'var(--space-3)'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-                <span className="font-semibold" style={{ fontSize: '14px', color: 'var(--color-text-secondary)' }}>Select Date:</span>
-                <input
-                  type="date"
-                  className="form-input"
-                  style={{ width: '160px', height: '38px', padding: '6px 12px', fontSize: '13px', margin: 0 }}
-                  value={inwardDate}
-                  onChange={e => setInwardDate(e.target.value)}
-                />
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    style={{ height: '38px', minHeight: 0, padding: '0 12px', fontSize: '12px' }}
-                    onClick={() => {
-                      const d = new Date()
-                      d.setDate(d.getDate() - 1)
-                      const y = d.getFullYear()
-                      const m = String(d.getMonth() + 1).padStart(2, '0')
-                      const day = String(d.getDate()).padStart(2, '0')
-                      setInwardDate(`${y}-${m}-${day}`)
-                    }}
-                  >
-                    Yesterday
-                  </button>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    style={{ height: '38px', minHeight: 0, padding: '0 12px', fontSize: '12px' }}
-                    onClick={() => setInwardDate(getLocalDateString())}
-                  >
-                    Today
-                  </button>
-                </div>
-              </div>
-              <span className="text-xs text-muted">Showing inward stock records for {new Date(inwardDate).toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
-            </div>
-
-            {/* Summary Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 'var(--space-4)' }}>
-              {/* Card 1: Total Value */}
-              <div style={{
-                background: 'var(--color-surface)',
-                border: '1px solid var(--color-border)',
-                borderRadius: 'var(--radius-lg)',
-                padding: 'var(--space-5)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 'var(--space-2)',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
-              }}>
-                <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 'bold' }}>Total Value (Tax Incl.)</span>
-                <span style={{ fontSize: '24px', fontWeight: '700', color: 'var(--color-success)' }}>
-                  ₹{stats.totalValueWithTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-                <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
-                  ₹{stats.totalValueWithoutTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Excl. Tax)
-                </span>
-              </div>
-
-              {/* Card 2: Distinct Products */}
-              <div style={{
-                background: 'var(--color-surface)',
-                border: '1px solid var(--color-border)',
-                borderRadius: 'var(--radius-lg)',
-                padding: 'var(--space-5)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 'var(--space-2)',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
-              }}>
-                <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 'bold' }}>Unique Products</span>
-                <span style={{ fontSize: '24px', fontWeight: '700', color: 'var(--color-primary)' }}>
-                  {stats.distinctProductsCount} Products
-                </span>
-                <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
-                  Across {inwardBatches.length} batch entries
-                </span>
-              </div>
-
-              {/* Card 3: Total Quantity */}
-              <div style={{
-                background: 'var(--color-surface)',
-                border: '1px solid var(--color-border)',
-                borderRadius: 'var(--radius-lg)',
-                padding: 'var(--space-5)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 'var(--space-2)',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
-              }}>
-                <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 'bold' }}>Total Quantity</span>
-                <span style={{ fontSize: '20px', fontWeight: '700', color: 'var(--color-accent)' }}>
-                  {stats.totalPrimary} BOX {stats.totalExtraSecondary > 0 ? `+ ${stats.totalExtraSecondary} units` : ''}
-                </span>
-                <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
-                  Total received stock items
-                </span>
-              </div>
-            </div>
-
-            {/* Inward Data Table */}
-            <DataTable
-              columns={inwardColumns}
-              data={inwardBatches}
-              loading={inwardLoading}
-              searchable={true}
-              searchPlaceholder="Filter daily entries..."
-              emptyMessage="Is tareekh me koi stock receive nahi hua."
-              actions={(row) => (
-                <>
-                  {(isAdmin || isManager) && (
-                    <button
-                      className="btn btn-ghost btn-icon btn-sm"
-                      onClick={() => {
-                        setAdjustingBatch(row)
-                        const ratio = row.secondaryPerPrimary || 1
-                        setAdjustPrimary(Math.floor(row.secondaryRemaining / ratio).toString())
-                        setAdjustBuyPrice(row.buyPriceWithoutTax || '')
-                        setAdjustBuyPriceWithTax(row.buyPriceWithTax || '')
-                        setValidationErrors({})
-                      }}
-                      title="Correct / Adjust Stock"
-                      style={{ color: 'var(--color-accent)' }}
-                    >
-                      <Edit2 size={15} />
-                    </button>
-                  )}
-                </>
-              )}
-            />
-          </div>
-        )
-      })()}
-
-      {aiEnabled && activeTab === 'scanner' && (isAdmin || isManager) && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
-          <div style={{
-            background: 'var(--color-surface)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 'var(--radius-lg)',
-            padding: 'var(--space-6)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 'var(--space-5)',
-            maxWidth: '800px'
-          }}>
-            <h3 style={{ fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-semibold)', margin: 0 }}>
-              AI Invoice Scanner (₹0 Cost Gemini OCR)
-            </h3>
-            <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', margin: 0 }}>
-              Invoice ki photo upload karein. Gemini API automatically batch numbers, quantities aur prices extract karke database products se map kar dega.
-            </p>
-
-            <form onSubmit={handleScanInvoice} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-              <div className="form-row">
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label">Supplier Name *</label>
+      <AnimatePresence mode="wait">
+        {/* 1. OVERVIEW / INVENTORY TAB */}
+        {activeTab === 'overview' && (
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            className="space-y-6"
+          >
+            {/* Filters panel */}
+            <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl flex flex-wrap gap-4 items-center justify-between">
+              <div className="flex flex-wrap gap-3 items-center flex-1">
+                <div className="relative flex-1 min-w-[240px]">
+                  <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
                   <input
-                    className="form-input"
-                    value={scannerSupplier}
-                    onChange={e => setScannerSupplier(e.target.value)}
-                    required
-                    placeholder="e.g. Saurabh Agency"
+                    type="text"
+                    placeholder="Search by Product name, Brand..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-100"
                   />
                 </div>
-                <div className="form-group" style={{ flex: 2 }}>
-                  <label className="form-label">Invoice Photo *</label>
-                  <div style={{
-                    border: '2px dashed var(--color-border)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: 'var(--space-4)',
-                    textAlign: 'center',
-                    cursor: 'pointer',
-                    background: 'var(--color-bg)',
-                    position: 'relative'
-                  }}>
-                    <input
-                      type="file"
-                      accept="image/*,application/pdf"
-                      onChange={e => setScannerFile(e.target.files[0])}
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        width: '100%',
-                        height: '100%',
-                        opacity: 0,
-                        cursor: 'pointer'
-                      }}
-                    />
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', color: 'var(--color-text-secondary)' }}>
-                      <Upload size={18} />
-                      <span style={{ fontSize: '13px', fontWeight: '500' }}>
-                        {scannerFile ? scannerFile.name : 'Invoice Photo / PDF Select Karein'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-                <motion.button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={scannerLoading}
-                  whileTap={{ scale: 0.97 }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}
+                <select
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  className="px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-300 focus:ring-2 focus:ring-indigo-500"
                 >
-                  <Camera size={18} />
-                  {scannerLoading ? 'Reading Invoice...' : 'Scan & Map Invoice'}
-                </motion.button>
-                {scannerFile && (
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => { setScannerFile(null); setScannerPreview([]); }}
-                  >
-                    Clear
-                  </button>
-                )}
+                  <option value="">All Categories</option>
+                  {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                </select>
+                <select
+                  value={selectedStatus}
+                  onChange={(e) => setSelectedStatus(e.target.value)}
+                  className="px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-300 focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">All Statuses</option>
+                  <option value="Healthy">Healthy</option>
+                  <option value="Low Stock">Low Stock</option>
+                  <option value="Out Of Stock">Out Of Stock</option>
+                  <option value="Overstock">Overstock</option>
+                </select>
               </div>
-            </form>
-          </div>
 
-          {scannerLoading && (
-            <div style={{
-              textAlign: 'center',
-              padding: 'var(--space-12)',
-              background: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: 'var(--radius-lg)',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '15px'
-            }}>
-              <div className="spinner" style={{
-                width: '40px',
-                height: '40px',
-                border: '4px solid var(--color-border)',
-                borderTopColor: 'var(--color-primary)',
-                borderRadius: '50%',
-                animation: 'spin 1s linear infinite'
-              }} />
-              <style>{`
-                @keyframes spin {
-                  0% { transform: rotate(0deg); }
-                  100% { transform: rotate(360deg); }
-                }
-              `}</style>
-              <div>
-                <h4 style={{ margin: '0 0 5px 0', fontWeight: '600' }}>Reading Invoice Layout...</h4>
-                <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-text-muted)' }}>
-                  Extracting batch codes, validating expiry dates, and calculating unit conversions. Please wait 2 seconds.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {scannerPreview.length > 0 && !scannerLoading && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-              {invoiceAlreadyScanned && (
-                <div style={{
-                  background: 'var(--color-warning-soft)',
-                  border: '1px solid var(--color-warning)',
-                  color: 'var(--color-warning)',
-                  padding: 'var(--space-3) var(--space-4)',
-                  borderRadius: 'var(--radius-md)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 'var(--space-2)',
-                  fontSize: 'var(--font-size-sm)',
-                  fontWeight: '500'
-                }}>
-                  <AlertTriangle size={18} />
-                  <span>
-                    This invoice (<strong>{scannerInvoiceNumber}</strong>) from supplier <strong>{scannerSupplier}</strong> has already been scanned.
-                  </span>
-                </div>
+              {(searchTerm || selectedCategory || selectedStatus) && (
+                <button
+                  onClick={() => {
+                    setSearchTerm('')
+                    setSelectedCategory('')
+                    setSelectedStatus('')
+                  }}
+                  className="flex items-center gap-1 text-slate-400 hover:text-slate-200 transition"
+                >
+                  <RotateCcw className="w-4 h-4" /> Reset
+                </button>
               )}
+            </div>
 
-              <div className="page-header" style={{ marginBottom: 0 }}>
-                <div>
-                  <h3 className="page-title" style={{ fontSize: 'var(--font-size-md)' }}>Scan Preview & Mapping Verification</h3>
-                  <p className="page-subtitle">Niche diye gaye data ko verify karke map karein.</p>
-                </div>
-              </div>
-
-              <div style={{
-                background: 'var(--color-surface)',
-                border: '1px solid var(--color-border)',
-                borderRadius: 'var(--radius-lg)',
-                padding: 'var(--space-4)',
-                display: 'flex',
-                gap: 'var(--space-4)',
-                flexWrap: 'wrap'
-              }}>
-                <div className="form-group" style={{ margin: 0, flex: 1, minWidth: '200px' }}>
-                  <label className="form-label">Supplier Name *</label>
-                  <input
-                    className="form-input"
-                    value={scannerSupplier}
-                    onChange={e => {
-                      setScannerSupplier(e.target.value);
-                      checkDuplicate(e.target.value, scannerInvoiceNumber);
-                    }}
-                    required
-                  />
-                </div>
-                <div className="form-group" style={{ margin: 0, flex: 1, minWidth: '200px' }}>
-                  <label className="form-label">Invoice Number</label>
-                  <input
-                    className="form-input"
-                    value={scannerInvoiceNumber}
-                    onChange={e => {
-                      setScannerInvoiceNumber(e.target.value);
-                      checkDuplicate(scannerSupplier, e.target.value);
-                    }}
-                    placeholder="e.g. SA-0820"
-                  />
-                </div>
-              </div>
-
-              <div style={{ overflowX: 'auto', background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)', minHeight: '400px', paddingBottom: '160px' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
+            {/* Inventory Data Grid */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-secondary)', fontWeight: '600' }}>
-                      <th style={{ padding: '12px 16px', minWidth: '250px' }}>Invoice Item</th>
-                      <th style={{ padding: '12px 16px', minWidth: '120px' }}>Category</th>
-                      <th style={{ padding: '12px 16px', minWidth: '100px' }}>Primary</th>
-                      <th style={{ padding: '12px 16px', minWidth: '100px' }}>Secondary</th>
-                      <th style={{ padding: '12px 16px', minWidth: '100px' }}>Open Box</th>
-                      <th style={{ padding: '12px 16px', minWidth: '110px' }}>Offer LADI (Free)</th>
-                      <th style={{ padding: '12px 16px', minWidth: '110px' }}>Batch No</th>
-                      <th style={{ padding: '12px 16px', minWidth: '140px' }}>Expiry</th>
-                      <th style={{ padding: '12px 16px', minWidth: '110px' }}>Buy (BOX)</th>
-                      <th style={{ padding: '12px 16px', minWidth: '80px' }}>GST (%)</th>
-                      <th style={{ padding: '12px 16px', minWidth: '120px' }}>Total (Tax Incl.)</th>
-                      <th style={{ padding: '12px 16px', minWidth: '110px' }}>Status</th>
-                      <th style={{ padding: '12px 16px', minWidth: '220px' }}>Mapped DB Product</th>
-                      <th style={{ padding: '12px 16px', textAlign: 'center' }}>Action</th>
+                    <tr className="bg-slate-950 border-b border-slate-800 text-slate-300 font-semibold text-sm">
+                      <th className="py-4 px-6">Product</th>
+                      <th className="py-4 px-6">Category</th>
+                      <th className="py-4 px-6">Stock</th>
+                      <th className="py-4 px-6">Available</th>
+                      <th className="py-4 px-6">Reserved</th>
+                      <th className="py-4 px-6">Avg Cost</th>
+                      <th className="py-4 px-6">Selling</th>
+                      <th className="py-4 px-6">Margin</th>
+                      <th className="py-4 px-6">Inventory Value</th>
+                      <th className="py-4 px-6 text-center">Status</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {scannerPreview.map((item, index) => (
-                      <tr key={index} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                        <td style={{ padding: '8px 16px', verticalAlign: 'middle', minWidth: '250px' }}>
-                          {editingNameIndex === index ? (
-                            <textarea
-                              className="form-input"
-                              style={{ 
-                                width: '100%', 
-                                minWidth: '180px', 
-                                padding: '6px 8px', 
-                                fontSize: '12px', 
-                                margin: 0,
-                                resize: 'none',
-                                minHeight: '52px',
-                                lineHeight: '1.4',
-                                display: 'block',
-                                boxSizing: 'border-box'
-                              }}
-                              value={item.productName || ''}
-                              autoFocus
-                              onChange={e => {
-                                const updated = [...scannerPreview];
-                                updated[index].productName = e.target.value;
-                                setScannerPreview(updated);
-                              }}
-                              onBlur={() => setEditingNameIndex(null)}
-                              onKeyDown={e => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  setEditingNameIndex(null);
-                                }
-                              }}
-                            />
-                          ) : (
-                            <div
-                              onClick={() => setEditingNameIndex(index)}
-                              style={{ 
-                                cursor: 'pointer', 
-                                padding: '6px 8px', 
-                                borderRadius: 'var(--radius-md)', 
-                                border: '1px dashed transparent',
-                                minHeight: '32px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                whiteSpace: 'nowrap'
-                              }}
-                              onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--color-border)'}
-                              onMouseLeave={e => e.currentTarget.style.borderColor = 'transparent'}
-                              title="Click to edit product name"
-                            >
-                              {item.productName}
-                            </div>
-                          )}
-                        </td>
-                        <td style={{ padding: '8px 16px' }}>
-                          <select
-                            className="form-select"
-                            style={{ width: '110px', padding: '4px 8px', fontSize: '12px', margin: 0, height: '32px' }}
-                            value={item.category || 'SNACKS'}
-                            onChange={e => {
-                              const updated = [...scannerPreview];
-                              updated[index].category = e.target.value;
-                              setScannerPreview(updated);
-                            }}
-                          >
-                            {CATEGORIES.map(cat => (
-                              <option key={cat} value={cat}>{cat}</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td style={{ padding: '8px 16px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <input
-                              type="number"
-                              className="form-input"
-                              style={{ width: '70px', padding: '4px 8px', fontSize: '12px', margin: 0 }}
-                              value={item.primaryAdded ?? ''}
-                              min="0"
-                              onChange={e => {
-                                const val = e.target.value;
-                                const updated = [...scannerPreview];
-                                updated[index].primaryAdded = val;
-                                const ratio = item.secondaryPerPrimary || 1;
-                                const pAdded = val === '' ? 0 : (parseInt(val) || 0);
-                                const oAdded = item.openBoxAdded === '' ? 0 : (parseInt(item.openBoxAdded) || 0);
-                                updated[index].secondaryAdded = (pAdded * ratio) + oAdded;
-                                setScannerPreview(updated);
-                              }}
-                            />
-                            <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{item.primaryUnit || 'BOX'}</span>
-                          </div>
-                        </td>
-                        <td style={{ padding: '8px 16px', color: 'var(--color-text-secondary)', fontWeight: '500' }}>
-                          {item.secondaryAdded} {item.secondaryUnit}
-                        </td>
-                        <td style={{ padding: '8px 16px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <input
-                              type="number"
-                              className="form-input"
-                              style={{ width: '60px', padding: '4px 8px', fontSize: '12px', margin: 0 }}
-                              value={item.openBoxAdded ?? ''}
-                              min="0"
-                              onChange={e => {
-                                const val = e.target.value;
-                                const updated = [...scannerPreview];
-                                updated[index].openBoxAdded = val;
-                                const ratio = item.secondaryPerPrimary || 1;
-                                const pAdded = item.primaryAdded === '' ? 0 : (parseInt(item.primaryAdded) || 0);
-                                const oAdded = val === '' ? 0 : (parseInt(val) || 0);
-                                updated[index].secondaryAdded = (pAdded * ratio) + oAdded;
-                                setScannerPreview(updated);
-                              }}
-                            />
-                            <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>left</span>
-                          </div>
-                        </td>
-                        <td style={{ padding: '8px 16px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <input
-                              type="number"
-                              className="form-input"
-                              style={{ width: '60px', padding: '4px 8px', fontSize: '12px', margin: 0 }}
-                              value={item.offerUnitsAdded ?? ''}
-                              min="0"
-                              onChange={e => {
-                                const val = e.target.value;
-                                const updated = [...scannerPreview];
-                                updated[index].offerUnitsAdded = val === '' ? '' : (parseInt(val) || 0);
-                                setScannerPreview(updated);
-                              }}
-                            />
-                            <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{item.secondaryUnit || 'LADI'}</span>
-                          </div>
-                        </td>
-                        <td style={{ padding: '8px 16px' }}>
-                          <input
-                            type="text"
-                            className="form-input"
-                            style={{ width: '90px', padding: '4px 8px', fontSize: '12px', margin: 0, fontFamily: 'monospace', textTransform: 'uppercase' }}
-                            value={item.batchNumber || ''}
-                            onChange={e => {
-                              const val = e.target.value.toUpperCase();
-                              const updated = [...scannerPreview];
-                              updated[index].batchNumber = val;
-                              setScannerPreview(updated);
-                            }}
-                          />
-                        </td>
-                        <td style={{ padding: '8px 16px' }}>
-                          <input
-                            type="date"
-                            className="form-input"
-                            style={{ width: '120px', padding: '4px 8px', fontSize: '12px', margin: 0 }}
-                            value={item.expiryDate || ''}
-                            onChange={e => {
-                              const updated = [...scannerPreview];
-                              updated[index].expiryDate = e.target.value;
-                              setScannerPreview(updated);
-                            }}
-                          />
-                        </td>
-                        <td style={{ padding: '8px 16px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>₹</span>
-                            <input
-                              type="number"
-                              step="0.01"
-                              className="form-input"
-                              style={{ width: '85px', padding: '4px 8px', fontSize: '12px', margin: 0 }}
-                              value={item.buyPriceWithoutTax ?? ''}
-                              min="0"
-                              onChange={e => {
-                                const val = e.target.value;
-                                const updated = [...scannerPreview];
-                                updated[index].buyPriceWithoutTax = val;
-                                setScannerPreview(updated);
-                              }}
-                            />
-                          </div>
-                        </td>
-                        <td style={{ padding: '8px 16px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                            <input
-                              type="number"
-                              step="0.01"
-                              className="form-input"
-                              style={{ width: '60px', padding: '4px 8px', fontSize: '12px', margin: 0 }}
-                              value={item.gstPercent ?? '5'}
-                              min="0"
-                              onChange={e => {
-                                const val = e.target.value;
-                                const updated = [...scannerPreview];
-                                updated[index].gstPercent = val;
-                                setScannerPreview(updated);
-                              }}
-                            />
-                            <span style={{ color: 'var(--color-text-secondary)' }}>%</span>
-                          </div>
-                        </td>
-                        <td style={{ padding: '8px 16px', fontWeight: '600' }}>
-                          {(() => {
-                            const ratio = item.secondaryPerPrimary || 1;
-                            const pAdded = item.primaryAdded === '' ? 0 : (Number(item.primaryAdded) || 0);
-                            const oAdded = item.openBoxAdded === '' ? 0 : (Number(item.openBoxAdded) || 0);
-                            const buyPrice = Number(item.buyPriceWithoutTax || 0);
-                            const gst = Number(item.gstPercent || 0);
-                            
-                            const valWithoutTax = (pAdded * buyPrice) + (oAdded * (buyPrice / ratio));
-                            const valWithTax = valWithoutTax * (1 + gst / 100);
-                            return `₹${valWithTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                          })()}
-                        </td>
-                        <td style={{ padding: '12px 16px' }}>
-                          {item.duplicateBatch ? (
-                            <span className="badge badge-danger" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                              ⚠️ Duplicate
-                            </span>
-                          ) : item.newProduct ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
-                              <span className="badge badge-warning" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                ❓ New Product
-                              </span>
-                              <button
-                                type="button"
-                                className="btn btn-ghost"
-                                style={{ fontSize: '10px', padding: '2px 4px', color: 'var(--color-accent)', textDecoration: 'underline', height: 'auto', minHeight: 0, display: 'block' }}
-                                onClick={() => openQuickProductModal(index)}
-                              >
-                                + Create Product
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="badge badge-success">OK</span>
-                          )}
-                        </td>
-                        <td style={{ padding: '12px 16px' }}>
-                          <SearchSelect
-                            options={products.filter(p => p.active !== false)}
-                            value={item.productId || ''}
-                            onChange={(val) => handleScannerRowProductChange(index, val)}
-                            labelKey="name" valueKey="id"
-                            placeholder="Map to existing product..."
-                          />
-                        </td>
-                        <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const updated = [...scannerPreview]
-                              updated.splice(index, 1)
-                              setScannerPreview(updated)
-                              toast.info('Row removed from preview list')
-                            }}
-                            className="btn btn-ghost btn-icon btn-sm"
-                            style={{ color: 'var(--color-danger)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-                            title="Exclude from scan list"
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                  <tbody className="divide-y divide-slate-800 text-sm">
+                    {loading ? (
+                      <tr>
+                        <td colSpan={10} className="py-12 text-center text-slate-500 font-medium">
+                          Loading inventory ledger data...
                         </td>
                       </tr>
-                    ))}
+                    ) : filteredInventory.length === 0 ? (
+                      <tr>
+                        <td colSpan={10} className="py-12 text-center text-slate-500">
+                          No matching stock entries found.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredInventory.map(item => (
+                        <tr key={item.id} className="hover:bg-slate-800/40 transition-colors">
+                          <td className="py-4 px-6">
+                            <span className="font-semibold text-slate-100 block">{item.productName}</span>
+                            <span className="text-xs text-slate-400">{item.brand}</span>
+                          </td>
+                          <td className="py-4 px-6 text-slate-300">{item.category}</td>
+                          <td className="py-4 px-6 font-mono text-slate-200">
+                            {item.totalSecondaryUnits} {item.secondaryUnit || 'Units'}
+                          </td>
+                          <td className="py-4 px-6 font-mono text-indigo-400">
+                            {item.availableStock}
+                          </td>
+                          <td className="py-4 px-6 font-mono text-amber-500">
+                            {item.reservedStock}
+                          </td>
+                          <td className="py-4 px-6 font-mono text-slate-300">₹{item.avgCost}</td>
+                          <td className="py-4 px-6 font-mono text-slate-300">₹{item.sellingPrice}</td>
+                          <td className="py-4 px-6">
+                            <span className={`font-semibold ${item.marginPercent < 5 ? 'text-red-400' : 'text-emerald-400'}`}>
+                              {item.marginPercent}%
+                            </span>
+                          </td>
+                          <td className="py-4 px-6 font-mono text-emerald-400 font-semibold">₹{item.inventoryValue}</td>
+                          <td className="py-4 px-6 text-center">
+                            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                              item.status === 'Healthy' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                              item.status === 'Low Stock' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                              item.status === 'Overstock' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' :
+                              'bg-red-500/10 text-red-400 border border-red-500/20'
+                            }`}>
+                              {item.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
 
-              {(() => {
-                let totalTaxable = 0;
-                let totalGst = 0;
-                let totalNet = 0;
-                
-                scannerPreview.forEach(item => {
-                  const ratio = item.secondaryPerPrimary || 1;
-                  const pAdded = item.primaryAdded === '' ? 0 : (Number(item.primaryAdded) || 0);
-                  const oAdded = item.openBoxAdded === '' ? 0 : (Number(item.openBoxAdded) || 0);
-                  const buyPrice = Number(item.buyPriceWithoutTax || 0);
-                  const gst = Number(item.gstPercent || 0);
-                  
-                  const rowTaxable = (pAdded * buyPrice) + (oAdded * (buyPrice / ratio));
-                  const rowGst = rowTaxable * (gst / 100);
-                  const rowNet = rowTaxable + rowGst;
-                  
-                  totalTaxable += rowTaxable;
-                  totalGst += rowGst;
-                  totalNet += rowNet;
-                });
-
-                return (
-                  <div style={{
-                    background: 'var(--color-surface)',
-                    border: '1px solid var(--color-border)',
-                    borderRadius: 'var(--radius-lg)',
-                    padding: 'var(--space-5)',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginTop: '20px',
-                    boxShadow: '0 2px 10px rgba(0,0,0,0.03)',
-                    flexWrap: 'wrap',
-                    gap: '15px'
-                  }}>
-                    <div>
-                      <h4 style={{ margin: 0, fontSize: '15px', fontWeight: '600' }}>Scanned Invoice Grand Summary</h4>
-                      <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                        Confirm karne se pehle apni printed bill se total match karein.
-                      </p>
-                    </div>
-                    <div style={{ display: 'flex', gap: '30px', flexWrap: 'wrap' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                        <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>Total Taxable Value</span>
-                        <span style={{ fontSize: '16px', fontWeight: '600', color: 'var(--color-text)' }}>
-                          ₹{totalTaxable.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                        <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>Total GST Tax</span>
-                        <span style={{ fontSize: '16px', fontWeight: '600', color: 'var(--color-text)' }}>
-                          ₹{totalGst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', paddingLeft: '20px', borderLeft: '2px solid var(--color-border)' }}>
-                        <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Grand Total (Incl. Tax)</span>
-                        <span style={{ fontSize: '22px', fontWeight: '800', color: 'var(--color-success)' }}>
-                          ₹{totalNet.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => { setScannerPreview([]); setScannerFile(null); }}
-                  disabled={saving}
-                >
-                  Cancel
-                </button>
-                <motion.button
-                  onClick={handleScannerSubmit}
-                  className="btn btn-primary"
-                  disabled={saving}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  {saving ? 'Saving Stock...' : 'Confirm & Save Stock to DB'}
-                </motion.button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'expiring' && (
-        <DataTable
-          columns={expiringColumns}
-          data={expiring}
-          loading={loading}
-          searchable={false}
-          emptyMessage="No expiring batches — all good!"
-          actions={(row) => {
-            const d = row.expiryDate ? new Date(row.expiryDate) : null
-            const isExpired = d ? d <= new Date() : false
-            return (
-              <>
-                {isExpired && (isAdmin || isManager) && (
-                  <button
-                    className="btn btn-ghost btn-icon btn-sm"
-                    onClick={() => setWriteOffTarget(row)}
-                    title="Write Off Expired Stock to Damage Log"
-                    style={{ color: 'var(--color-danger)' }}
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                )}
-              </>
-            )
-          }}
-        />
-      )}
-
-      {activeTab === 'audit' && isAdmin && (
-        <>
-          <DataTable
-            columns={auditColumns}
-            data={auditLogs}
-            loading={logsLoading}
-            searchable={false}
-            emptyMessage="No adjustment logs found"
-          />
-          <Pagination
-            page={auditPage}
-            totalPages={auditTotalPages}
-            totalElements={auditTotalElements}
-            pageSize={AUDIT_PAGE_SIZE}
-            onPageChange={(p) => { setAuditPage(p); loadAuditLogs(p) }}
-          />
-        </>
-      )}
-
-      {activeTab === 'scheduler' && isAdmin && (
-        <div style={{ maxWidth: '640px' }}>
-          <div style={{
-            background: 'var(--color-surface)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 'var(--radius-lg)',
-            padding: 'var(--space-6)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 'var(--space-5)',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <h3 style={{ fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-semibold)', margin: 0 }}>Expiry Write-Off Scheduler</h3>
-                <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', margin: '4px 0 0' }}>Automatically writes off expired stock batches to Damage Logs</p>
-              </div>
-              {schedulerStatus && (
-                schedulerStatus.enabled
-                  ? <span className="badge badge-success" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '6px 12px' }}><CheckCircle size={14} /> Enabled</span>
-                  : <span className="badge badge-danger" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '6px 12px' }}><XCircle size={14} /> Disabled</span>
+              {/* Pagination */}
+              {invTotalPages > 1 && (
+                <div className="p-4 bg-slate-950/80 border-t border-slate-800 flex justify-between items-center">
+                  <span className="text-slate-400 text-sm">Showing {filteredInventory.length} of {invTotalElements}</span>
+                  <Pagination currentPage={invPage} totalPages={invTotalPages} onPageChange={setInvPage} />
+                </div>
               )}
             </div>
+          </motion.div>
+        )}
 
-            {schedulerLoading ? (
-              <div style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--color-text-muted)' }}>Loading scheduler info...</div>
-            ) : schedulerStatus ? (
-              <>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
-                  <div style={{ background: 'var(--color-surface-alt, var(--color-bg))', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)', border: '1px solid var(--color-border)' }}>
-                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Schedule</div>
-                    <div style={{ fontWeight: 'var(--font-weight-semibold)' }}>Daily at 1:00 AM</div>
-                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: 2 }}>{schedulerStatus.cronExpression}</div>
-                  </div>
-                  <div style={{ background: 'var(--color-surface-alt, var(--color-bg))', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)', border: '1px solid var(--color-border)' }}>
-                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Last Run</div>
-                    <div style={{ fontWeight: 'var(--font-weight-semibold)' }}>
-                      {schedulerStatus.lastRunTime ? new Date(schedulerStatus.lastRunTime).toLocaleString('en-IN') : '—'}
-                    </div>
-                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: 2 }}>
-                      {schedulerStatus.lastRunBatchesProcessed ?? 0} batch(es) written off
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ background: 'var(--color-surface-alt, var(--color-bg))', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)', border: '1px solid var(--color-border)' }}>
-                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Last Run Status</div>
-                  <div style={{ fontSize: 'var(--font-size-sm)', color: schedulerStatus.lastRunStatus?.includes('error') ? 'var(--color-danger)' : 'var(--color-text)' }}>
-                    {schedulerStatus.lastRunStatus || 'Never run'}
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', gap: 'var(--space-3)', paddingTop: 'var(--space-2)', borderTop: '1px solid var(--color-border)' }}>
-                  <motion.button
-                    className="btn btn-primary"
-                    onClick={() => setShowRunNowConfirm(true)}
-                    disabled={runNowLoading || !schedulerStatus.enabled}
-                    whileTap={{ scale: 0.97 }}
-                    style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}
-                  >
-                    <PlayCircle size={18} />
-                    {runNowLoading ? 'Running...' : 'Run Sweep Now'}
-                  </motion.button>
-                  <button className="btn btn-ghost" onClick={loadSchedulerStatus} disabled={schedulerLoading}>
-                    Refresh Status
-                  </button>
-                </div>
-
-                {!schedulerStatus.enabled && (
-                  <div style={{ padding: 'var(--space-3)', background: 'rgba(239,68,68,0.08)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(239,68,68,0.2)', fontSize: 'var(--font-size-sm)', color: 'var(--color-danger)' }}>
-                    ⚠️ Scheduler is disabled. To enable, set <code>app.scheduler.expiry.enabled=true</code> in <code>application.properties</code> and restart the server.
-                  </div>
-                )}
-              </>
+        {/* 2. EXECUTIVE DASHBOARD TAB */}
+        {activeTab === 'dashboard' && (
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            className="space-y-8"
+          >
+            {dashboardLoading || !dashboardData ? (
+              <div className="py-12 text-center text-slate-500">Loading Executive Dashboard summary...</div>
             ) : (
-              <div style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--color-text-muted)' }}>No scheduler data available.</div>
+              <>
+                {/* Metrics Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  {[
+                    { label: 'Inventory Cost Value', val: `₹${dashboardData.totalCostValue}`, desc: 'Total asset cost value', color: 'text-indigo-400' },
+                    { label: 'MRP Valuation', val: `₹${dashboardData.totalMrpValue}`, desc: 'Total retail price potential', color: 'text-sky-400' },
+                    { label: 'Profit Potential', val: `₹${dashboardData.expectedProfit}`, desc: 'Expected gross margin profits', color: 'text-emerald-400' },
+                    { label: 'Inventory Health Score', val: `${dashboardData.healthScore}/100`, desc: `Score Status: ${dashboardData.healthClassification}`, color: 'text-rose-400' }
+                  ].map((card, i) => (
+                    <div key={i} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-lg relative overflow-hidden group hover:border-slate-700 transition duration-300">
+                      <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-indigo-500 to-sky-500"></div>
+                      <span className="text-slate-400 text-sm font-semibold">{card.label}</span>
+                      <h3 className={`text-2xl font-black mt-2 tracking-tight ${card.color}`}>{card.val}</h3>
+                      <p className="text-xs text-slate-500 mt-1">{card.desc}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Sub KPI cards */}
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                  {[
+                    { label: 'Total SKUs', count: dashboardData.totalProducts, bg: 'bg-indigo-500/10 text-indigo-400' },
+                    { label: 'Active SKUs', count: dashboardData.activeSkus, bg: 'bg-emerald-500/10 text-emerald-400' },
+                    { label: 'Active Batches', count: dashboardData.totalBatches, bg: 'bg-sky-500/10 text-sky-400' },
+                    { label: 'Low Stock SKU', count: dashboardData.lowStockCount, bg: 'bg-amber-500/10 text-amber-400' },
+                    { label: 'Out of Stock SKU', count: dashboardData.outOfStockCount, bg: 'bg-red-500/10 text-red-400' },
+                    { label: 'Expiring in 30 Days', count: dashboardData.expiringCount, bg: 'bg-orange-500/10 text-orange-400' }
+                  ].map((sk, i) => (
+                    <div key={i} className="bg-slate-900/60 border border-slate-800/80 p-4 rounded-xl text-center">
+                      <span className="text-xs text-slate-400 block mb-1">{sk.label}</span>
+                      <span className={`inline-block px-3 py-1 rounded-full text-lg font-extrabold ${sk.bg}`}>{sk.count}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* BI Forecast charts and Recent logs widgets */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {/* Aging Chart */}
+                  <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl">
+                    <h3 className="text-lg font-bold mb-4">Stock Aging Distribution</h3>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={[
+                          { name: '0-30 Days', value: 45 },
+                          { name: '31-60 Days', value: 25 },
+                          { name: '61-90 Days', value: 15 },
+                          { name: '91-180 Days', value: 10 },
+                          { name: '180+ Days', value: 5 }
+                        ]}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                          <XAxis dataKey="name" stroke="#94a3b8" />
+                          <YAxis stroke="#94a3b8" />
+                          <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b' }} />
+                          <Bar dataKey="value" fill="#4f46e5" radius={[4, 4, 0, 0]}>
+                            <Cell fill="#6366f1" />
+                            <Cell fill="#3b82f6" />
+                            <Cell fill="#06b6d4" />
+                            <Cell fill="#eab308" />
+                            <Cell fill="#ef4444" />
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Recent Inward Stock Received */}
+                  <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl flex flex-col">
+                    <h3 className="text-lg font-bold mb-4">Recent Inward Stock Received</h3>
+                    <div className="space-y-4 flex-1">
+                      {dashboardData.recentBatches?.length === 0 ? (
+                        <p className="text-slate-500 text-sm">No recent inward stock entries.</p>
+                      ) : (
+                        dashboardData.recentBatches.map(batch => (
+                          <div key={batch.id} className="flex justify-between items-center p-3 rounded-lg bg-slate-950 border border-slate-800">
+                            <div>
+                              <span className="font-semibold text-slate-200 block">{batch.product?.name || 'Unknown Product'}</span>
+                              <span className="text-xs text-slate-400">Batch: {batch.batchNumber} | Supplier: {batch.supplierName}</span>
+                            </div>
+                            <div className="text-right">
+                              <span className="font-mono text-emerald-400 font-bold block">+{batch.secondaryReceived}</span>
+                              <span className="text-xs text-slate-500">{new Date(batch.receivedAt).toLocaleDateString()}</span>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </>
             )}
-          </div>
-        </div>
-      )}
+          </motion.div>
+        )}
 
-      {/* Batches Modal */}
-      <Modal isOpen={!!batchProduct} onClose={() => setBatchProduct(null)} title={`Batches — ${batchProduct?.name || ''}`} xl>
-        <DataTable
-          columns={batchColumns}
-          data={batches}
-          loading={batchLoading}
-          searchable={false}
-          emptyMessage="No batches found"
-          pageSize={8}
-          actions={(row) => (
-            <>
-              {(isAdmin || isManager) && (
-                <button
-                  className="btn btn-ghost btn-icon btn-sm"
-                  onClick={() => {
-                    setAdjustingBatch(row)
-                    const ratio = row.secondaryPerPrimary || 1
-                    setAdjustPrimary(Math.floor(row.secondaryRemaining / ratio).toString())
-                    setAdjustBuyPrice(row.buyPriceWithoutTax || '')
-                    setAdjustBuyPriceWithTax(row.buyPriceWithTax || '')
-                    setValidationErrors({})
-                  }}
-                  title="Correct / Adjust Stock"
-                  style={{ color: 'var(--color-accent)' }}
-                >
-                  <Edit2 size={15} />
-                </button>
-              )}
-            </>
-          )}
-        />
-      </Modal>
+        {/* 3. RECEIVE STOCK TAB */}
+        {activeTab === 'receive' && (
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            className="grid grid-cols-1 lg:grid-cols-3 gap-8"
+          >
+            {/* Input Form Panel */}
+            <div className="lg:col-span-2 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-lg">
+              <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
+                <Plus className="w-5 h-5 text-indigo-500" /> Manual Stock Registration
+              </h3>
+              <form onSubmit={handleReceiveSubmit} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Select Product */}
+                  <div className="md:col-span-2">
+                    <label className="text-slate-400 text-sm font-semibold mb-1 block">Choose Product <span className="text-red-500">*</span></label>
+                    <SearchSelect
+                      options={products.map(p => ({ value: p.id, label: `${p.name} (${p.brand})` }))}
+                      value={manualForm.productId}
+                      onChange={(val) => setManualForm(f => ({ ...f, productId: val }))}
+                      placeholder="Search and select product..."
+                    />
+                  </div>
 
-      {/* Correct / Adjust Stock Modal */}
-      <Modal isOpen={!!adjustingBatch} onClose={() => setAdjustingBatch(null)} title={`Correct Stock Batch — ${adjustingBatch?.batchNumber || ''}`}>
-        {adjustingBatch && (
-          <form onSubmit={handleAdjustStockSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-            <div className="form-group">
-              <label className="form-label">Current Stock</label>
-              <input
-                className="form-input"
-                value={`${Math.floor(adjustingBatch.secondaryRemaining / (adjustingBatch.secondaryPerPrimary || 1))} ${adjustingBatch.primaryUnit || 'Box'} ${adjustingBatch.secondaryRemaining % (adjustingBatch.secondaryPerPrimary || 1) > 0 ? `+ ${adjustingBatch.secondaryRemaining % (adjustingBatch.secondaryPerPrimary || 1)} ${adjustingBatch.secondaryUnit || 'Packs'}` : ''} (${adjustingBatch.secondaryRemaining} Total ${adjustingBatch.secondaryUnit || 'Packs'})`}
-                disabled
-                style={{ opacity: 0.7 }}
-              />
+                  {/* Supplier details */}
+                  <div>
+                    <label className="text-slate-400 text-sm font-semibold mb-1 block">Supplier Name <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={manualForm.supplierName}
+                      onChange={(e) => setManualForm(f => ({ ...f, supplierName: e.target.value }))}
+                      required
+                      placeholder="e.g. Saurabh Traders"
+                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  {/* Batch Number */}
+                  <div>
+                    <label className="text-slate-400 text-sm font-semibold mb-1 block">Batch Number <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={manualForm.batchNumber}
+                      onChange={(e) => setManualForm(f => ({ ...f, batchNumber: e.target.value }))}
+                      required
+                      placeholder="e.g. B-99388"
+                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  {/* Invoice Number */}
+                  <div>
+                    <label className="text-slate-400 text-sm font-semibold mb-1 block">Supplier Invoice Number <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={manualForm.supplierInvoiceNumber}
+                      onChange={(e) => setManualForm(f => ({ ...f, supplierInvoiceNumber: e.target.value }))}
+                      required
+                      placeholder="e.g. INV-100223"
+                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  {/* Invoice Date */}
+                  <div>
+                    <label className="text-slate-400 text-sm font-semibold mb-1 block">Supplier Invoice Date <span className="text-red-500">*</span></label>
+                    <input
+                      type="date"
+                      value={manualForm.supplierInvoiceDate}
+                      onChange={(e) => setManualForm(f => ({ ...f, supplierInvoiceDate: e.target.value }))}
+                      required
+                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  {/* Stock Received Date */}
+                  <div>
+                    <label className="text-slate-400 text-sm font-semibold mb-1 block">Stock Received Date <span className="text-red-500">*</span></label>
+                    <input
+                      type="date"
+                      value={manualForm.stockReceivedDate}
+                      onChange={(e) => setManualForm(f => ({ ...f, stockReceivedDate: e.target.value }))}
+                      required
+                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  {/* Expiry Date */}
+                  <div>
+                    <label className="text-slate-400 text-sm font-semibold mb-1 block">Expiry Date <span className="text-red-500">*</span></label>
+                    <input
+                      type="date"
+                      value={manualForm.expiryDate}
+                      onChange={(e) => setManualForm(f => ({ ...f, expiryDate: e.target.value }))}
+                      required
+                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  {/* Manufacturing Date */}
+                  <div>
+                    <label className="text-slate-400 text-sm font-semibold mb-1 block">Manufacturing Date <span className="text-red-500">*</span></label>
+                    <input
+                      type="date"
+                      value={manualForm.manufacturingDate}
+                      onChange={(e) => setManualForm(f => ({ ...f, manufacturingDate: e.target.value }))}
+                      required
+                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  {/* Quantity Inward Details */}
+                  <div className="grid grid-cols-3 gap-3 md:col-span-2">
+                    <div>
+                      <label className="text-slate-400 text-xs font-semibold mb-1 block">Primary Units Qty</label>
+                      <input
+                        type="number"
+                        placeholder="BOX count"
+                        value={manualForm.primaryReceived}
+                        onChange={(e) => setManualForm(f => ({ ...f, primaryReceived: e.target.value }))}
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 text-xs font-semibold mb-1 block">Extra Secondary Qty</label>
+                      <input
+                        type="number"
+                        placeholder="Loose packs"
+                        value={manualForm.extraSecondaryReceived}
+                        onChange={(e) => setManualForm(f => ({ ...f, extraSecondaryReceived: e.target.value }))}
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 text-xs font-semibold mb-1 block">Free Offer Qty</label>
+                      <input
+                        type="number"
+                        placeholder="Free packs"
+                        value={manualForm.offerSecondaryReceived}
+                        onChange={(e) => setManualForm(f => ({ ...f, offerSecondaryReceived: e.target.value }))}
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Buy Price and GST */}
+                  <div>
+                    <label className="text-slate-400 text-sm font-semibold mb-1 block">Buy Price per Primary (Excl. Tax) <span className="text-red-500">*</span></label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={manualForm.buyPriceWithoutTax}
+                      onChange={(e) => setManualForm(f => ({ ...f, buyPriceWithoutTax: e.target.value }))}
+                      required
+                      placeholder="₹0.00"
+                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-slate-400 text-sm font-semibold mb-1 block">GST Rate %</label>
+                    <select
+                      value={manualForm.gstPercent}
+                      onChange={(e) => setManualForm(f => ({ ...f, gstPercent: e.target.value }))}
+                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-300 focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="0">0%</option>
+                      <option value="5">5%</option>
+                      <option value="12">12%</option>
+                      <option value="18">18%</option>
+                      <option value="28">28%</option>
+                    </select>
+                  </div>
+
+                  {/* Remarks */}
+                  <div className="md:col-span-2">
+                    <label className="text-slate-400 text-sm font-semibold mb-1 block">Remarks / Notes</label>
+                    <textarea
+                      value={manualForm.remarks}
+                      onChange={(e) => setManualForm(f => ({ ...f, remarks: e.target.value }))}
+                      placeholder="Any specific batch comments..."
+                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:ring-2 focus:ring-indigo-500 h-24"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-4">
+                  <button
+                    type="submit"
+                    disabled={savingStock}
+                    className="flex-1 py-3 px-6 rounded-xl font-bold bg-gradient-to-r from-indigo-600 to-sky-600 hover:from-indigo-500 hover:to-sky-500 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition duration-300"
+                  >
+                    {savingStock ? 'Saving Entry...' : 'Register Inward Stock'}
+                  </button>
+                </div>
+              </form>
             </div>
-            <div className="form-group">
-              <label className="form-label">Corrected Quantity ({adjustingBatch.primaryUnit || 'Box'}) *</label>
-              <input
-                className="form-input"
-                type="number"
-                min="0"
-                value={adjustPrimary}
-                onChange={e => {
-                  setAdjustPrimary(e.target.value)
-                  clearError('newSecondaryRemaining')
-                }}
-                style={validationErrors.newSecondaryRemaining ? { borderColor: 'var(--color-danger)' } : {}}
-                required
-              />
-              {validationErrors.newSecondaryRemaining && (
-                <span className="text-xs" style={{ color: 'var(--color-danger)', marginTop: '4px', display: 'block' }}>
-                  {validationErrors.newSecondaryRemaining}
-                </span>
-              )}
-              <span className="text-xs text-muted" style={{ marginTop: 'var(--space-1)', display: 'block' }}>
-                Will be updated to {adjustPrimary * (adjustingBatch.secondaryPerPrimary || 1)} total {adjustingBatch.secondaryUnit || 'packs'}.
-              </span>
+
+            {/* OCR Document Upload Help card */}
+            <div className="space-y-6">
+              <div className="bg-gradient-to-b from-indigo-950 to-slate-900 border border-indigo-800/30 p-6 rounded-2xl text-center">
+                <Camera className="w-12 h-12 text-indigo-400 mx-auto mb-4" />
+                <h4 className="text-lg font-bold mb-2">Scan Supplier Invoice (OCR)</h4>
+                <p className="text-slate-400 text-sm mb-4">Upload an invoice snapshot to parse items automatically with AI assist.</p>
+                <div className="border-2 border-dashed border-slate-700 hover:border-indigo-500 rounded-xl p-6 transition duration-300 cursor-pointer">
+                  <Upload className="w-6 h-6 text-slate-400 mx-auto mb-2" />
+                  <span className="text-xs text-slate-400 block">Select Invoice PDF or JPEG file</span>
+                </div>
+              </div>
             </div>
-            <div className="form-row">
-              <div className="form-group">
-                <label className="form-label">Corrected Buy Price (no tax) per {adjustingBatch.primaryUnit || 'Box'} ₹</label>
+          </motion.div>
+        )}
+
+        {/* 4. BATCH INVENTORY TAB */}
+        {activeTab === 'batches' && (
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            className="space-y-6"
+          >
+            {/* Search filter for batches */}
+            <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl flex flex-wrap gap-4 items-center">
+              <div className="relative flex-1 min-w-[280px]">
+                <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
                 <input
-                  className="form-input"
+                  type="text"
+                  placeholder="Filter by product name, batch number..."
+                  value={batchSearchTerm}
+                  onChange={(e) => setBatchSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-100 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-950 border-b border-slate-800 text-slate-300 font-semibold text-xs uppercase tracking-wider">
+                      <th className="py-4 px-6">Product / Batch</th>
+                      <th className="py-4 px-6">Supplier & Invoice</th>
+                      <th className="py-4 px-6">Received / Sold</th>
+                      <th className="py-4 px-6">Available</th>
+                      <th className="py-4 px-6">Cost Price</th>
+                      <th className="py-4 px-6">Expiry & Age</th>
+                      <th className="py-4 px-6">Value</th>
+                      <th className="py-4 px-6 text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800 text-sm">
+                    {batchList.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="py-12 text-center text-slate-500 font-medium">
+                          No batches found.
+                        </td>
+                      </tr>
+                    ) : (
+                      batchList.map(batch => (
+                        <tr key={batch.id} className="hover:bg-slate-800/40 transition-colors">
+                          <td className="py-4 px-6">
+                            <span className="font-semibold text-slate-100 block">{batch.productName}</span>
+                            <span className="text-xs text-indigo-400 font-semibold">Batch: {batch.batchNumber}</span>
+                          </td>
+                          <td className="py-4 px-6">
+                            <span className="text-slate-300 block">{batch.supplierName}</span>
+                            <span className="text-xs text-slate-500">Inv: {batch.invoiceNumber} | {batch.supplierInvoiceDate || 'No Date'}</span>
+                          </td>
+                          <td className="py-4 px-6">
+                            <span className="text-slate-300 block">{batch.secondaryReceived} Packs</span>
+                            <span className="text-xs text-slate-500">Sold: {batch.quantitySold} Packs</span>
+                          </td>
+                          <td className="py-4 px-6 font-mono text-indigo-400 font-semibold">
+                            {batch.secondaryRemaining} Packs
+                          </td>
+                          <td className="py-4 px-6 font-mono">₹{batch.buyPriceWithoutTax}</td>
+                          <td className="py-4 px-6">
+                            <span className="text-slate-300 block text-xs">Exp: {batch.expiryDate}</span>
+                            <span className="text-xs text-slate-500">Age: {batch.stockAgeDays} days</span>
+                          </td>
+                          <td className="py-4 px-6 font-mono text-emerald-400 font-semibold">₹{batch.batchValue}</td>
+                          <td className="py-4 px-6 text-center">
+                            <div className="flex gap-2 justify-center">
+                              <button
+                                onClick={() => {
+                                  setAdjustingBatch(batch)
+                                  setAdjustPrimary(Math.floor(batch.secondaryRemaining / batch.secondaryPerPrimary).toString())
+                                  setAdjustSecondary((batch.secondaryRemaining % batch.secondaryPerPrimary).toString())
+                                  setAdjustOffer(batch.offerSecondaryRemaining?.toString() || '0')
+                                  setAdjustBuyPrice(batch.buyPriceWithoutTax?.toString() || '0')
+                                }}
+                                className="p-2 rounded-lg bg-slate-850 hover:bg-indigo-600/30 text-slate-400 hover:text-indigo-400 transition"
+                                title="Adjust Stock"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              {batch.batchStatus !== 'WRITTEN_OFF' && (
+                                <button
+                                  onClick={() => setWriteOffTarget(batch.id)}
+                                  className="p-2 rounded-lg bg-slate-850 hover:bg-rose-600/30 text-slate-400 hover:text-rose-400 transition"
+                                  title="Write Off Expiry"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* 5. STOCK MOVEMENT LEDGER TAB */}
+        {activeTab === 'movements' && (
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            className="space-y-6"
+          >
+            {/* Filter ledger */}
+            <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl flex flex-wrap gap-4 items-center">
+              <select
+                value={selectedMovementType}
+                onChange={(e) => setSelectedMovementType(e.target.value)}
+                className="px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-300 focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">All Transactions</option>
+                <option value="PURCHASE">Purchase</option>
+                <option value="SALE">Sale</option>
+                <option value="RETURN_IN">Return In</option>
+                <option value="RETURN_OUT">Return Out</option>
+                <option value="DAMAGE">Damage</option>
+                <option value="EXPIRY">Expiry</option>
+                <option value="ADJUSTMENT">Adjustment</option>
+                <option value="OPENING_STOCK">Opening Stock</option>
+              </select>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-950 border-b border-slate-800 text-slate-300 font-semibold text-xs uppercase tracking-wider">
+                      <th className="py-4 px-6">Timestamp</th>
+                      <th className="py-4 px-6">Product & Batch</th>
+                      <th className="py-4 px-6">Movement Action</th>
+                      <th className="py-4 px-6">Quantity</th>
+                      <th className="py-4 px-6">Stock Age History</th>
+                      <th className="py-4 px-6">Value Details</th>
+                      <th className="py-4 px-6">User / Reference</th>
+                      <th className="py-4 px-6">Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800 text-sm">
+                    {movementList.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="py-12 text-center text-slate-500">
+                          No stock movements registered.
+                        </td>
+                      </tr>
+                    ) : (
+                      movementList.map(move => (
+                        <tr key={move.id} className="hover:bg-slate-800/40 transition-colors">
+                          <td className="py-4 px-6 text-slate-400 font-mono text-xs">
+                            {new Date(move.timestamp).toLocaleString()}
+                          </td>
+                          <td className="py-4 px-6">
+                            <span className="font-semibold text-slate-100 block">{move.product?.name}</span>
+                            <span className="text-xs text-indigo-400">Batch: {move.batch?.batchNumber || 'N/A'}</span>
+                          </td>
+                          <td className="py-4 px-6">
+                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                              move.movementType === 'PURCHASE' || move.movementType === 'OPENING_STOCK' ? 'bg-emerald-500/10 text-emerald-400' :
+                              move.movementType === 'SALE' ? 'bg-sky-500/10 text-sky-400' :
+                              move.movementType === 'RETURN_IN' ? 'bg-indigo-500/10 text-indigo-400' :
+                              'bg-rose-500/10 text-red-400'
+                            }`}>
+                              {move.movementType}
+                            </span>
+                          </td>
+                          <td className={`py-4 px-6 font-mono font-bold ${move.quantity > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {move.quantity > 0 ? `+${move.quantity}` : move.quantity}
+                          </td>
+                          <td className="py-4 px-6 font-mono text-slate-400 text-xs">
+                            {move.quantityBefore} → {move.quantityAfter}
+                          </td>
+                          <td className="py-4 px-6 font-mono">
+                            <span className="block">₹{move.unitPrice}/unit</span>
+                            <span className="text-xs text-slate-500">Total: ₹{move.totalValue}</span>
+                          </td>
+                          <td className="py-4 px-6">
+                            <span className="text-slate-300 block">{move.username}</span>
+                            <span className="text-xs text-slate-500">Ref: {move.referenceNumber || 'N/A'}</span>
+                          </td>
+                          <td className="py-4 px-6 text-slate-400 text-xs">{move.remarks || '-'}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* 6. AUDIT LOGS TAB */}
+        {activeTab === 'audit' && isAdmin && (
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            className="space-y-6"
+          >
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-950 border-b border-slate-800 text-slate-300 font-semibold text-xs uppercase tracking-wider">
+                      <th className="py-4 px-6">Changed On</th>
+                      <th className="py-4 px-6">Product / Batch</th>
+                      <th className="py-4 px-6">Old Value</th>
+                      <th className="py-4 px-6">New Value</th>
+                      <th className="py-4 px-6">Changed By</th>
+                      <th className="py-4 px-6">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800 text-sm">
+                    {auditLogs.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="py-12 text-center text-slate-500">
+                          No audit entries registered.
+                        </td>
+                      </tr>
+                    ) : (
+                      auditLogs.map(log => (
+                        <tr key={log.id} className="hover:bg-slate-800/40 transition-colors">
+                          <td className="py-4 px-6 text-slate-400 font-mono text-xs">
+                            {new Date(log.timestamp).toLocaleString()}
+                          </td>
+                          <td className="py-4 px-6">
+                            <span className="font-semibold text-slate-100 block">{log.productName}</span>
+                            <span className="text-xs text-indigo-400 font-semibold">Batch: {log.batchNumber}</span>
+                          </td>
+                          <td className="py-4 px-6 font-mono text-red-400">{log.oldSecondaryRemaining}</td>
+                          <td className="py-4 px-6 font-mono text-emerald-400">{log.newSecondaryRemaining}</td>
+                          <td className="py-4 px-6 text-slate-300 font-medium">{log.adjustedBy}</td>
+                          <td className="py-4 px-6 text-slate-400 text-xs">{log.reason}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* 7. REPORTS MODULE TAB */}
+        {activeTab === 'reports' && (
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            className="space-y-6"
+          >
+            {/* Pick Report View */}
+            <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl flex flex-wrap gap-4 items-center justify-between">
+              <div className="flex gap-4 items-center">
+                <label className="text-slate-400 text-sm font-semibold">Report Type:</label>
+                <select
+                  value={selectedReport}
+                  onChange={(e) => {
+                    setSelectedReport(e.target.value)
+                    setReportPage(0)
+                  }}
+                  className="px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-300 focus:ring-2 focus:ring-indigo-500 text-sm"
+                >
+                  <option value="valuation">Inventory Valuation Report</option>
+                  <option value="expiry">Expiry & Expiry Risk Report</option>
+                  <option value="aging">Stock Aging Report</option>
+                  <option value="profitability">Category Profitability Report</option>
+                </select>
+              </div>
+
+              <button
+                onClick={exportToCSV}
+                className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold py-2 px-5 rounded-xl text-sm shadow hover:scale-105 transition duration-300"
+              >
+                <Download className="w-4 h-4" /> Export Report (CSV)
+              </button>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+              <div className="overflow-x-auto">
+                {selectedReport === 'valuation' && (
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-950 border-b border-slate-800 text-slate-300 font-semibold text-xs uppercase tracking-wider">
+                        <th className="py-4 px-6">Product</th>
+                        <th className="py-4 px-6">Category</th>
+                        <th className="py-4 px-6">Available Stock</th>
+                        <th className="py-4 px-6">Avg Cost Price</th>
+                        <th className="py-4 px-6">Selling Price</th>
+                        <th className="py-4 px-6">Profit Potential</th>
+                        <th className="py-4 px-6 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800 text-sm">
+                      {reportLoading ? (
+                        <tr><td colSpan={7} className="py-8 text-center text-slate-500">Generating valuation metrics...</td></tr>
+                      ) : reportData.map(row => (
+                        <tr key={row.productId} className="hover:bg-slate-800/40">
+                          <td className="py-4 px-6 font-semibold text-slate-200">{row.productName}</td>
+                          <td className="py-4 px-6 text-slate-400">{row.category}</td>
+                          <td className="py-4 px-6 font-mono text-slate-200">{row.currentStock} Units</td>
+                          <td className="py-4 px-6 font-mono text-slate-300">₹{row.avgCost}</td>
+                          <td className="py-4 px-6 font-mono text-slate-300">₹{row.sellingPrice}</td>
+                          <td className="py-4 px-6 font-mono text-emerald-400 font-semibold">₹{(row.currentStock * (row.sellingPrice - row.avgCost)).toFixed(2)}</td>
+                          <td className="py-4 px-6 text-center">
+                            <span className="text-xs px-3 py-1 rounded-full bg-slate-950 border border-slate-800 text-slate-300 font-semibold">{row.status}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+
+                {selectedReport === 'expiry' && (
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-950 border-b border-slate-800 text-slate-300 font-semibold text-xs uppercase tracking-wider">
+                        <th className="py-4 px-6">Batch Number</th>
+                        <th className="py-4 px-6">Product</th>
+                        <th className="py-4 px-6">Expiry Date</th>
+                        <th className="py-4 px-6">Remaining Qty</th>
+                        <th className="py-4 px-6">Risk Value (Cost)</th>
+                        <th className="py-4 px-6">Days to Expiry</th>
+                        <th className="py-4 px-6 text-center">Risk level</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800 text-sm">
+                      {reportLoading ? (
+                        <tr><td colSpan={7} className="py-8 text-center text-slate-500">Checking expiries...</td></tr>
+                      ) : reportData.map(row => (
+                        <tr key={row.batchId} className="hover:bg-slate-800/40">
+                          <td className="py-4 px-6 font-semibold text-indigo-400 font-mono">{row.batchNumber}</td>
+                          <td className="py-4 px-6 text-slate-200">{row.productName}</td>
+                          <td className="py-4 px-6 font-mono text-slate-300">{row.expiryDate}</td>
+                          <td className="py-4 px-6 font-mono">{row.remainingQty}</td>
+                          <td className="py-4 px-6 font-mono text-rose-400">₹{row.costValue}</td>
+                          <td className="py-4 px-6 font-mono">{row.daysToExpiry}</td>
+                          <td className="py-4 px-6 text-center">
+                            <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${
+                              row.riskBucket.includes('Expired') ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-400'
+                            }`}>{row.riskBucket}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+
+                {selectedReport === 'aging' && (
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-950 border-b border-slate-800 text-slate-300 font-semibold text-xs uppercase tracking-wider">
+                        <th className="py-4 px-6">Batch Number</th>
+                        <th className="py-4 px-6">Product</th>
+                        <th className="py-4 px-6">Received On Date</th>
+                        <th className="py-4 px-6">Remaining Qty</th>
+                        <th className="py-4 px-6">Age (Days)</th>
+                        <th className="py-4 px-6 text-center">Age Classification</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800 text-sm">
+                      {reportLoading ? (
+                        <tr><td colSpan={6} className="py-8 text-center text-slate-500">Scanning inventory age...</td></tr>
+                      ) : reportData.map((row, i) => (
+                        <tr key={i} className="hover:bg-slate-800/40">
+                          <td className="py-4 px-6 font-semibold text-indigo-400 font-mono">{row.batchNumber}</td>
+                          <td className="py-4 px-6 text-slate-200">{row.productName}</td>
+                          <td className="py-4 px-6 font-mono text-slate-300">{row.stockReceivedDate}</td>
+                          <td className="py-4 px-6 font-mono">{row.remainingQty}</td>
+                          <td className="py-4 px-6 font-mono">{row.ageDays}</td>
+                          <td className="py-4 px-6 text-center">
+                            <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-950 border border-slate-850 text-slate-300 font-bold">{row.ageBucket}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+
+                {selectedReport === 'profitability' && (
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-950 border-b border-slate-800 text-slate-300 font-semibold text-xs uppercase tracking-wider">
+                        <th className="py-4 px-6">Category</th>
+                        <th className="py-4 px-6">Total Asset Cost</th>
+                        <th className="py-4 px-6">Sales Potential Valuation</th>
+                        <th className="py-4 px-6">Gross Margin Profit Potential</th>
+                        <th className="py-4 px-6 text-center">Margin %</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800 text-sm">
+                      {reportLoading ? (
+                        <tr><td colSpan={5} className="py-8 text-center text-slate-500">Loading profitability details...</td></tr>
+                      ) : reportData.map((row, i) => (
+                        <tr key={i} className="hover:bg-slate-800/40">
+                          <td className="py-4 px-6 font-bold text-slate-200">{row.categoryName}</td>
+                          <td className="py-4 px-6 font-mono text-slate-300">₹{row.costValue}</td>
+                          <td className="py-4 px-6 font-mono text-indigo-400">₹{row.sellingValue}</td>
+                          <td className="py-4 px-6 font-mono text-emerald-400 font-bold">₹{row.profitPotential}</td>
+                          <td className="py-4 px-6 text-center">
+                            <span className="text-xs px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-extrabold">{row.marginPercent}%</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* 8. BUSINESS INTELLIGENCE TAB */}
+        {activeTab === 'bi' && (
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            className="space-y-8"
+          >
+            {biLoading || !biHealth ? (
+              <div className="py-12 text-center text-slate-500">Computing advanced BI analytics metrics...</div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Score and classification details */}
+                <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl flex flex-col justify-between shadow-xl">
+                  <div>
+                    <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                      <Award className="w-5 h-5 text-indigo-500" /> Overall Health Score
+                    </h3>
+                    <div className="text-center py-6">
+                      <span className="text-7xl font-black bg-gradient-to-r from-emerald-400 to-indigo-500 bg-clip-text text-transparent">{biHealth.overallScore}</span>
+                      <span className="text-xl text-slate-500 block mt-2">Classified as: <span className="font-bold text-slate-300">{biHealth.classification}</span></span>
+                    </div>
+                  </div>
+                  <div className="space-y-3.5 border-t border-slate-800 pt-6">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-400">Dead Stock Penalty Score:</span>
+                      <span className="font-semibold text-rose-400">-{Math.round((25 - biHealth.deadStockScore) * 100) / 100}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-400">Expiry Risk Penalty Score:</span>
+                      <span className="font-semibold text-rose-400">-{Math.round((25 - biHealth.expiryScore) * 100) / 100}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-400">Low Stock penalty:</span>
+                      <span className="font-semibold text-rose-400">-{Math.round((20 - biHealth.lowStockScore) * 100) / 100}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Suggestions Engine Widget */}
+                <div className="lg:col-span-2 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl flex flex-col">
+                  <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                    <ShieldAlert className="w-5 h-5 text-indigo-500" /> Purchase Recommendation Engine
+                  </h3>
+                  <div className="overflow-y-auto max-h-[360px] flex-1 divide-y divide-slate-800">
+                    {biReorders.length === 0 ? (
+                      <p className="text-slate-500 text-sm py-4">No reorder recommendations needed right now.</p>
+                    ) : (
+                      biReorders.map((reorder, i) => (
+                        <div key={i} className="flex justify-between items-center py-4">
+                          <div>
+                            <span className="font-bold text-slate-200 block">{reorder.productName}</span>
+                            <span className="text-xs text-slate-400">
+                              Current Stock: {reorder.currentStock} Units | Daily Sales average: {reorder.avgDailySales.toFixed(2)} units/day
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-xs text-slate-400 block mb-1">Suggest Order Qty:</span>
+                            <span className="px-3 py-1 rounded bg-indigo-600/20 text-indigo-400 border border-indigo-500/20 font-bold font-mono">
+                              +{reorder.suggestedReorderQty}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Adjust Stock Modal */}
+      {adjustingBatch && (
+        <Modal title="Correct & Adjust Batch Quantity" onClose={() => setAdjustingBatch(null)}>
+          <form onSubmit={handleAdjustSubmit} className="space-y-6">
+            <p className="text-xs text-slate-400">
+              Editing quantities will write a line item to the movement history logs and adjustment audit tables.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs text-slate-400 block mb-1 font-semibold">Remaining Primary units</label>
+                <input
                   type="number"
-                  min="0"
+                  value={adjustPrimary}
+                  onChange={(e) => setAdjustPrimary(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1 font-semibold">Remaining Secondary units</label>
+                <input
+                  type="number"
+                  value={adjustSecondary}
+                  onChange={(e) => setAdjustSecondary(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1 font-semibold">Offer Secondary Remaining</label>
+                <input
+                  type="number"
+                  value={adjustOffer}
+                  onChange={(e) => setAdjustOffer(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1 font-semibold">Cost Price (Excl. Tax)</label>
+                <input
+                  type="number"
                   step="0.01"
                   value={adjustBuyPrice}
-                  onChange={e => {
-                    handleAdjustPriceChange('without', e.target.value)
-                    clearError('newBuyPriceWithoutTax')
-                  }}
-                  style={validationErrors.newBuyPriceWithoutTax ? { borderColor: 'var(--color-danger)' } : {}}
-                  placeholder="Price without tax..."
-                />
-                {validationErrors.newBuyPriceWithoutTax && (
-                  <span className="text-xs" style={{ color: 'var(--color-danger)', marginTop: '4px', display: 'block' }}>
-                    {validationErrors.newBuyPriceWithoutTax}
-                  </span>
-                )}
-              </div>
-              <div className="form-group">
-                <label className="form-label">Corrected Buy Price (with tax) per {adjustingBatch.primaryUnit || 'Box'} ₹</label>
-                <input
-                  className="form-input"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={adjustBuyPriceWithTax}
-                  onChange={e => {
-                    handleAdjustPriceChange('with', e.target.value)
-                    clearError('newBuyPriceWithoutTax')
-                  }}
-                  style={validationErrors.newBuyPriceWithoutTax ? { borderColor: 'var(--color-danger)' } : {}}
-                  placeholder="Price with tax..."
+                  onChange={(e) => setAdjustBuyPrice(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100"
                 />
               </div>
             </div>
-            <div className="form-group">
-              <label className="form-label">Reason for Correction *</label>
-              <textarea
-                className="form-textarea"
-                value={adjustReason}
-                onChange={e => {
-                  setAdjustReason(e.target.value)
-                  clearError('reason')
-                }}
-                style={validationErrors.reason ? { borderColor: 'var(--color-danger)' } : {}}
-                placeholder="Specify why stock is being modified (e.g. Typo in entry, damage, sample return)..."
+
+            <div>
+              <label className="text-xs text-slate-400 block mb-1 font-semibold">Correction Reason <span className="text-red-500">*</span></label>
+              <input
+                type="text"
                 required
-                rows={3}
+                value={adjustReason}
+                onChange={(e) => setAdjustReason(e.target.value)}
+                placeholder="e.g. Audit mismatch, damage write-off..."
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100"
               />
-              {validationErrors.reason && (
-                <span className="text-xs" style={{ color: 'var(--color-danger)', marginTop: '4px', display: 'block' }}>
-                  {validationErrors.reason}
-                </span>
-              )}
             </div>
-            <div className="form-actions">
-              <button type="button" className="btn btn-secondary" onClick={() => setAdjustingBatch(null)}>Cancel</button>
-              <button type="submit" className="btn btn-primary" disabled={adjusting}>
-                {adjusting ? 'Correcting...' : 'Submit Correction'}
+
+            <div className="flex gap-3 justify-end pt-4 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setAdjustingBatch(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-755 rounded-lg font-medium text-slate-300"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={adjusting}
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg shadow"
+              >
+                {adjusting ? 'Saving adjustments...' : 'Apply Correction'}
               </button>
             </div>
           </form>
-        )}
-      </Modal>
+        </Modal>
+      )}
 
-      {/* Receive Stock Modal */}
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Receive Stock" wide>
-        {(() => {
-          const selectedProduct = products.find(p => p.id === form.productId)
-          const primaryUnit = selectedProduct?.primaryUnit || 'Primary'
-          const secondaryUnit = selectedProduct?.secondaryUnit || 'Secondary'
-          const gst = selectedProduct ? Number(selectedProduct.gstPercent || 0) : 0
-          const buyPriceWithTaxVal = form.buyPriceWithTax 
-            ? Number(form.buyPriceWithTax) 
-            : (form.buyPriceWithoutTax ? Number(form.buyPriceWithoutTax) * (1 + gst / 100) : 0)
-          const totalCostVal = (Number(form.primaryReceived || 0) * buyPriceWithTaxVal) + 
-            (Number(form.extraSecondaryReceived || 0) * (buyPriceWithTaxVal / (selectedProduct?.secondaryPerPrimary || 1)))
-
-          return (
-            <form onSubmit={handleReceive} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-              <div className="form-group">
-                <label className="form-label">Product *</label>
-                <SearchSelect
-                  options={products.filter(p => p.active !== false)}
-                  value={form.productId}
-                  onChange={handleProductChange}
-                  labelKey="name" valueKey="id"
-                  placeholder="Select product..."
-                />
-                {validationErrors.productId && (
-                  <span className="text-xs" style={{ color: 'var(--color-danger)', marginTop: '4px', display: 'block' }}>
-                    {validationErrors.productId}
-                  </span>
-                )}
-              </div>
-
-              {/* Mark as Opening Stock Checkbox */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', background: 'var(--color-surface-2, #f1f5f9)', borderRadius: 'var(--radius-md, 6px)', border: '1px solid var(--color-border, #e2e8f0)', marginBottom: 'var(--space-1)' }}>
-                <input
-                  type="checkbox"
-                  id="isOpeningStockCheckbox"
-                  checked={form.batchNumber?.toUpperCase() === 'OPENING'}
-                  onChange={e => {
-                    if (e.target.checked) {
-                      setForm(f => ({
-                        ...f,
-                        batchNumber: 'OPENING',
-                        supplierName: 'Self',
-                        invoiceNumber: 'INITIAL'
-                      }))
-                    } else {
-                      setForm(f => ({
-                        ...f,
-                        batchNumber: '',
-                        supplierName: '',
-                        invoiceNumber: ''
-                      }))
-                    }
-                  }}
-                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-                />
-                <label htmlFor="isOpeningStockCheckbox" style={{ fontSize: '13px', fontWeight: '600', cursor: 'pointer', margin: 0, color: 'var(--color-text)' }}>
-                  Mark as Opening Stock (Shuruati Maal ke roop mein darj karein)
-                </label>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-4)' }}>
-                <div className="form-group">
-                  <label className="form-label">Batch Number *</label>
-                  <input
-                    className="form-input"
-                    value={form.batchNumber}
-                    onChange={e => updateField('batchNumber', e.target.value)}
-                    style={validationErrors.batchNumber ? { borderColor: 'var(--color-danger)' } : {}}
-                    required
-                    minLength={2}
-                    placeholder="e.g. B-2024-001"
-                  />
-                  {validationErrors.batchNumber && (
-                    <span className="text-xs" style={{ color: 'var(--color-danger)', marginTop: '4px', display: 'block' }}>
-                      {validationErrors.batchNumber}
-                    </span>
-                  )}
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Supplier *</label>
-                  <input
-                    className="form-input"
-                    value={form.supplierName}
-                    onChange={e => updateField('supplierName', e.target.value)}
-                    style={validationErrors.supplierName ? { borderColor: 'var(--color-danger)' } : {}}
-                    required
-                    placeholder="Supplier name"
-                  />
-                  {validationErrors.supplierName && (
-                    <span className="text-xs" style={{ color: 'var(--color-danger)', marginTop: '4px', display: 'block' }}>
-                      {validationErrors.supplierName}
-                    </span>
-                  )}
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Invoice Number</label>
-                  <input
-                    className="form-input"
-                    value={form.invoiceNumber || ''}
-                    onChange={e => updateField('invoiceNumber', e.target.value)}
-                    placeholder="e.g. SA-0820 (Optional)"
-                  />
-                </div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 'var(--space-4)' }}>
-                <div className="form-group">
-                  <label className="form-label">Primary Units ({primaryUnit})</label>
-                  <input 
-                    className="form-input" 
-                    type="number" 
-                    min="0" 
-                    value={form.primaryReceived} 
-                    onChange={e => updateField('primaryReceived', e.target.value)} 
-                    style={validationErrors.primaryReceived ? { borderColor: 'var(--color-danger)' } : {}}
-                  />
-                  {validationErrors.primaryReceived && (
-                    <span className="text-xs" style={{ color: 'var(--color-danger)', marginTop: '4px', display: 'block' }}>
-                      {validationErrors.primaryReceived}
-                    </span>
-                  )}
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Extra Secondary ({secondaryUnit})</label>
-                  <input 
-                    className="form-input" 
-                    type="number" 
-                    min="0" 
-                    value={form.extraSecondaryReceived} 
-                    onChange={e => updateField('extraSecondaryReceived', e.target.value)} 
-                    style={validationErrors.extraSecondaryReceived ? { borderColor: 'var(--color-danger)' } : {}}
-                  />
-                  {validationErrors.extraSecondaryReceived && (
-                    <span className="text-xs" style={{ color: 'var(--color-danger)', marginTop: '4px', display: 'block' }}>
-                      {validationErrors.extraSecondaryReceived}
-                    </span>
-                  )}
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Offer LADI (Free)</label>
-                  <input 
-                    className="form-input" 
-                    type="number" 
-                    min="0" 
-                    value={form.offerSecondaryReceived} 
-                    onChange={e => updateField('offerSecondaryReceived', e.target.value)} 
-                    placeholder="0"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Buy Price (Excl. Tax) ₹ *</label>
-                  <input
-                    className="form-input"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={form.buyPriceWithoutTax}
-                    onChange={e => handlePriceChange('without', e.target.value)}
-                    style={validationErrors.buyPriceWithoutTax ? { borderColor: 'var(--color-danger)' } : {}}
-                    required
-                  />
-                  {validationErrors.buyPriceWithoutTax && (
-                    <span className="text-xs" style={{ color: 'var(--color-danger)', marginTop: '4px', display: 'block' }}>
-                      {validationErrors.buyPriceWithoutTax}
-                    </span>
-                  )}
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Buy Price (Incl. Tax) ₹</label>
-                  <input
-                    className="form-input"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={form.buyPriceWithTax || ''}
-                    onChange={e => handlePriceChange('with', e.target.value)}
-                    style={validationErrors.buyPriceWithoutTax ? { borderColor: 'var(--color-danger)' } : {}}
-                  />
-                </div>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Expiry Date *</label>
-                <input
-                  className="form-input"
-                  type="date"
-                  value={form.expiryDate}
-                  onChange={e => updateField('expiryDate', e.target.value)}
-                  style={validationErrors.expiryDate ? { borderColor: 'var(--color-danger)' } : {}}
-                  required
-                />
-                {validationErrors.expiryDate && (
-                  <span className="text-xs" style={{ color: 'var(--color-danger)', marginTop: '4px', display: 'block' }}>
-                    {validationErrors.expiryDate}
-                  </span>
-                )}
-              </div>
-
-              {selectedProduct && (
-                <div style={{
-                  background: 'var(--color-bg-secondary, #f8fafc)',
-                  border: '1px solid var(--color-border, #e2e8f0)',
-                  borderRadius: 'var(--radius-md, 8px)',
-                  padding: 'var(--space-4, 16px)',
-                  marginTop: 'var(--space-1, 4px)'
-                }}>
-                  <div style={{ fontSize: '13px', fontWeight: 'bold', marginBottom: '8px', color: 'var(--color-text-secondary)' }}>
-                    Sell Price Settings (Optional)
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', display: 'flex', gap: '20px' }}>
-                    <span>Current Sell ({primaryUnit}): <strong>₹{selectedProduct.sellPricePrimary || 0}</strong></span>
-                    <span>Current Sell ({secondaryUnit}): <strong>₹{selectedProduct.sellPriceSecondary || 0}</strong></span>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label className="form-label">New Sell Price ({primaryUnit}) ₹</label>
-                      <input
-                        className="form-input"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={form.sellPricePrimary}
-                        onChange={e => updateField('sellPricePrimary', e.target.value)}
-                        style={validationErrors.sellPricePrimary ? { borderColor: 'var(--color-danger)' } : {}}
-                        placeholder="Leave blank to keep current..."
-                      />
-                      {validationErrors.sellPricePrimary && (
-                        <span className="text-xs" style={{ color: 'var(--color-danger)', marginTop: '4px', display: 'block' }}>
-                          {validationErrors.sellPricePrimary}
-                        </span>
-                      )}
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">New Sell Price ({secondaryUnit}) ₹</label>
-                      <input
-                        className="form-input"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={form.sellPriceSecondary}
-                        onChange={e => updateField('sellPriceSecondary', e.target.value)}
-                        style={validationErrors.sellPriceSecondary ? { borderColor: 'var(--color-danger)' } : {}}
-                        placeholder="Leave blank to keep current..."
-                      />
-                      {validationErrors.sellPriceSecondary && (
-                        <span className="text-xs" style={{ color: 'var(--color-danger)', marginTop: '4px', display: 'block' }}>
-                          {validationErrors.sellPriceSecondary}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="form-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'var(--space-1)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input
-                    type="checkbox"
-                    id="logAsExpenseCheckbox"
-                    checked={!!form.logAsExpense}
-                    onChange={e => updateField('logAsExpense', e.target.checked)}
-                    style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-                  />
-                  <label htmlFor="logAsExpenseCheckbox" style={{ fontSize: '13px', fontWeight: '500', cursor: 'pointer', margin: 0 }}>
-                    Auto-record as Expense (Expenses mein kharch darj karein)
-                  </label>
-                </div>
-                {totalCostVal > 0 && (
-                  <div style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--color-text-secondary)' }}>
-                    Total Purchase Cost: <span style={{ color: 'var(--color-danger)' }}>₹{totalCostVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                  </div>
-                )}
-              </div>
-
-              <div className="form-actions" style={{ marginTop: 'var(--space-2)' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-                <motion.button type="submit" className="btn btn-primary" disabled={saving} whileTap={{ scale: 0.95 }}>
-                  {saving ? 'Receiving...' : 'Receive Stock'}
-                </motion.button>
-              </div>
-            </form>
-          )
-        })()}
-      </Modal>
-      
-      {/* Write Off Confirm Dialog */}
-      <ConfirmDialog
-        isOpen={!!writeOffTarget}
-        onClose={() => setWriteOffTarget(null)}
-        onConfirm={() => executeWriteOff(writeOffTarget.id)}
-        title="Write Off Expired Stock"
-        message={`Are you sure you want to write off the expired stock for batch ${writeOffTarget?.batchNumber}? This will set remaining stock to 0 and log a financial loss of ₹${(Number(writeOffTarget?.buyPriceWithTax || 0) / (writeOffTarget?.secondaryPerPrimary || 1) * (writeOffTarget?.secondaryRemaining || 0)).toLocaleString('en-IN')} under Damage Logs.`}
-        confirmLabel="Write Off"
-        danger={true}
-      />
-
-      {/* Create Product Modal */}
-      <Modal isOpen={showQuickProductModal} onClose={() => setShowQuickProductModal(false)} title="Create Product" wide>
-        <form onSubmit={handleQuickProductSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">Product Name *</label>
-              <input
-                className="form-input"
-                value={quickProductForm.name}
-                onChange={e => setQuickProductForm(f => ({ ...f, name: e.target.value }))}
-                required
-                minLength={2}
-                placeholder="Product name"
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Brand</label>
-              <input
-                className="form-input"
-                value={quickProductForm.brand}
-                onChange={e => setQuickProductForm(f => ({ ...f, brand: e.target.value }))}
-                placeholder="e.g. Haldiram's"
-              />
-            </div>
-          </div>
-          <div className="form-row-4">
-            <div className="form-group">
-              <label className="form-label">Category *</label>
-              <select
-                className="form-select"
-                value={quickProductForm.category}
-                onChange={e => setQuickProductForm(f => ({ ...f, category: e.target.value }))}
-              >
-                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-              {quickProductForm.category === 'OTHER' && (
-                <input
-                  className="form-input"
-                  style={{ marginTop: 'var(--space-2)' }}
-                  value={quickProductForm.otherCategoryDetail}
-                  onChange={e => setQuickProductForm(f => ({ ...f, otherCategoryDetail: e.target.value }))}
-                  placeholder="Specify Category (e.g. Soaps)"
-                  required
-                />
-              )}
-            </div>
-            <div className="form-group">
-              <label className="form-label">GST % *</label>
-              <input
-                className="form-input"
-                type="number"
-                min="0"
-                max="40"
-                step="0.01"
-                value={quickProductForm.gstPercent}
-                onChange={e => handleQuickGstChange(e.target.value)}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">&nbsp;</label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: 'pointer', userSelect: 'none', height: '38px', margin: 0, fontSize: 'var(--font-size-sm)' }}>
-                  <input
-                    type="checkbox"
-                    checked={quickProductForm.isCessApplicable || false}
-                    onChange={e => handleQuickCessApplicableChange(e.target.checked)}
-                    style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--color-primary)' }}
-                  />
-                  Cess Applicable
-                </label>
-                {quickProductForm.isCessApplicable && (
-                  <input
-                    className="form-input"
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.01"
-                    value={quickProductForm.cessPercent}
-                    onChange={e => handleQuickCessChange(e.target.value)}
-                    placeholder="Cess %"
-                    required
-                  />
-                )}
-              </div>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Low Stock Alert</label>
-              <input
-                className="form-input"
-                type="number"
-                min="0"
-                value={quickProductForm.lowStockAlert}
-                onChange={e => setQuickProductForm(f => ({ ...f, lowStockAlert: e.target.value }))}
-              />
-            </div>
-          </div>
-          <div className="form-row-3">
-            <div className="form-group">
-              <label className="form-label">Primary Unit *</label>
-              <select
-                className="form-select"
-                value={quickProductForm.primaryUnit}
-                onChange={e => setQuickProductForm(f => ({ ...f, primaryUnit: e.target.value }))}
-                required
-              >
-                <option value="BOX">BOX</option>
-                <option value="CRATE">CRATE</option>
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Secondary Unit *</label>
-              <select
-                className="form-select"
-                value={quickProductForm.secondaryUnit}
-                onChange={e => setQuickProductForm(f => ({ ...f, secondaryUnit: e.target.value }))}
-                required
-              >
-                <option value="LADI">LADI</option>
-                <option value="PACK">PACKET / PACK</option>
-                <option value="BOTTLE">BOTTLE</option>
-                <option value="OTHER">OTHER (Custom)</option>
-              </select>
-              {quickProductForm.secondaryUnit === 'OTHER' && (
-                <input
-                  className="form-input"
-                  style={{ marginTop: 'var(--space-2)' }}
-                  value={quickProductForm.customSecondaryUnit || ''}
-                  onChange={e => setQuickProductForm(f => ({ ...f, customSecondaryUnit: e.target.value.toUpperCase() }))}
-                  placeholder="Specify Unit (e.g. PCS, TIN)"
-                  required
-                />
-              )}
-            </div>
-            <div className="form-group">
-              <label className="form-label">Secondary per Primary *</label>
-              <input
-                className="form-input"
-                type="number"
-                min="1"
-                value={quickProductForm.secondaryPerPrimary}
-                onChange={e => setQuickProductForm(f => ({ ...f, secondaryPerPrimary: e.target.value }))}
-                required
-              />
-            </div>
-          </div>
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">Buy (Excl. Tax) ₹ *</label>
-              <input
-                className="form-input"
-                type="number"
-                min="0"
-                step="0.01"
-                value={quickProductForm.buyPriceWithoutTax}
-                onChange={e => handleQuickPriceChange('without', e.target.value)}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Buy (Incl. Tax) ₹</label>
-              <input
-                className="form-input"
-                type="number"
-                min="0"
-                step="0.01"
-                value={quickProductForm.buyPriceWithTax || ''}
-                onChange={e => handleQuickPriceChange('with', e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">Sell (Primary - {quickProductForm.primaryUnit}) (Excl. Tax) ₹</label>
-              <input
-                className="form-input"
-                type="number"
-                min="0"
-                step="0.01"
-                value={quickProductForm.sellPricePrimaryExcl}
-                onChange={e => handleQuickSellPriceChange('primary', 'excl', e.target.value)}
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Sell (Primary - {quickProductForm.primaryUnit}) (Incl. Tax) ₹ *</label>
-              <input
-                className="form-input"
-                type="number"
-                min="0"
-                step="0.01"
-                value={quickProductForm.sellPricePrimaryIncl}
-                onChange={e => handleQuickSellPriceChange('primary', 'incl', e.target.value)}
-                required
-              />
-            </div>
-          </div>
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">Sell (Secondary - {quickProductForm.secondaryUnit === 'OTHER' ? (quickProductForm.customSecondaryUnit || 'OTHER') : quickProductForm.secondaryUnit}) (Excl. Tax) ₹</label>
-              <input
-                className="form-input"
-                type="number"
-                min="0"
-                step="0.01"
-                value={quickProductForm.sellPriceSecondaryExcl}
-                onChange={e => handleQuickSellPriceChange('secondary', 'excl', e.target.value)}
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Sell (Secondary - {quickProductForm.secondaryUnit === 'OTHER' ? (quickProductForm.customSecondaryUnit || 'OTHER') : quickProductForm.secondaryUnit}) (Incl. Tax) ₹ *</label>
-              <input
-                className="form-input"
-                type="number"
-                min="0"
-                step="0.01"
-                value={quickProductForm.sellPriceSecondaryIncl}
-                onChange={e => handleQuickSellPriceChange('secondary', 'incl', e.target.value)}
-                required
-              />
-            </div>
-          </div>
-          <div className="form-actions" style={{ marginTop: 'var(--space-2)' }}>
-            <button type="button" className="btn btn-secondary" onClick={() => setShowQuickProductModal(false)}>Cancel</button>
-            <motion.button type="submit" className="btn btn-primary" disabled={saving} whileTap={{ scale: 0.95 }}>
-              {saving ? 'Creating Product...' : 'Create Product'}
-            </motion.button>
-          </div>
-        </form>
-      </Modal>
-
-      <ConfirmDialog
-        isOpen={showRunNowConfirm}
-        onClose={() => setShowRunNowConfirm(false)}
-        onConfirm={handleRunNow}
-        title="Run Expiry Sweep Now"
-        message="This will immediately scan all stock batches and write off any expired ones to Damage Logs. This action cannot be undone. Continue?"
-        confirmLabel="Run Sweep"
-        danger={true}
-      />
-
-      {/* Invoice Lookup Modal */}
-      <Modal isOpen={showInvoiceSearchModal} onClose={() => setShowInvoiceSearchModal(false)} title={`Invoice Batches: ${invoiceSearchTerm}`} xl>
-        <DataTable
-          columns={[
-            { header: 'Product', accessor: 'productName', render: (row) => (
-              <div>
-                <div className="font-medium">{row.productName}</div>
-                {row.brand && <div className="text-xs text-muted">{row.brand}</div>}
-              </div>
-            )},
-            { header: 'Batch #', accessor: 'batchNumber' },
-            { header: 'Received', key: 'received', render: (row) => {
-              const primary = row.primaryReceived || 0;
-              const totalSec = row.secondaryReceived || 0;
-              const ratio = row.secondaryPerPrimary || 1;
-              const extra = Math.max(0, totalSec - (primary * ratio));
-              if (primary > 0 && extra > 0) {
-                return `${primary} ${row.primaryUnit || 'BOX'} + ${extra} ${row.secondaryUnit || 'LADI'}`;
-              } else if (primary > 0) {
-                return `${primary} ${row.primaryUnit || 'BOX'}`;
-              } else {
-                return `${totalSec} ${row.secondaryUnit || 'LADI'}`;
-              }
-            }},
-            { header: 'Remaining', accessor: 'secondaryRemaining', render: (row) => `${row.secondaryRemaining || 0} ${row.secondaryUnit || ''}` },
-            { header: 'Buy ₹', accessor: 'buyPriceWithTax', render: (row) => `₹${Number(row.buyPriceWithTax || 0).toLocaleString('en-IN')}` },
-            { header: 'Expiry', accessor: 'expiryDate', render: (row) => row.expiryDate ? new Date(row.expiryDate).toLocaleDateString('en-IN') : '—' },
-            { header: 'Status', key: 'batchStatus', render: (row) => (
-              <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                {row.exhausted && <span className="badge badge-neutral">Exhausted</span>}
-                {row.expiringSoon && <span className="badge badge-warning">Expiring</span>}
-                {!row.exhausted && !row.expiringSoon && <span className="badge badge-success">Active</span>}
-              </div>
-            )},
-          ]}
-          data={invoiceSearchBatches}
-          loading={invoiceSearchLoading}
-          searchable={false}
-          emptyMessage="No batches found for this invoice"
-          pageSize={10}
+      {/* Confirm Write Off Dialog */}
+      {writeOffTarget && (
+        <ConfirmDialog
+          title="Write Off Expired Stock?"
+          description="This action will decrease standard inventory counts to zero and create a Claimable/Damage logs write-off entry."
+          onConfirm={() => handleWriteOff(writeOffTarget)}
+          onCancel={() => setWriteOffTarget(null)}
         />
-      </Modal>
+      )}
     </div>
   )
 }

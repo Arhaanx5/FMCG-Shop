@@ -43,4 +43,15 @@ public class StockBatchResponse {
     private Boolean exhausted;
     private Boolean expiringSoon;
     private LocalDateTime receivedAt;
+
+    // Redesign properties
+    private LocalDate supplierInvoiceDate;
+    private LocalDate stockReceivedDate;
+    private LocalDate manufacturingDate;
+    private String remarks;
+    private String batchStatus;
+    private BigDecimal sellingPrice;
+    private Integer quantitySold;
+    private BigDecimal batchValue;
+    private Long stockAgeDays;
 }

@@ -1,11 +1,14 @@
 package com.shop.modules.stock;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import jakarta.persistence.LockModeType;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -42,6 +45,10 @@ public interface StockBatchRepository
     List<StockBatch> findByInvoiceNumberIgnoreCase(String invoiceNumber);
 
     boolean existsByExhaustedFalse();
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT b FROM StockBatch b WHERE b.id = :id")
+    Optional<StockBatch> findByIdForUpdate(@Param("id") UUID id);
 
     @Query("SELECT b FROM StockBatch b WHERE b.receivedAt >= :start AND b.receivedAt < :end ORDER BY b.receivedAt DESC")
     List<StockBatch> findByReceivedAtBetweenOrderByReceivedAtDesc(

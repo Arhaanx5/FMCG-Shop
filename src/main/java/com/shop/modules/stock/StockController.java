@@ -5,13 +5,18 @@ import com.shop.modules.product.Product;
 import com.shop.modules.stock.dto.ReceiveStockRequest;
 import com.shop.modules.stock.dto.StockBatchResponse;
 import com.shop.modules.stock.dto.StockResponse;
+import com.shop.modules.billing.BillRepository;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.UUID;
@@ -23,8 +28,12 @@ import java.util.stream.Collectors;
 public class StockController {
 
     private final StockService stockService;
+    private final StockReportService reportService;
+    private final BillRepository billRepository;
+    private final StockBatchRepository batchRepository;
+    private final jakarta.validation.Validator validator;
 
-    private StockResponse toStockResponse(Stock stock) {
+    public StockResponse toStockResponse(Stock stock) {
         if (stock == null) return null;
         Product product = stock.getProduct();
         if (product == null) {
@@ -37,15 +46,49 @@ public class StockController {
                     .lastUpdated(stock.getLastUpdated())
                     .build();
         }
-        boolean isLowStock = stock.getTotalSecondaryUnits()
-                < product.getLowStockAlert();
+
+        List<StockBatch> activeBatches = batchRepository.findByProductId(product.getId());
+        int reserved = activeBatches.stream()
+                .mapToInt(b -> b.getSecondarySoftReserved() != null ? b.getSecondarySoftReserved() : 0)
+                .sum();
+        int available = Math.max(0, stock.getTotalSecondaryUnits() - reserved);
+
+        BigDecimal avgCost = reportService.calculateWeightedAvgCost(product.getId());
+        BigDecimal sellPrice = product.getSellPriceSecondary() != null ? product.getSellPriceSecondary() : BigDecimal.ZERO;
+        
+        BigDecimal margin = BigDecimal.ZERO;
+        if (sellPrice.compareTo(BigDecimal.ZERO) > 0) {
+            margin = sellPrice.subtract(avgCost).divide(sellPrice, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100));
+        }
+
+        LocalDate lastPurchase = activeBatches.stream()
+                .map(b -> b.getStockReceivedDate() != null ? b.getStockReceivedDate() : b.getReceivedAt().toLocalDate())
+                .max(LocalDate::compareTo)
+                .orElse(null);
+
+        LocalDateTime lastSaleTime = billRepository.findLastSaleDateForProduct(product.getId());
+        LocalDate lastSale = lastSaleTime != null ? lastSaleTime.toLocalDate() : null;
+
+        BigDecimal invVal = BigDecimal.valueOf(stock.getTotalSecondaryUnits()).multiply(avgCost);
+
+        String status = "Healthy";
+        int totalQty = stock.getTotalSecondaryUnits();
+        if (totalQty <= 0) {
+            status = "Out Of Stock";
+        } else if (totalQty <= product.getLowStockAlert()) {
+            status = "Low Stock";
+        } else if (product.getLowStockAlert() != null && totalQty > product.getLowStockAlert() * 4) {
+            status = "Overstock";
+        }
+
+        boolean isLowStock = totalQty <= product.getLowStockAlert() || totalQty <= 0;
+
         return StockResponse.builder()
                 .id(stock.getId())
                 .productId(product.getId())
                 .productName(product.getName())
                 .brand(product.getBrand())
-                .category(product.getCategory() != null
-                        ? product.getCategory().name() : null)
+                .category(product.getCategory() != null ? product.getCategory().name() : null)
                 .primaryUnit(product.getPrimaryUnit())
                 .secondaryUnit(product.getSecondaryUnit())
                 .secondaryPerPrimary(product.getSecondaryPerPrimary())
@@ -57,15 +100,34 @@ public class StockController {
                 .lowStockAlert(product.getLowStockAlert())
                 .lowStockUnit(product.getLowStockUnit())
                 .lastUpdated(stock.getLastUpdated())
+                // Redesign properties
+                .availableStock(available)
+                .reservedStock(reserved)
+                .avgCost(avgCost.setScale(2, RoundingMode.HALF_UP))
+                .sellingPrice(sellPrice.setScale(2, RoundingMode.HALF_UP))
+                .marginPercent(margin.setScale(2, RoundingMode.HALF_UP))
+                .lastPurchaseDate(lastPurchase)
+                .lastSaleDate(lastSale)
+                .inventoryValue(invVal.setScale(2, RoundingMode.HALF_UP))
+                .reorderLevel(product.getLowStockAlert())
+                .status(status)
                 .build();
     }
 
-    private StockBatchResponse toBatchResponse(StockBatch batch) {
+    public StockBatchResponse toBatchResponse(StockBatch batch) {
         if (batch == null) return null;
         Product product = batch.getProduct();
         boolean expiringSoon = batch.getExpiryDate() != null
-                && batch.getExpiryDate()
-                .isBefore(LocalDate.now().plusDays(7));
+                && batch.getExpiryDate().isBefore(LocalDate.now().plusDays(7));
+
+        int ratio = product != null && product.getSecondaryPerPrimary() != null ? product.getSecondaryPerPrimary() : 1;
+        BigDecimal cost = batch.getBuyPricePerSecondary(ratio);
+        BigDecimal value = BigDecimal.valueOf(batch.getSecondaryRemaining()).multiply(cost);
+
+        LocalDate recDate = batch.getStockReceivedDate() != null ? batch.getStockReceivedDate() : batch.getReceivedAt().toLocalDate();
+        long age = ChronoUnit.DAYS.between(recDate, LocalDate.now());
+        int sold = Math.max(0, batch.getSecondaryReceived() - batch.getSecondaryRemaining());
+
         return StockBatchResponse.builder()
                 .id(batch.getId())
                 .productId(product != null ? product.getId() : null)
@@ -74,7 +136,7 @@ public class StockController {
                 .batchNumber(batch.getBatchNumber())
                 .primaryUnit(product != null ? product.getPrimaryUnit() : null)
                 .secondaryUnit(product != null ? product.getSecondaryUnit() : null)
-                .secondaryPerPrimary(product != null ? product.getSecondaryPerPrimary() : 1)
+                .secondaryPerPrimary(ratio)
                 .primaryReceived(batch.getPrimaryReceived())
                 .secondaryReceived(batch.getSecondaryReceived())
                 .secondaryRemaining(batch.getSecondaryRemaining())
@@ -89,6 +151,16 @@ public class StockController {
                 .exhausted(batch.getExhausted() != null && batch.getExhausted())
                 .expiringSoon(expiringSoon)
                 .receivedAt(batch.getReceivedAt())
+                // Redesign properties
+                .supplierInvoiceDate(batch.getSupplierInvoiceDate())
+                .stockReceivedDate(batch.getStockReceivedDate())
+                .manufacturingDate(batch.getManufacturingDate())
+                .remarks(batch.getRemarks())
+                .batchStatus(batch.getBatchStatus() != null ? batch.getBatchStatus().name() : "ACTIVE")
+                .sellingPrice(product != null && product.getSellPriceSecondary() != null ? product.getSellPriceSecondary() : BigDecimal.ZERO)
+                .quantitySold(sold)
+                .batchValue(value.setScale(2, RoundingMode.HALF_UP))
+                .stockAgeDays(age)
                 .build();
     }
 
@@ -150,12 +222,10 @@ public class StockController {
 
         if (req.getPrimaryReceived() == 0
                 && req.getExtraSecondaryReceived() == 0) {
-            throw new RuntimeException(
-                    "Must receive at least some stock");
+            throw new RuntimeException("Must receive at least some stock");
         }
 
-        StockService.ReceiveStockRequest serviceReq =
-                new StockService.ReceiveStockRequest();
+        StockService.ReceiveStockRequest serviceReq = new StockService.ReceiveStockRequest();
         serviceReq.setProductId(req.getProductId());
         serviceReq.setBatchNumber(req.getBatchNumber());
         serviceReq.setPrimaryReceived(req.getPrimaryReceived());
@@ -168,29 +238,47 @@ public class StockController {
         serviceReq.setSellPriceSecondary(req.getSellPriceSecondary());
         serviceReq.setLogAsExpense(req.isLogAsExpense());
         serviceReq.setGstPercent(req.getGstPercent());
-        serviceReq.setInvoiceNumber(req.getInvoiceNumber());
+        
+        // Redesign properties
+        serviceReq.setInvoiceNumber(req.getSupplierInvoiceNumber());
+        serviceReq.setSupplierInvoiceNumber(req.getSupplierInvoiceNumber());
+        serviceReq.setSupplierInvoiceDate(req.getSupplierInvoiceDate());
+        serviceReq.setStockReceivedDate(req.getStockReceivedDate());
+        serviceReq.setManufacturingDate(req.getManufacturingDate());
+        serviceReq.setRemarks(req.getRemarks());
 
         String username = principal != null ? principal.getName() : "System";
         StockBatch batch = stockService.receiveStock(serviceReq, username);
 
         return ResponseEntity.ok(
-                ApiResponse.success(
-                        "Stock received successfully",
-                        toBatchResponse(batch)));
+                ApiResponse.success("Stock received successfully", toBatchResponse(batch)));
     }
 
     @PostMapping("/receive-bulk")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<ApiResponse<List<StockBatchResponse>>> receiveStockBulk(
-            @Valid @RequestBody List<ReceiveStockRequest> requests,
+            @RequestBody List<ReceiveStockRequest> requests,
             java.security.Principal principal) {
 
         String username = principal != null ? principal.getName() : "System";
         List<StockBatchResponse> responses = new ArrayList<>();
 
         for (ReceiveStockRequest req : requests) {
-            if (req.getPrimaryReceived() == 0 && req.getExtraSecondaryReceived() == 0) {
-                continue; // Skip empty requests
+            if (req.getPrimaryReceived() == 0 && req.getExtraSecondaryReceived() == 0 && req.getOfferSecondaryReceived() == 0) {
+                continue;
+            }
+
+            var violations = validator.validate(req);
+            if (!violations.isEmpty()) {
+                String productName = "Unknown Product";
+                try {
+                    productName = stockService.getStockByProduct(req.getProductId()).getProduct().getName();
+                } catch (Exception ignored) {}
+                
+                String errorMsg = violations.stream()
+                        .map(v -> v.getMessage())
+                        .collect(Collectors.joining(", "));
+                throw new RuntimeException("Product '" + productName + "' validation failed: " + errorMsg);
             }
 
             StockService.ReceiveStockRequest serviceReq = new StockService.ReceiveStockRequest();
@@ -206,7 +294,14 @@ public class StockController {
             serviceReq.setSellPriceSecondary(req.getSellPriceSecondary());
             serviceReq.setLogAsExpense(req.isLogAsExpense());
             serviceReq.setGstPercent(req.getGstPercent());
-            serviceReq.setInvoiceNumber(req.getInvoiceNumber());
+
+            // Redesign properties
+            serviceReq.setInvoiceNumber(req.getSupplierInvoiceNumber());
+            serviceReq.setSupplierInvoiceNumber(req.getSupplierInvoiceNumber());
+            serviceReq.setSupplierInvoiceDate(req.getSupplierInvoiceDate());
+            serviceReq.setStockReceivedDate(req.getStockReceivedDate());
+            serviceReq.setManufacturingDate(req.getManufacturingDate());
+            serviceReq.setRemarks(req.getRemarks());
 
             StockBatch batch = stockService.receiveStock(serviceReq, username);
             responses.add(toBatchResponse(batch));
@@ -245,22 +340,19 @@ public class StockController {
         return ResponseEntity.ok(ApiResponse.success(responses));
     }
 
-    // ── Adjust Stock Batch Quantity (Admin & Manager only) ──
     @PutMapping("/batches/{batchId}/adjust")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<ApiResponse<Void>> adjustStock(
             @PathVariable UUID batchId,
-            @Valid @RequestBody AdjustStockRequest req,
+            @Valid @RequestBody StockController.AdjustStockRequest req,
             java.security.Principal principal) {
         
         String username = principal != null ? principal.getName() : "System";
-        stockService.adjustStock(batchId, req.getNewSecondaryRemaining(), req.getNewBuyPriceWithoutTax(), req.getReason(), username);
+        stockService.adjustStock(batchId, req.getNewSecondaryRemaining(), req.getNewOfferSecondaryRemaining(), req.getNewBuyPriceWithoutTax(), req.getReason(), username);
         
         return ResponseEntity.ok(ApiResponse.success("Stock batch adjusted successfully", null));
     }
 
-    // ── Deduct offer (free) units from a batch ──
-    // Used by billing screen when user clicks "Add Offer to Bill"
     @PostMapping("/batches/{batchId}/deduct-offer")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<ApiResponse<Void>> deductOfferUnits(
@@ -270,7 +362,6 @@ public class StockController {
         return ResponseEntity.ok(ApiResponse.success("Offer units deducted successfully", null));
     }
 
-    // ── Write off expired stock batch to Damage Log (Admin & Manager only) ──
     @PostMapping("/batches/{batchId}/write-off-expiry")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<ApiResponse<Void>> writeOffExpiry(
@@ -283,7 +374,6 @@ public class StockController {
         return ResponseEntity.ok(ApiResponse.success("Expired stock written off successfully", null));
     }
 
-    // ── View Stock Audit Logs (Strictly Admin only) ──
     @GetMapping("/adjustments")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Page<StockAdjustmentLog>>> getAdjustmentLogs(
@@ -298,6 +388,9 @@ public class StockController {
         @jakarta.validation.constraints.NotNull(message = "New remaining quantity cannot be null")
         @jakarta.validation.constraints.Min(value = 0, message = "Remaining quantity cannot be negative")
         private Integer newSecondaryRemaining;
+
+        @jakarta.validation.constraints.Min(value = 0, message = "Offer remaining quantity cannot be negative")
+        private Integer newOfferSecondaryRemaining;
 
         private java.math.BigDecimal newBuyPriceWithoutTax;
 
