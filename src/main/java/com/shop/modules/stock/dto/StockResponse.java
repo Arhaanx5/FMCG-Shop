@@ -36,6 +36,7 @@ public class StockResponse {
     private BigDecimal marginPercent;
     private BigDecimal avgCostPrimary;
     private BigDecimal sellingPricePrimary;
+    private BigDecimal marginPercentPrimary;
     private LocalDate lastPurchaseDate;
     private LocalDate lastSaleDate;
     private BigDecimal inventoryValue;

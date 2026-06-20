@@ -87,6 +87,7 @@ public class StockReportService {
         private BigDecimal marginPercent;
         private BigDecimal avgCostPrimary;
         private BigDecimal sellingPricePrimary;
+        private BigDecimal marginPercentPrimary;
         private BigDecimal inventoryValue;
         private String status; // Healthy, Low Stock, Out of Stock, Overstock, Dead Stock
     }
@@ -114,6 +115,12 @@ public class StockReportService {
 
             BigDecimal avgCostPrimary = avgCost.multiply(BigDecimal.valueOf(ratio));
             BigDecimal sellPricePrimary = p.getSellPricePrimary() != null ? p.getSellPricePrimary() : BigDecimal.ZERO;
+            BigDecimal marginPrimary = BigDecimal.ZERO;
+            if (sellPricePrimary.compareTo(BigDecimal.ZERO) > 0) {
+                marginPrimary = sellPricePrimary.subtract(avgCostPrimary)
+                        .divide(sellPricePrimary, 4, RoundingMode.HALF_UP)
+                        .multiply(BigDecimal.valueOf(100));
+            }
 
             if (totalQty <= 0) {
                 status = "Out Of Stock";
@@ -134,6 +141,7 @@ public class StockReportService {
                     .marginPercent(margin.setScale(2, RoundingMode.HALF_UP))
                     .avgCostPrimary(avgCostPrimary.setScale(2, RoundingMode.HALF_UP))
                     .sellingPricePrimary(sellPricePrimary.setScale(2, RoundingMode.HALF_UP))
+                    .marginPercentPrimary(marginPrimary.setScale(2, RoundingMode.HALF_UP))
                     .inventoryValue(value.setScale(2, RoundingMode.HALF_UP))
                     .status(status)
                     .build();
@@ -319,6 +327,10 @@ public class StockReportService {
         int ratio = product.getSecondaryPerPrimary() != null ? product.getSecondaryPerPrimary() : 1;
         BigDecimal avgCostPrimary = avgCost.multiply(BigDecimal.valueOf(ratio));
         BigDecimal sellPricePrimary = product.getSellPricePrimary() != null ? product.getSellPricePrimary() : BigDecimal.ZERO;
+        BigDecimal marginPrimary = BigDecimal.ZERO;
+        if (sellPricePrimary.compareTo(BigDecimal.ZERO) > 0) {
+            marginPrimary = sellPricePrimary.subtract(avgCostPrimary).divide(sellPricePrimary, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100));
+        }
 
         LocalDate lastPurchase = activeBatches.stream()
                 .map(b -> b.getStockReceivedDate() != null ? b.getStockReceivedDate() : b.getReceivedAt().toLocalDate())
@@ -368,6 +380,7 @@ public class StockReportService {
                 .marginPercent(margin.setScale(2, RoundingMode.HALF_UP))
                 .avgCostPrimary(avgCostPrimary.setScale(2, RoundingMode.HALF_UP))
                 .sellingPricePrimary(sellPricePrimary.setScale(2, RoundingMode.HALF_UP))
+                .marginPercentPrimary(marginPrimary.setScale(2, RoundingMode.HALF_UP))
                 .lastPurchaseDate(lastPurchase)
                 .lastSaleDate(lastSale)
                 .inventoryValue(invVal.setScale(2, RoundingMode.HALF_UP))
