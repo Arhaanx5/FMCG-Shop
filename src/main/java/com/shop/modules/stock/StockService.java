@@ -172,7 +172,7 @@ public class StockService {
         inventoryService.normalizeStock(stock, product);
         stockRepository.save(stock);
 
-        if (qtyAfter < product.getLowStockAlert()) {
+        if (qtyAfter < product.getLowStockAlertInSecondary()) {
             System.out.println("[LOW STOCK ALERT] Product '" + product.getName() + "' is running low.");
         }
 
@@ -216,7 +216,7 @@ public class StockService {
         inventoryService.normalizeStock(stock, product);
         stockRepository.save(stock);
 
-        if (qtyAfter < product.getLowStockAlert()) {
+        if (qtyAfter < product.getLowStockAlertInSecondary()) {
             System.out.println("[LOW STOCK ALERT] Product '" + product.getName() + "' is running low.");
         }
 

@@ -98,7 +98,7 @@ public class StockBIService {
         long lowStockSKUs = 0;
         for (Product p : products) {
             Stock stock = inventoryService.getOrCreateStock(p.getId());
-            if (stock.getTotalSecondaryUnits() <= p.getLowStockAlert()) {
+            if (stock.getTotalSecondaryUnits() <= p.getLowStockAlertInSecondary()) {
                 lowStockSKUs++;
             }
         }
@@ -191,7 +191,7 @@ public class StockBIService {
         for (Product p : products) {
             Stock stock = inventoryService.getOrCreateStock(p.getId());
             int currentStock = stock.getTotalSecondaryUnits();
-            int lowStockAlert = p.getLowStockAlert();
+            int lowStockAlert = p.getLowStockAlertInSecondary();
 
             if (currentStock <= lowStockAlert) {
                 int totalSales = salesMap.getOrDefault(p.getId(), 0);

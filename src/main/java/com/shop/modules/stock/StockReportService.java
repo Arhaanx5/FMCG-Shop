@@ -97,13 +97,16 @@ public class StockReportService {
 
             BigDecimal value = BigDecimal.valueOf(stock.getTotalSecondaryUnits()).multiply(avgCost);
 
+            int alertThreshold = p.getLowStockAlertInSecondary();
             String status = "Healthy";
             int totalQty = stock.getTotalSecondaryUnits();
+            int ratio = p.getSecondaryPerPrimary() != null ? p.getSecondaryPerPrimary() : 1;
+
             if (totalQty <= 0) {
                 status = "Out Of Stock";
-            } else if (totalQty <= p.getLowStockAlert()) {
+            } else if (totalQty <= alertThreshold) {
                 status = "Low Stock";
-            } else if (p.getLowStockAlert() != null && totalQty > p.getLowStockAlert() * 4) {
+            } else if (totalQty > alertThreshold * 8 && totalQty > ratio * 5) {
                 status = "Overstock";
             }
 

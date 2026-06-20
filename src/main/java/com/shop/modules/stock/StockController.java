@@ -71,17 +71,20 @@ public class StockController {
 
         BigDecimal invVal = BigDecimal.valueOf(stock.getTotalSecondaryUnits()).multiply(avgCost);
 
+        int alertThreshold = product.getLowStockAlertInSecondary();
         String status = "Healthy";
         int totalQty = stock.getTotalSecondaryUnits();
+        int ratio = product.getSecondaryPerPrimary() != null ? product.getSecondaryPerPrimary() : 1;
+
         if (totalQty <= 0) {
             status = "Out Of Stock";
-        } else if (totalQty <= product.getLowStockAlert()) {
+        } else if (totalQty <= alertThreshold) {
             status = "Low Stock";
-        } else if (product.getLowStockAlert() != null && totalQty > product.getLowStockAlert() * 4) {
+        } else if (totalQty > alertThreshold * 8 && totalQty > ratio * 5) {
             status = "Overstock";
         }
 
-        boolean isLowStock = totalQty <= product.getLowStockAlert() || totalQty <= 0;
+        boolean isLowStock = totalQty <= alertThreshold || totalQty <= 0;
 
         return StockResponse.builder()
                 .id(stock.getId())

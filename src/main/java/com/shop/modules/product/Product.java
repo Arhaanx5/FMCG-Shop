@@ -182,4 +182,13 @@ public class Product {
             this.secondaryUnit = null;
         }
     }
+
+    public int getLowStockAlertInSecondary() {
+        int alert = lowStockAlert != null ? lowStockAlert : 10;
+        if ("PRIMARY".equalsIgnoreCase(lowStockUnit)) {
+            int ratio = secondaryPerPrimary != null ? secondaryPerPrimary : 1;
+            return alert * ratio;
+        }
+        return alert;
+    }
 }
