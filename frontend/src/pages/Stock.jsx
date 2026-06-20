@@ -1553,57 +1553,57 @@ export default function Stock() {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-slate-750 dark:text-slate-300 font-semibold text-sm">
-                      <th className="py-4 px-6">Product</th>
-                      <th className="py-4 px-6">Category</th>
-                      <th className="py-4 px-6">Stock</th>
-                      <th className="py-4 px-6">Available</th>
-                      <th className="py-4 px-6">Reserved</th>
-                      <th className="py-4 px-6">Avg Cost</th>
-                      <th className="py-4 px-6">Selling</th>
-                      <th className="py-4 px-6">Margin</th>
-                      <th className="py-4 px-6">Inventory Value</th>
-                      <th className="py-4 px-6 text-center">Status</th>
+                      <th className="py-2.5 px-4">Product</th>
+                      <th className="py-2.5 px-4">Category</th>
+                      <th className="py-2.5 px-4">Stock</th>
+                      <th className="py-2.5 px-4">Available</th>
+                      <th className="py-2.5 px-4">Reserved</th>
+                      <th className="py-2.5 px-4">Avg Cost</th>
+                      <th className="py-2.5 px-4">Selling</th>
+                      <th className="py-2.5 px-4">Margin</th>
+                      <th className="py-2.5 px-4">Inventory Value</th>
+                      <th className="py-2.5 px-4 text-center">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-800 text-sm">
                     {loading ? (
                       <tr>
-                        <td colSpan={10} className="py-12 text-center text-slate-400 dark:text-slate-500 font-medium">
+                        <td colSpan={10} className="py-8 text-center text-slate-400 dark:text-slate-500 font-medium">
                           Loading inventory ledger data...
                         </td>
                       </tr>
                     ) : filteredInventory.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="py-12 text-center text-slate-400 dark:text-slate-500">
+                        <td colSpan={10} className="py-8 text-center text-slate-400 dark:text-slate-500">
                           No matching stock entries found.
                         </td>
                       </tr>
                     ) : (
                       filteredInventory.map(item => (
                         <tr key={item.id} className="hover:bg-slate-100/40 dark:hover:bg-slate-800/40 transition-colors">
-                          <td className="py-4 px-6">
+                          <td className="py-2 px-4">
                             <span className="font-semibold text-slate-800 dark:text-slate-100 block">{item.productName}</span>
                             <span className="text-xs text-slate-505 dark:text-slate-400">{item.brand}</span>
                           </td>
-                          <td className="py-4 px-6 text-slate-700 dark:text-slate-300">{item.category}</td>
-                          <td className="py-4 px-6 font-mono text-slate-800 dark:text-slate-200">
+                          <td className="py-2 px-4 text-slate-700 dark:text-slate-300">{item.category}</td>
+                          <td className="py-2 px-4 font-mono text-slate-800 dark:text-slate-200">
                             {item.totalSecondaryUnits} {item.secondaryUnit || 'Units'}
                           </td>
-                          <td className="py-4 px-6 font-mono text-indigo-600 dark:text-indigo-400">
+                          <td className="py-2 px-4 font-mono text-indigo-600 dark:text-indigo-400">
                             {item.availableStock}
                           </td>
-                          <td className="py-4 px-6 font-mono text-amber-600 dark:text-amber-500">
+                          <td className="py-2 px-4 font-mono text-amber-600 dark:text-amber-500">
                             {item.reservedStock}
                           </td>
-                          <td className="py-4 px-6 font-mono text-slate-700 dark:text-slate-300">₹{item.avgCost}</td>
-                          <td className="py-4 px-6 font-mono text-slate-700 dark:text-slate-300">₹{item.sellingPrice}</td>
-                          <td className="py-4 px-6">
+                          <td className="py-2 px-4 font-mono text-slate-700 dark:text-slate-300">₹{item.avgCost}</td>
+                          <td className="py-2 px-4 font-mono text-slate-700 dark:text-slate-300">₹{item.sellingPrice}</td>
+                          <td className="py-2 px-4">
                             <span className={`font-semibold ${item.marginPercent < 5 ? 'text-red-550 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                               {item.marginPercent}%
                             </span>
                           </td>
-                          <td className="py-4 px-6 font-mono text-emerald-600 dark:text-emerald-400 font-semibold">₹{item.inventoryValue}</td>
-                          <td className="py-4 px-6 text-center">
+                          <td className="py-2 px-4 font-mono text-emerald-600 dark:text-emerald-400 font-semibold">₹{item.inventoryValue}</td>
+                          <td className="py-2 px-4 text-center">
                             <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
                               item.status === 'Healthy' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' :
                               item.status === 'Low Stock' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20' :
@@ -2204,54 +2204,55 @@ export default function Stock() {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-slate-750 dark:text-slate-305 font-semibold text-xs uppercase tracking-wider">
-                      <th className="py-4 px-6">Product / Batch</th>
-                      <th className="py-4 px-6">Supplier & Invoice</th>
-                      <th className="py-4 px-6">Received / Sold</th>
-                      <th className="py-4 px-6">Available</th>
-                      <th className="py-4 px-6">Cost Price</th>
-                      <th className="py-4 px-6">Expiry & Age</th>
-                      <th className="py-4 px-6">Value</th>
-                      <th className="py-4 px-6 text-center">Actions</th>
+                      <th className="py-2.5 px-4">Product / Batch</th>
+                      <th className="py-2.5 px-4">Supplier & Invoice</th>
+                      <th className="py-2.5 px-4">Received / Sold</th>
+                      <th className="py-2.5 px-4">Available</th>
+                      <th className="py-2.5 px-4">Cost Price</th>
+                      <th className="py-2.5 px-4">Expiry & Age</th>
+                      <th className="py-2.5 px-4">Value</th>
+                      <th className="py-2.5 px-4 text-center">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-800 text-sm">
                     {batchList.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="py-12 text-center text-slate-400 dark:text-slate-505 font-medium">
+                        <td colSpan={8} className="py-8 text-center text-slate-400 dark:text-slate-505 font-medium">
                           No batches found.
                         </td>
                       </tr>
                     ) : (
                       batchList.map(batch => (
                         <tr key={batch.id} className="hover:bg-slate-100/40 dark:hover:bg-slate-800/40 transition-colors">
-                          <td className="py-4 px-6">
+                          <td className="py-2 px-4">
                             <span className="font-semibold text-slate-800 dark:text-slate-100 block">{batch.productName}</span>
                             <span className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold font-mono">Batch: {batch.batchNumber}</span>
                           </td>
-                          <td className="py-4 px-6">
+                          <td className="py-2 px-4">
                             <span className="text-slate-700 dark:text-slate-300 block">{batch.supplierName}</span>
                             <span className="text-xs text-slate-500 dark:text-slate-400">Inv: {batch.invoiceNumber} | {batch.supplierInvoiceDate || 'No Date'}</span>
                           </td>
-                          <td className="py-4 px-6">
+                          <td className="py-2 px-4">
                             <span className="text-slate-700 dark:text-slate-300 block">{batch.secondaryReceived} Packs</span>
                             <span className="text-xs text-slate-500 dark:text-slate-400">Sold: {batch.quantitySold} Packs</span>
                           </td>
-                          <td className="py-4 px-6 font-mono text-indigo-600 dark:text-indigo-450 font-semibold">
+                          <td className="py-2 px-4 font-mono text-indigo-600 dark:text-indigo-450 font-semibold">
                             {batch.secondaryRemaining} Packs
                           </td>
-                          <td className="py-4 px-6 font-mono">₹{batch.buyPriceWithoutTax}</td>
-                          <td className="py-4 px-6">
+                          <td className="py-2 px-4 font-mono">₹{batch.buyPriceWithoutTax}</td>
+                          <td className="py-2 px-4">
                             <span className="text-slate-700 dark:text-slate-300 block text-xs">Exp: {batch.expiryDate}</span>
                             <span className="text-xs text-slate-500 dark:text-slate-400">Age: {batch.stockAgeDays} days</span>
                           </td>
-                          <td className="py-4 px-6 font-mono text-emerald-600 dark:text-emerald-400 font-semibold">₹{batch.batchValue}</td>
-                          <td className="py-4 px-6 text-center">
+                          <td className="py-2 px-4 font-mono text-emerald-600 dark:text-emerald-400 font-semibold">₹{batch.batchValue}</td>
+                          <td className="py-2 px-4 text-center">
                             <div className="flex gap-2 justify-center">
                               <button
                                 onClick={() => {
+                                  const ratio = batch.secondaryPerPrimary && batch.secondaryPerPrimary > 0 ? batch.secondaryPerPrimary : 1
                                   setAdjustingBatch(batch)
-                                  setAdjustPrimary(Math.floor(batch.secondaryRemaining / batch.secondaryPerPrimary).toString())
-                                  setAdjustSecondary((batch.secondaryRemaining % batch.secondaryPerPrimary).toString())
+                                  setAdjustPrimary(Math.floor(batch.secondaryRemaining / ratio).toString())
+                                  setAdjustSecondary((batch.secondaryRemaining % ratio).toString())
                                   setAdjustOffer(batch.offerSecondaryRemaining?.toString() || '0')
                                   setAdjustBuyPrice(batch.buyPriceWithoutTax?.toString() || '0')
                                 }}
@@ -2751,8 +2752,8 @@ export default function Stock() {
       {/* Confirm Write Off Dialog */}
       {writeOffTarget && (
         <ConfirmDialog
-          title="Write Off Expired Stock?"
-          description="This action will decrease standard inventory counts to zero and create a Claimable/Damage logs write-off entry."
+          title="Write Off / Delete Batch Stock?"
+          description="This action will set the batch's available stock to 0 and log an audit write-off entry. Active batches cannot be hard-deleted to prevent ledger history mismatch."
           onConfirm={() => handleWriteOff(writeOffTarget)}
           onCancel={() => setWriteOffTarget(null)}
         />
