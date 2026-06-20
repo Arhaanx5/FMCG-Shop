@@ -2296,12 +2296,41 @@ export default function Stock() {
                             <span className="text-slate-700 dark:text-slate-300 block">{batch.supplierName}</span>
                             <span className="text-xs text-slate-500 dark:text-slate-400">Inv: {batch.invoiceNumber} | {batch.supplierInvoiceDate || 'No Date'}</span>
                           </td>
-                          <td className="py-2 px-4">
-                            <span className="text-slate-700 dark:text-slate-300 block">{batch.secondaryReceived} Packs</span>
-                            <span className="text-xs text-slate-500 dark:text-slate-400">Sold: {batch.quantitySold} Packs</span>
+                          <td className="py-2 px-4 font-mono">
+                            {(() => {
+                              const ratio = batch.secondaryPerPrimary && batch.secondaryPerPrimary > 0 ? batch.secondaryPerPrimary : 1
+                              const recPrimary = Math.floor(batch.secondaryReceived / ratio)
+                              const soldPrimary = Math.floor((batch.quantitySold || 0) / ratio)
+                              return (
+                                <>
+                                  <span className="text-slate-800 dark:text-slate-200 font-semibold block">
+                                    {recPrimary} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">{batch.primaryUnit || 'BOX'}</span>
+                                  </span>
+                                  <span className="block text-xs text-slate-400 dark:text-slate-550">
+                                    {batch.secondaryReceived} {batch.secondaryUnit || 'LADI'}
+                                  </span>
+                                  <span className="block text-xs text-slate-500 dark:text-slate-400 mt-1 font-sans">
+                                    Sold: {soldPrimary} {batch.primaryUnit || 'BOX'} ({batch.quantitySold || 0} {batch.secondaryUnit || 'LADI'})
+                                  </span>
+                                </>
+                              )
+                            })()}
                           </td>
-                          <td className="py-2 px-4 font-mono text-indigo-600 dark:text-indigo-450 font-semibold">
-                            {batch.secondaryRemaining} Packs
+                          <td className="py-2 px-4 font-mono text-indigo-600 dark:text-indigo-400">
+                            {(() => {
+                              const ratio = batch.secondaryPerPrimary && batch.secondaryPerPrimary > 0 ? batch.secondaryPerPrimary : 1
+                              const remPrimary = Math.floor(batch.secondaryRemaining / ratio)
+                              return (
+                                <>
+                                  <span className="font-bold block">
+                                    {remPrimary} <span className="text-xs font-normal text-indigo-500/60 dark:text-indigo-450/60">{batch.primaryUnit || 'BOX'}</span>
+                                  </span>
+                                  <span className="block text-xs text-indigo-500/80 dark:text-indigo-400/80">
+                                    {batch.secondaryRemaining} {batch.secondaryUnit || 'LADI'}
+                                  </span>
+                                </>
+                              )
+                            })()}
                           </td>
                           <td className="py-2 px-4 font-mono">₹{batch.buyPriceWithoutTax}</td>
                           <td className="py-2 px-4">
