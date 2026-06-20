@@ -120,7 +120,7 @@ public class StockReportService {
                 status = "Out Of Stock";
             } else if (totalQty <= alertThreshold) {
                 status = "Low Stock";
-            } else if (totalQty > alertThreshold * 8 && totalQty > ratio * 5) {
+            } else if (totalQty > alertThreshold * 8 && totalQty > ratio * 30) {
                 status = "Overstock";
             }
 
@@ -345,7 +345,7 @@ public class StockReportService {
             status = "Out Of Stock";
         } else if (totalQty <= alertThreshold) {
             status = "Low Stock";
-        } else if (totalQty > alertThreshold * 8 && totalQty > ratio * 5) {
+        } else if (totalQty > alertThreshold * 8 && totalQty > ratio * 30) {
             status = "Overstock";
         }
 
