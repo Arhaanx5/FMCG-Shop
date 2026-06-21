@@ -1,1 +1,1 @@
-﻿export const ENV = { apiUrl: 'https://api-uat.laritraders.store/api' }
+export const ENV = { apiUrl: 'https://api.laritraders.store/api' }
