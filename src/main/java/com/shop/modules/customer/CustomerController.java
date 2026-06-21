@@ -134,17 +134,12 @@ public class CustomerController {
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','DELIVERY_BOY','SALESMAN')")
     public ResponseEntity<ApiResponse<org.springframework.data.domain.Page<CustomerResponse>>>
     getAll(@RequestParam(required = false) String search,
+           @RequestParam(required = false) Boolean active,
            @RequestParam(defaultValue = "0") int page,
            @RequestParam(defaultValue = "10") int size) {
-        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(page, size);
-        if (search != null && !search.isBlank()) {
-            return ResponseEntity.ok(
-                    ApiResponse.success(
-                            customerService.searchCustomers(search, pageable)));
-        }
         return ResponseEntity.ok(
                 ApiResponse.success(
-                        customerService.getAllCustomers(pageable)));
+                        customerService.getFilteredCustomersPaged(page, size, search, active)));
     }
 
     @GetMapping("/{idOrCode}")

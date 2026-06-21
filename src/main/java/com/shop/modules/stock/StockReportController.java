@@ -49,4 +49,25 @@ public class StockReportController {
         List<StockReportService.CategoryProfitabilityRow> data = reportService.getCategoryProfitabilityReport();
         return ResponseEntity.ok(ApiResponse.success(data));
     }
+
+    @GetMapping("/valuation/export")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<List<StockReportService.InventoryReportRow>>> exportValuationReport() {
+        List<StockReportService.InventoryReportRow> data = reportService.getInventoryValuationReportAll();
+        return ResponseEntity.ok(ApiResponse.success(data));
+    }
+
+    @GetMapping("/expiry/export")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<List<StockReportService.ExpiryReportRow>>> exportExpiryReport() {
+        List<StockReportService.ExpiryReportRow> data = reportService.getExpiryReportAll();
+        return ResponseEntity.ok(ApiResponse.success(data));
+    }
+
+    @GetMapping("/aging/export")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<List<StockReportService.AgingReportRow>>> exportAgingReport() {
+        List<StockReportService.AgingReportRow> data = reportService.getStockAgingReportAll();
+        return ResponseEntity.ok(ApiResponse.success(data));
+    }
 }

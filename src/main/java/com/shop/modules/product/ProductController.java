@@ -22,17 +22,12 @@ public class ProductController {
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','DELIVERY_BOY','SALESMAN')")
     public ResponseEntity<ApiResponse<org.springframework.data.domain.Page<ProductResponse>>>
     getAll(@RequestParam(required = false) String search,
+           @RequestParam(required = false) String category,
            @RequestParam(defaultValue = "0") int page,
            @RequestParam(defaultValue = "10") int size) {
-        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(page, size);
-        if (search != null && !search.isBlank()) {
-            return ResponseEntity.ok(
-                    ApiResponse.success(
-                            productService.searchProducts(search, pageable)));
-        }
         return ResponseEntity.ok(
                 ApiResponse.success(
-                        productService.getAllProducts(pageable)));
+                        productService.getFilteredProductsPaged(page, size, search, category)));
     }
 
     @GetMapping("/{idOrCode}")

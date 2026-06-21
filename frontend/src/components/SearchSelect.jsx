@@ -1,7 +1,18 @@
 import { useState, useRef, useEffect } from 'react'
 import { Search, ChevronDown } from 'lucide-react'
 
-export default function SearchSelect({ options = [], value, onChange, placeholder = 'Search...', labelKey = 'name', valueKey = 'id', renderOption, disabled = false }) {
+export default function SearchSelect({ 
+  options = [], 
+  value, 
+  onChange, 
+  placeholder = 'Search...', 
+  labelKey = 'name', 
+  valueKey = 'id', 
+  renderOption, 
+  disabled = false,
+  onNoResultsAction,
+  noResultsActionLabel
+}) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const ref = useRef(null)
@@ -60,8 +71,41 @@ export default function SearchSelect({ options = [], value, onChange, placeholde
           </div>
           <div style={{ overflowY: 'auto', flex: 1, paddingBottom: '8px' }}>
             {filtered.length === 0 ? (
-               <div style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)' }}>
-                No results found
+               <div style={{ 
+                 padding: 'var(--space-4)', 
+                 textAlign: 'center', 
+                 color: 'var(--color-text-muted)', 
+                 fontSize: 'var(--font-size-sm)',
+                 display: 'flex',
+                 flexDirection: 'column',
+                 alignItems: 'center',
+                 gap: '8px'
+               }}>
+                <span>No results found</span>
+                {onNoResultsAction && (
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    style={{
+                      padding: '4px 12px',
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                      background: 'var(--color-primary, #7c3aed)',
+                      border: 'none',
+                      color: '#fff',
+                      borderRadius: 'var(--radius-sm)',
+                      marginTop: '4px'
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onNoResultsAction(query)
+                      setOpen(false)
+                      setQuery('')
+                    }}
+                  >
+                    {noResultsActionLabel || 'Add New'}
+                  </button>
+                )}
               </div>
             ) : (
               filtered.map((opt) => (

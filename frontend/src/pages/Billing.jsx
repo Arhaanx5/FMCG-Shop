@@ -457,6 +457,233 @@ export default function Billing() {
   const [bulkConfirming, setBulkConfirming] = useState(false)
   const [virtualStockCache, setVirtualStockCache] = useState({})
 
+  // Areas, Customer creation and Product creation state & handlers
+  const [areas, setAreas] = useState([])
+  const [showCustomerModal, setShowCustomerModal] = useState(false)
+  const [customerSaving, setCustomerSaving] = useState(false)
+  const emptyCustomerForm = { name: '', shopName: '', phone: '', areaId: '', openingBalance: '', creditLimit: '', isManualOverride: false, isNpa: false }
+  const [customerForm, setCustomerForm] = useState({ ...emptyCustomerForm })
+
+  const updateCustomerField = (key, val) => setCustomerForm(f => ({ ...f, [key]: val }))
+
+  const handleSaveCustomer = async (e) => {
+    e.preventDefault()
+    setCustomerSaving(true)
+    try {
+      const payload = {
+        ...customerForm,
+        areaId: customerForm.areaId || null,
+        openingBalance: Number(customerForm.openingBalance || 0),
+        creditLimit: customerForm.isManualOverride ? Number(customerForm.creditLimit || 0) : null
+      }
+      const res = await api.post('/customers', payload)
+      const newCustomer = res.data.data
+      toast.success('Customer created successfully!')
+      setShowCustomerModal(false)
+      setCustomerForm({ ...emptyCustomerForm })
+      await loadAll()
+      if (newCustomer && newCustomer.id) {
+        setCustomerId(newCustomer.id)
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to create customer')
+    } finally {
+      setCustomerSaving(false)
+    }
+  }
+
+  const [showProductModal, setShowProductModal] = useState(false)
+  const [productSaving, setProductSaving] = useState(false)
+  const emptyProductForm = {
+    name: '', brand: '', category: 'SNACKS', otherCategoryDetail: '', gstPercent: '0', cessPercent: '0', isCessApplicable: false,
+    primaryUnit: 'BOX', secondaryUnit: 'LADI', customSecondaryUnit: '', secondaryPerPrimary: '1',
+    canSellPrimary: true, canSellSecondary: true,
+    buyPriceWithoutTax: '', buyPriceWithTax: '',
+    sellPricePrimary: '', sellPriceSecondary: '',
+    sellPricePrimaryExcl: '', sellPricePrimaryIncl: '',
+    sellPriceSecondaryExcl: '', sellPriceSecondaryIncl: '',
+    lowStockAlert: '10', lowStockUnit: 'SECONDARY',
+  }
+  const [productForm, setProductForm] = useState({ ...emptyProductForm })
+  const CATEGORIES = ['CHIPS', 'SNACKS', 'BEVERAGES', 'CIGARETTES', 'BISCUITS', 'NAMKEEN', 'OTHER']
+
+  const updateProductField = (key, val) => setProductForm(f => ({ ...f, [key]: val }))
+
+  const handleProductPriceChange = (type, value) => {
+    const gst = Number(productForm.gstPercent || 0)
+    const cess = Number(productForm.cessPercent || 0)
+    const taxRate = 1 + (gst + cess) / 100
+    if (type === 'without') {
+      const parsed = parseFloat(value)
+      if (isNaN(parsed) || !value) {
+        setProductForm(f => ({ ...f, buyPriceWithoutTax: value, buyPriceWithTax: '' }))
+      } else {
+        const withTax = (parsed * taxRate).toFixed(2)
+        setProductForm(f => ({ ...f, buyPriceWithoutTax: value, buyPriceWithTax: withTax }))
+      }
+    } else {
+      const parsed = parseFloat(value)
+      if (isNaN(parsed) || !value) {
+        setProductForm(f => ({ ...f, buyPriceWithTax: value, buyPriceWithoutTax: '' }))
+      } else {
+        const withoutTax = (parsed / taxRate).toFixed(2)
+        setProductForm(f => ({ ...f, buyPriceWithTax: value, buyPriceWithoutTax: withoutTax }))
+      }
+    }
+  }
+
+  const handleProductSellPriceChange = (unitType, fieldType, value) => {
+    const gst = Number(productForm.gstPercent || 0)
+    const cess = Number(productForm.cessPercent || 0)
+    const taxRate = 1 + (gst + cess) / 100
+
+    if (unitType === 'primary') {
+      if (fieldType === 'excl') {
+        const parsed = parseFloat(value)
+        if (isNaN(parsed) || !value) {
+          setProductForm(f => ({ ...f, sellPricePrimaryExcl: value, sellPricePrimaryIncl: '' }))
+        } else {
+          const incl = (parsed * taxRate).toFixed(2)
+          setProductForm(f => ({ ...f, sellPricePrimaryExcl: value, sellPricePrimaryIncl: incl }))
+        }
+      } else {
+        const parsed = parseFloat(value)
+        if (isNaN(parsed) || !value) {
+          setProductForm(f => ({ ...f, sellPricePrimaryIncl: value, sellPricePrimaryExcl: '' }))
+        } else {
+          const excl = (parsed / taxRate).toFixed(2)
+          setProductForm(f => ({ ...f, sellPricePrimaryIncl: value, sellPricePrimaryExcl: excl }))
+        }
+      }
+    } else {
+      if (fieldType === 'excl') {
+        const parsed = parseFloat(value)
+        if (isNaN(parsed) || !value) {
+          setProductForm(f => ({ ...f, sellPriceSecondaryExcl: value, sellPriceSecondaryIncl: '' }))
+        } else {
+          const incl = (parsed * taxRate).toFixed(2)
+          setProductForm(f => ({ ...f, sellPriceSecondaryExcl: value, sellPriceSecondaryIncl: incl }))
+        }
+      } else {
+        const parsed = parseFloat(value)
+        if (isNaN(parsed) || !value) {
+          setProductForm(f => ({ ...f, sellPriceSecondaryIncl: value, sellPriceSecondaryExcl: '' }))
+        } else {
+          const excl = (parsed / taxRate).toFixed(2)
+          setProductForm(f => ({ ...f, sellPriceSecondaryIncl: value, sellPriceSecondaryExcl: excl }))
+        }
+      }
+    }
+  }
+
+  const handleProductGstChange = (gstValue) => {
+    const gst = Number(gstValue || 0)
+    const cess = Number(productForm.cessPercent || 0)
+    const taxRate = 1 + (gst + cess) / 100
+    const withoutTax = parseFloat(productForm.buyPriceWithoutTax)
+    let newBuyPriceWithTax = productForm.buyPriceWithTax
+    if (!isNaN(withoutTax)) {
+      newBuyPriceWithTax = (withoutTax * taxRate).toFixed(2)
+    }
+
+    const sellPriIncl = parseFloat(productForm.sellPricePrimaryIncl)
+    const sellPriExcl = !isNaN(sellPriIncl) ? (sellPriIncl / taxRate).toFixed(2) : ''
+
+    const sellSecIncl = parseFloat(productForm.sellPriceSecondaryIncl)
+    const sellSecExcl = !isNaN(sellSecIncl) ? (sellSecIncl / taxRate).toFixed(2) : ''
+
+    setProductForm(f => ({
+      ...f,
+      gstPercent: gstValue,
+      buyPriceWithTax: newBuyPriceWithTax,
+      sellPricePrimaryExcl: sellPriExcl,
+      sellPriceSecondaryExcl: sellSecExcl
+    }))
+  }
+
+  const handleProductCessChange = (cessValue) => {
+    const cess = Number(cessValue || 0)
+    const gst = Number(productForm.gstPercent || 0)
+    const taxRate = 1 + (gst + cess) / 100
+    const withoutTax = parseFloat(productForm.buyPriceWithoutTax)
+    let newBuyPriceWithTax = productForm.buyPriceWithTax
+    if (!isNaN(withoutTax)) {
+      newBuyPriceWithTax = (withoutTax * taxRate).toFixed(2)
+    }
+
+    const sellPriIncl = parseFloat(productForm.sellPricePrimaryIncl)
+    const sellPriExcl = !isNaN(sellPriIncl) ? (sellPriIncl / taxRate).toFixed(2) : ''
+
+    const sellSecIncl = parseFloat(productForm.sellPriceSecondaryIncl)
+    const sellSecExcl = !isNaN(sellSecIncl) ? (sellSecIncl / taxRate).toFixed(2) : ''
+
+    setProductForm(f => ({
+      ...f,
+      cessPercent: cessValue,
+      buyPriceWithTax: newBuyPriceWithTax,
+      sellPricePrimaryExcl: sellPriExcl,
+      sellPriceSecondaryExcl: sellSecExcl
+    }))
+  }
+
+  const handleProductCessApplicableChange = (applicable) => {
+    const gst = Number(productForm.gstPercent || 0)
+    const newCess = applicable ? (Number(productForm.cessPercent) > 0 ? Number(productForm.cessPercent) : 12) : 0
+    const taxRate = 1 + (gst + newCess) / 100
+    const withoutTax = parseFloat(productForm.buyPriceWithoutTax)
+    let newBuyPriceWithTax = productForm.buyPriceWithTax
+    if (!isNaN(withoutTax)) {
+      newBuyPriceWithTax = (withoutTax * taxRate).toFixed(2)
+    }
+
+    const sellPriIncl = parseFloat(productForm.sellPricePrimaryIncl)
+    const sellPriExcl = !isNaN(sellPriIncl) ? (sellPriIncl / taxRate).toFixed(2) : ''
+
+    const sellSecIncl = parseFloat(productForm.sellPriceSecondaryIncl)
+    const sellSecExcl = !isNaN(sellSecIncl) ? (sellSecIncl / taxRate).toFixed(2) : ''
+
+    setProductForm(f => ({
+      ...f,
+      isCessApplicable: applicable,
+      cessPercent: newCess,
+      buyPriceWithTax: newBuyPriceWithTax,
+      sellPricePrimaryExcl: sellPriExcl,
+      sellPriceSecondaryExcl: sellSecExcl
+    }))
+  }
+
+  const handleSaveProduct = async (e) => {
+    e.preventDefault()
+    setProductSaving(true)
+    try {
+      const payload = {
+        ...productForm,
+        gstPercent: Number(productForm.gstPercent || 0),
+        cessPercent: productForm.isCessApplicable ? Number(productForm.cessPercent || 0) : 0,
+        secondaryPerPrimary: Number(productForm.secondaryPerPrimary || 1),
+        buyPriceWithoutTax: productForm.buyPriceWithoutTax !== '' ? Number(productForm.buyPriceWithoutTax) : null,
+        buyPriceWithTax: productForm.buyPriceWithTax !== '' ? Number(productForm.buyPriceWithTax) : null,
+        sellPricePrimary: productForm.sellPricePrimaryIncl !== '' ? Number(productForm.sellPricePrimaryIncl) : 0,
+        sellPriceSecondary: productForm.sellPriceSecondaryIncl !== '' ? Number(productForm.sellPriceSecondaryIncl) : 0,
+        lowStockAlert: productForm.lowStockAlert !== '' ? Number(productForm.lowStockAlert) : 0,
+        secondaryUnit: productForm.secondaryUnit === 'OTHER' ? (productForm.customSecondaryUnit || 'OTHER').toUpperCase().trim() : productForm.secondaryUnit,
+      }
+      const res = await api.post('/products', payload)
+      const newProduct = res.data.data
+      toast.success('Product created successfully!')
+      setShowProductModal(false)
+      setProductForm({ ...emptyProductForm })
+      await loadAll()
+      if (newProduct && newProduct.id) {
+        addToCart(newProduct.id)
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to create product')
+    } finally {
+      setProductSaving(false)
+    }
+  }
+
   const formatStock = (totalSecondaryUnits, productId) => {
     const p = products.find(prod => prod.id === productId)
     if (!p) return `${totalSecondaryUnits} units`
@@ -552,15 +779,17 @@ export default function Billing() {
   const loadAll = async (showSpinner = false) => {
     if (showSpinner) setLoading(true)
     try {
-      const [pRes, cRes, bRes] = await Promise.all([
+      const [pRes, cRes, bRes, aRes] = await Promise.all([
         api.get('/products?size=500'),
         api.get('/customers?size=500'),
         api.get('/bills'),
+        api.get('/areas'),
       ])
       const loadedProducts = pRes.data.data?.content || pRes.data.data || []
       setProducts(loadedProducts)
       setCustomers(cRes.data.data?.content || cRes.data.data || [])
       setBills(bRes.data.data || [])
+      setAreas(aRes.data.data || [])
       // Background prefetch stock cache
       prefetchStock(loadedProducts)
     } catch { toast.error('Failed to load data') }
@@ -584,12 +813,10 @@ export default function Billing() {
         return item
       }))
     } else {
-      const hasSecondary = product.canSellSecondary !== false
-      const hasPrimary = product.canSellPrimary !== false
-      setCart([...cart, {
+      setCart([{
         productId: product.id, name: product.name, brand: product.brand,
-        quantityPrimary: !hasSecondary && hasPrimary ? 1 : 0,
-        quantitySecondary: hasSecondary ? 1 : 0,
+        quantityPrimary: 0,
+        quantitySecondary: 0,
         sellPricePrimary: Number(product.sellPricePrimary || 0),
         sellPriceSecondary: Number(product.sellPriceSecondary || 0),
         gstPercent: Number(product.gstPercent || 0),
@@ -598,7 +825,7 @@ export default function Billing() {
         secondaryUnit: product.secondaryUnit,
         canSellPrimary: product.canSellPrimary,
         canSellSecondary: product.canSellSecondary,
-      }])
+      }, ...cart])
     }
   }
 
@@ -626,7 +853,7 @@ export default function Billing() {
         toast.error('No offer stock available.')
         return
       }
-      setCart([...cart, {
+      setCart([{
         productId: offerId,
         realProductId: productId,
         name: product.name + " (Offer)",
@@ -642,7 +869,7 @@ export default function Billing() {
         canSellPrimary: false,
         canSellSecondary: true,
         isOffer: true
-      }])
+      }, ...cart])
     }
   }
 
@@ -1139,6 +1366,14 @@ Thank you for doing business with Lari Traders!`
                 placeholder="Search products to add..."
                 labelKey="name"
                 valueKey="uniqueSearchId"
+                onNoResultsAction={(query) => {
+                  setProductForm({
+                    ...emptyProductForm,
+                    name: query
+                  })
+                  setShowProductModal(true)
+                }}
+                noResultsActionLabel="+ Add New Product"
                 renderOption={(p) => (
                   <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', gap: 'var(--space-2)' }}>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
@@ -1525,6 +1760,14 @@ Thank you for doing business with Lari Traders!`
                   placeholder="Select customer..."
                   labelKey="name"
                   valueKey="id"
+                  onNoResultsAction={(query) => {
+                    setCustomerForm({
+                      ...emptyCustomerForm,
+                      name: query
+                    })
+                    setShowCustomerModal(true)
+                  }}
+                  noResultsActionLabel="+ Add New Customer"
                   renderOption={(c) => (
                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>
                       <span>{c.name}</span>
@@ -1532,6 +1775,20 @@ Thank you for doing business with Lari Traders!`
                     </div>
                   )}
                 />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+                  <span></span>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm text-primary"
+                    style={{ fontSize: '12px', padding: '0 4px', height: 'auto', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    onClick={() => {
+                      setCustomerForm({ ...emptyCustomerForm })
+                      setShowCustomerModal(true)
+                    }}
+                  >
+                    + Create New Customer
+                  </button>
+                </div>
               </div>
               <div className="form-group">
                 <label className="form-label">Payment Mode</label>
@@ -1865,6 +2122,205 @@ Thank you for doing business with Lari Traders!`
             </div>
           </form>
         )}
+      </Modal>
+
+      {/* Add Customer Modal */}
+      <Modal isOpen={showCustomerModal} onClose={() => setShowCustomerModal(false)} title="Add Customer">
+        <form onSubmit={handleSaveCustomer} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          <div className="form-group">
+            <label className="form-label">Customer Name *</label>
+            <input className="form-input" value={customerForm.name} onChange={e => updateCustomerField('name', e.target.value)} required minLength={2} placeholder="e.g. Ramesh ji" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Shop Name</label>
+            <input className="form-input" value={customerForm.shopName} onChange={e => updateCustomerField('shopName', e.target.value)} placeholder="e.g. Ramesh Kirana Store" />
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Phone *</label>
+              <input className="form-input" type="tel" value={customerForm.phone} onChange={e => updateCustomerField('phone', e.target.value.replace(/\D/g, '').slice(0, 10))} required maxLength={10} placeholder="10-digit number" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Area</label>
+              <SearchSelect
+                options={areas}
+                value={customerForm.areaId}
+                onChange={val => updateCustomerField('areaId', val)}
+                labelKey="name"
+                valueKey="id"
+                placeholder="Select area..."
+              />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Opening Balance ₹</label>
+              <input className="form-input" type="number" min="0" step="0.01" value={customerForm.openingBalance} onChange={e => updateCustomerField('openingBalance', e.target.value)} />
+            </div>
+            <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+              <label className="form-label">Credit Limit Policy</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', height: '42px' }}>
+                <input 
+                  type="checkbox" 
+                  id="is-manual-override" 
+                  checked={customerForm.isManualOverride || false}
+                  onChange={e => updateCustomerField('isManualOverride', e.target.checked)}
+                  style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--color-primary)' }}
+                />
+                <label htmlFor="is-manual-override" style={{ cursor: 'pointer', fontSize: 'var(--font-size-sm)', margin: 0 }}>Manual Override</label>
+              </div>
+            </div>
+          </div>
+          {customerForm.isManualOverride && (
+            <div className="form-group">
+              <label className="form-label">Manual Credit Limit ₹ *</label>
+              <input className="form-input" type="number" min="0" step="0.01" value={customerForm.creditLimit} onChange={e => updateCustomerField('creditLimit', e.target.value)} required />
+            </div>
+          )}
+          <div className="form-actions">
+            <button type="button" className="btn btn-secondary" onClick={() => setShowCustomerModal(false)}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={customerSaving}>
+              {customerSaving ? 'Saving...' : 'Create Customer'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Add Product Modal */}
+      <Modal isOpen={showProductModal} onClose={() => setShowProductModal(false)} title="Add Product" wide>
+        <form onSubmit={handleSaveProduct} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Product Name *</label>
+              <input className="form-input" value={productForm.name} onChange={e => updateProductField('name', e.target.value)} required minLength={2} placeholder="e.g. Lays Classic" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Brand</label>
+              <input className="form-input" value={productForm.brand} onChange={e => updateProductField('brand', e.target.value)} placeholder="e.g. PepsiCo" />
+            </div>
+          </div>
+          <div className="form-row-4">
+            <div className="form-group">
+              <label className="form-label">Category *</label>
+              <select className="form-select" value={productForm.category} onChange={e => updateProductField('category', e.target.value)}>
+                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              {productForm.category === 'OTHER' && (
+                <input
+                  className="form-input"
+                  style={{ marginTop: 'var(--space-2)' }}
+                  value={productForm.otherCategoryDetail}
+                  onChange={e => updateProductField('otherCategoryDetail', e.target.value)}
+                  placeholder="Specify Category (e.g. Soaps)"
+                  required
+                />
+              )}
+            </div>
+            <div className="form-group">
+              <label className="form-label">GST % *</label>
+              <input className="form-input" type="number" min="0" max="40" step="0.01" value={productForm.gstPercent} onChange={e => handleProductGstChange(e.target.value)} required />
+            </div>
+            <div className="form-group">
+              <label className="form-label">&nbsp;</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: 'pointer', userSelect: 'none', height: '38px', margin: 0, fontSize: 'var(--font-size-sm)' }}>
+                  <input
+                    type="checkbox"
+                    checked={productForm.isCessApplicable || false}
+                    onChange={e => handleProductCessApplicableChange(e.target.checked)}
+                    style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--color-primary)' }}
+                  />
+                  Cess Applicable
+                </label>
+                {productForm.isCessApplicable && (
+                  <input
+                    className="form-input"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={productForm.cessPercent}
+                    onChange={e => handleProductCessChange(e.target.value)}
+                    placeholder="Cess %"
+                    required
+                  />
+                )}
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Low Stock Alert</label>
+              <input className="form-input" type="number" min="0" value={productForm.lowStockAlert} onChange={e => updateProductField('lowStockAlert', e.target.value)} />
+            </div>
+          </div>
+          <div className="form-row-3">
+            <div className="form-group">
+              <label className="form-label">Primary Unit *</label>
+              <select className="form-select" value={productForm.primaryUnit} onChange={e => updateProductField('primaryUnit', e.target.value)} required>
+                <option value="BOX">BOX</option>
+                <option value="CRATE">CRATE</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Secondary Unit *</label>
+              <select className="form-select" value={productForm.secondaryUnit} onChange={e => updateProductField('secondaryUnit', e.target.value)} required>
+                <option value="LADI">LADI</option>
+                <option value="PACK">PACKET / PACK</option>
+                <option value="BOTTLE">BOTTLE</option>
+                <option value="OTHER">OTHER (Custom)</option>
+              </select>
+              {productForm.secondaryUnit === 'OTHER' && (
+                <input
+                  className="form-input"
+                  style={{ marginTop: 'var(--space-2)' }}
+                  value={productForm.customSecondaryUnit || ''}
+                  onChange={e => updateProductField('customSecondaryUnit', e.target.value.toUpperCase())}
+                  placeholder="Specify Unit (e.g. PCS, TIN)"
+                  required
+                />
+              )}
+            </div>
+            <div className="form-group">
+              <label className="form-label">Secondary per Primary *</label>
+              <input className="form-input" type="number" min="1" value={productForm.secondaryPerPrimary} onChange={e => updateProductField('secondaryPerPrimary', e.target.value)} required />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Buy (Excl. Tax) ₹ *</label>
+              <input className="form-input" type="number" min="0" step="0.01" value={productForm.buyPriceWithoutTax} onChange={e => handleProductPriceChange('without', e.target.value)} required />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Buy (Incl. Tax) ₹</label>
+              <input className="form-input" type="number" min="0" step="0.01" value={productForm.buyPriceWithTax || ''} onChange={e => handleProductPriceChange('with', e.target.value)} />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Sell (Primary - {productForm.primaryUnit}) (Excl. Tax) ₹</label>
+              <input className="form-input" type="number" min="0" step="0.01" value={productForm.sellPricePrimaryExcl} onChange={e => handleProductSellPriceChange('primary', 'excl', e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Sell (Primary - {productForm.primaryUnit}) (Incl. Tax) ₹ *</label>
+              <input className="form-input" type="number" min="0" step="0.01" value={productForm.sellPricePrimaryIncl} onChange={e => handleProductSellPriceChange('primary', 'incl', e.target.value)} required />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Sell (Secondary - {productForm.secondaryUnit === 'OTHER' ? (productForm.customSecondaryUnit || 'OTHER') : productForm.secondaryUnit}) (Excl. Tax) ₹</label>
+              <input className="form-input" type="number" min="0" step="0.01" value={productForm.sellPriceSecondaryExcl} onChange={e => handleProductSellPriceChange('secondary', 'excl', e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Sell (Secondary - {productForm.secondaryUnit === 'OTHER' ? (productForm.customSecondaryUnit || 'OTHER') : productForm.secondaryUnit}) (Incl. Tax) ₹ *</label>
+              <input className="form-input" type="number" min="0" step="0.01" value={productForm.sellPriceSecondaryIncl} onChange={e => handleProductSellPriceChange('secondary', 'incl', e.target.value)} required />
+            </div>
+          </div>
+          <div className="form-actions">
+            <button type="button" className="btn btn-secondary" onClick={() => setShowProductModal(false)}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={productSaving}>
+              {productSaving ? 'Saving...' : 'Create Product'}
+            </button>
+          </div>
+        </form>
       </Modal>
 
       {/* Confirmation Dialogs */}

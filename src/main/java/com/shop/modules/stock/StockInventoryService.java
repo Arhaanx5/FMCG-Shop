@@ -87,8 +87,19 @@ public class StockInventoryService {
 
         batch.setSecondaryRemaining(newSecondaryRemaining);
         batch.setExhausted(newSecondaryRemaining == 0);
+
+        // Also sync secondaryReceived so that "Received" display, sold-qty calculation,
+        // and getBuyPricePerSecondary dilution formula stay consistent after adjustment.
+        if (change != 0) {
+            int oldReceived = batch.getSecondaryReceived() != null ? batch.getSecondaryReceived() : 0;
+            batch.setSecondaryReceived(Math.max(0, oldReceived + change));
+        }
         if (newOfferSecondaryRemaining != null) {
             batch.setOfferSecondaryRemaining(newOfferSecondaryRemaining);
+            if (offerChange != 0) {
+                int oldOfferReceived = batch.getOfferSecondaryReceived() != null ? batch.getOfferSecondaryReceived() : 0;
+                batch.setOfferSecondaryReceived(Math.max(0, oldOfferReceived + offerChange));
+            }
         }
 
         BigDecimal oldBuyPrice = batch.getBuyPriceWithoutTax();

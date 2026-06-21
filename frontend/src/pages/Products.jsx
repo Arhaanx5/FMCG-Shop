@@ -31,6 +31,7 @@ export default function Products() {
   }, [])
 
   const [products, setProducts] = useState([])
+  const [allProducts, setAllProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('ALL')
   const [showModal, setShowModal] = useState(false)
@@ -46,6 +47,13 @@ export default function Products() {
   const PAGE_SIZE = 25
   const toast = useToast()
 
+  const loadAllProductsForCategories = async () => {
+    try {
+      const res = await api.get('/products?size=1000')
+      setAllProducts(res.data.data?.content || res.data.data || [])
+    } catch {}
+  }
+
   const loadProducts = useCallback(async (pg = page, search = searchQuery, category = activeTab) => {
     setLoading(true)
     try {
@@ -53,27 +61,27 @@ export default function Products() {
       params.set('page', pg)
       params.set('size', PAGE_SIZE)
       if (search && search.trim()) params.set('search', search.trim())
+      if (category && category !== 'ALL') params.set('category', category)
       const res = await api.get(`/products?${params.toString()}`)
       const pageData = res.data.data
-      let content = pageData?.content || []
-      // Apply category filter client-side (categories not many, safe to filter)
-      if (category !== 'ALL') {
-        if (category.startsWith('OTHER:')) {
-          const customCat = category.replace('OTHER:', '').toLowerCase()
-          content = content.filter(p => p.category === 'OTHER' && p.otherCategoryDetail?.trim().toLowerCase() === customCat)
-        } else {
-          content = content.filter(p => p.category === category)
-        }
-      }
-      setProducts(content)
+      setProducts(pageData?.content || [])
       setTotalPages(pageData?.totalPages || 0)
       setTotalElements(pageData?.totalElements || 0)
     } catch { toast.error('Failed to load products') }
     finally { setLoading(false) }
   }, [page, searchQuery, activeTab])
 
-  useEffect(() => { loadProducts(0, searchQuery, activeTab) }, [activeTab])
-  useEffect(() => { loadProducts(page, searchQuery, activeTab) }, [page])
+  useEffect(() => { 
+    loadProducts(0, searchQuery, activeTab) 
+  }, [activeTab])
+
+  useEffect(() => { 
+    loadProducts(page, searchQuery, activeTab) 
+  }, [page])
+
+  useEffect(() => {
+    loadAllProductsForCategories()
+  }, [])
 
 
 
@@ -302,6 +310,7 @@ export default function Products() {
       }
       setShowModal(false)
       loadProducts(0, searchQuery, activeTab)
+      loadAllProductsForCategories()
     } catch (err) {
       toast.error(err.response?.data?.message || 'Save failed')
     } finally { setSaving(false) }
@@ -313,6 +322,7 @@ export default function Products() {
       toast.success('Product deactivated')
       setDeleteTarget(null)
       loadProducts(0, searchQuery, activeTab)
+      loadAllProductsForCategories()
     } catch { toast.error('Delete failed') }
   }
 
@@ -518,7 +528,10 @@ export default function Products() {
         <select
           className="form-select"
           value={activeTab}
-          onChange={(e) => setActiveTab(e.target.value)}
+          onChange={(e) => {
+            setActiveTab(e.target.value)
+            setPage(0)
+          }}
           style={{ width: '220px', height: '38px', padding: '0 32px 0 12px', fontSize: 'var(--font-size-sm)', borderRadius: 'var(--radius-md)', flexShrink: 0, maxWidth: '100%' }}
         >
           <option value="ALL">All Categories</option>
@@ -526,7 +539,7 @@ export default function Products() {
             <option key={c} value={c}>{c.charAt(0) + c.slice(1).toLowerCase()}</option>
           ))}
           {/* Dynamically extract all unique custom categories entered in OTHER */}
-          {Array.from(new Set(products
+          {Array.from(new Set(allProducts
             .filter(p => p.category === 'OTHER' && p.otherCategoryDetail)
             .map(p => p.otherCategoryDetail.trim())
           )).map(customCat => (

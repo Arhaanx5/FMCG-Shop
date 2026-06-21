@@ -107,6 +107,32 @@ public class ProductService {
                 .map(this::toResponse);
     }
 
+    public org.springframework.data.domain.Page<ProductResponse> getFilteredProductsPaged(
+            int page, int size, String search, String categoryStr) {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(page, size);
+        
+        Category category = null;
+        String otherCategory = null;
+        
+        if (categoryStr != null && !categoryStr.isBlank() && !"ALL".equalsIgnoreCase(categoryStr)) {
+            if (categoryStr.startsWith("OTHER:")) {
+                category = Category.OTHER;
+                otherCategory = categoryStr.substring(6).trim();
+            } else {
+                try {
+                    category = Category.valueOf(categoryStr.toUpperCase().trim());
+                } catch (IllegalArgumentException e) {
+                    // Fallback to Category.OTHER or ignore
+                }
+            }
+        }
+        
+        String cleanSearch = (search != null && !search.isBlank()) ? search.trim() : null;
+        
+        return productRepository.findProductsFiltered(cleanSearch, category, otherCategory, pageable)
+                .map(this::toResponse);
+    }
+
     public ProductResponse getProductById(UUID id) {
         return toResponse(productRepository.findById(id)
                 .orElseThrow(() ->

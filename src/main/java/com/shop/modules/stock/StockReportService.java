@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
@@ -126,7 +127,7 @@ public class StockReportService {
                 status = "Out Of Stock";
             } else if (totalQty <= alertThreshold) {
                 status = "Low Stock";
-            } else if (totalQty > p.getReorderLevel() * overstockMultiplier) {
+            } else if (p.getReorderLevel() > 0 && totalQty > p.getReorderLevel() * overstockMultiplier) {
                 status = "Overstock";
             }
 
@@ -248,6 +249,132 @@ public class StockReportService {
         return new PageImpl<>(rows, pageable, batches.getTotalElements());
     }
 
+    public List<InventoryReportRow> getInventoryValuationReportAll() {
+        List<Product> products = productRepository.findAll();
+        return products.stream().map(p -> {
+            Stock stock = inventoryService.getOrCreateStock(p.getId());
+            BigDecimal avgCost = calculateWeightedAvgCost(p.getId());
+            BigDecimal sellPrice = p.getSellPriceSecondary() != null ? p.getSellPriceSecondary() : BigDecimal.ZERO;
+
+            BigDecimal margin = BigDecimal.ZERO;
+            if (sellPrice.compareTo(BigDecimal.ZERO) > 0) {
+                margin = sellPrice.subtract(avgCost)
+                        .divide(sellPrice, 4, RoundingMode.HALF_UP)
+                        .multiply(BigDecimal.valueOf(100));
+            }
+
+            BigDecimal value = BigDecimal.valueOf(stock.getTotalSecondaryUnits()).multiply(avgCost);
+
+            int alertThreshold = p.getLowStockAlertInSecondary();
+            String status = "Healthy";
+            int totalQty = stock.getTotalSecondaryUnits();
+            int ratio = p.getSecondaryPerPrimary() != null ? p.getSecondaryPerPrimary() : 1;
+
+            BigDecimal avgCostPrimary = avgCost.multiply(BigDecimal.valueOf(ratio));
+            BigDecimal sellPricePrimary = p.getSellPricePrimary() != null ? p.getSellPricePrimary() : BigDecimal.ZERO;
+            BigDecimal marginPrimary = BigDecimal.ZERO;
+            if (sellPricePrimary.compareTo(BigDecimal.ZERO) > 0) {
+                marginPrimary = sellPricePrimary.subtract(avgCostPrimary)
+                        .divide(sellPricePrimary, 4, RoundingMode.HALF_UP)
+                        .multiply(BigDecimal.valueOf(100));
+            }
+
+            if (totalQty <= 0) {
+                status = "Out Of Stock";
+            } else if (totalQty <= alertThreshold) {
+                status = "Low Stock";
+            } else if (p.getReorderLevel() > 0 && totalQty > p.getReorderLevel() * overstockMultiplier) {
+                status = "Overstock";
+            }
+
+            return InventoryReportRow.builder()
+                    .productId(p.getId())
+                    .productName(p.getName())
+                    .category(p.getCategory() != null ? p.getCategory().name() : "OTHER")
+                    .brand(p.getBrand())
+                    .currentStock(totalQty)
+                    .avgCost(avgCost)
+                    .sellingPrice(sellPrice)
+                    .marginPercent(margin.setScale(2, RoundingMode.HALF_UP))
+                    .avgCostPrimary(avgCostPrimary.setScale(2, RoundingMode.HALF_UP))
+                    .sellingPricePrimary(sellPricePrimary.setScale(2, RoundingMode.HALF_UP))
+                    .marginPercentPrimary(marginPrimary.setScale(2, RoundingMode.HALF_UP))
+                    .inventoryValue(value.setScale(2, RoundingMode.HALF_UP))
+                    .status(status)
+                    .build();
+        }).collect(Collectors.toList());
+    }
+
+    public List<ExpiryReportRow> getExpiryReportAll() {
+        List<StockBatch> batches = batchRepository.findAll();
+        LocalDate today = LocalDate.now();
+        return batches.stream()
+                .filter(b -> b.getSecondaryRemaining() > 0)
+                .map(b -> {
+                    Product p = b.getProduct();
+                    int ratio = p != null && p.getSecondaryPerPrimary() != null ? p.getSecondaryPerPrimary() : 1;
+                    BigDecimal cost = b.getBuyPricePerSecondary(ratio);
+                    BigDecimal value = BigDecimal.valueOf(b.getSecondaryRemaining()).multiply(cost);
+
+                    long days = ChronoUnit.DAYS.between(today, b.getExpiryDate());
+                    String bucket = "Healthy";
+                    if (days < 0) {
+                        bucket = "Expired";
+                    } else if (days <= 7) {
+                        bucket = "Expiring in 7 Days";
+                    } else if (days <= 15) {
+                        bucket = "Expiring in 15 Days";
+                    } else if (days <= 30) {
+                        bucket = "Expiring in 30 Days";
+                    } else if (days <= 60) {
+                        bucket = "Expiring in 60 Days";
+                    } else if (days <= 90) {
+                        bucket = "Expiring in 90 Days";
+                    }
+
+                    return ExpiryReportRow.builder()
+                            .batchId(b.getId())
+                            .batchNumber(b.getBatchNumber())
+                            .productName(p != null ? p.getName() : "Unknown")
+                            .expiryDate(b.getExpiryDate())
+                            .remainingQty(b.getSecondaryRemaining())
+                            .costValue(value.setScale(2, RoundingMode.HALF_UP))
+                            .daysToExpiry(days)
+                            .riskBucket(bucket)
+                            .build();
+                }).collect(Collectors.toList());
+    }
+
+    public List<AgingReportRow> getStockAgingReportAll() {
+        List<StockBatch> batches = batchRepository.findAll();
+        LocalDate today = LocalDate.now();
+        return batches.stream()
+                .filter(b -> b.getSecondaryRemaining() > 0)
+                .map(b -> {
+                    LocalDate receivedDate = b.getStockReceivedDate() != null ? b.getStockReceivedDate() : b.getReceivedAt().toLocalDate();
+                    long age = ChronoUnit.DAYS.between(receivedDate, today);
+                    String bucket = "0-30 Days";
+                    if (age > 180) {
+                        bucket = "180+ Days";
+                    } else if (age > 90) {
+                        bucket = "91-180 Days";
+                    } else if (age > 60) {
+                        bucket = "61-90 Days";
+                    } else if (age > 30) {
+                        bucket = "31-60 Days";
+                    }
+
+                    return AgingReportRow.builder()
+                            .batchNumber(b.getBatchNumber())
+                            .productName(b.getProduct() != null ? b.getProduct().getName() : "Unknown")
+                            .stockReceivedDate(receivedDate)
+                            .remainingQty(b.getSecondaryRemaining())
+                            .ageDays(age)
+                            .ageBucket(bucket)
+                            .build();
+                }).collect(Collectors.toList());
+    }
+
     @Data
     @Builder
     public static class CategoryProfitabilityRow {
@@ -350,7 +477,7 @@ public class StockReportService {
             status = "Out Of Stock";
         } else if (totalQty <= alertThreshold) {
             status = "Low Stock";
-        } else if (totalQty > product.getReorderLevel() * overstockMultiplier) {
+        } else if (product.getReorderLevel() > 0 && totalQty > product.getReorderLevel() * overstockMultiplier) {
             status = "Overstock";
         }
 
@@ -396,7 +523,12 @@ public class StockReportService {
                 && batch.getExpiryDate().isBefore(LocalDate.now().plusDays(7));
 
         int ratio = product != null && product.getSecondaryPerPrimary() != null ? product.getSecondaryPerPrimary() : 1;
-        BigDecimal cost = batch.getBuyPricePerSecondary(ratio);
+        // Use undiluted cost (buyPriceWithoutTax / ratio) for inventory valuation.
+        // Offer units are free — they carry ₹0 cost — so batchValue = regularRemaining × undilutedCost.
+        // Margin calculations elsewhere still use getBuyPricePerSecondary (diluted), which is correct.
+        BigDecimal cost = batch.getBuyPriceWithoutTax() != null && ratio > 0
+                ? batch.getBuyPriceWithoutTax().divide(BigDecimal.valueOf(ratio), 6, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
         BigDecimal value = BigDecimal.valueOf(batch.getSecondaryRemaining()).multiply(cost);
 
         LocalDate recDate = batch.getStockReceivedDate() != null ? batch.getStockReceivedDate() : batch.getReceivedAt().toLocalDate();
@@ -436,5 +568,50 @@ public class StockReportService {
                 .batchValue(value.setScale(2, RoundingMode.HALF_UP))
                 .stockAgeDays(age)
                 .build();
+    }
+
+    public Page<StockResponse> getFilteredStockPaged(int page, int size, String search, String category, String status) {
+        List<Stock> allStock = stockRepository.findAll();
+        
+        List<StockResponse> responses = allStock.stream()
+                .map(this::toStockResponse)
+                .collect(Collectors.toList());
+                
+        if (search != null && !search.trim().isEmpty()) {
+            String lowerSearch = search.trim().toLowerCase();
+            responses = responses.stream()
+                    .filter(r -> (r.getProductName() != null && r.getProductName().toLowerCase().contains(lowerSearch))
+                            || (r.getBrand() != null && r.getBrand().toLowerCase().contains(lowerSearch)))
+                    .collect(Collectors.toList());
+        }
+        
+        if (category != null && !category.trim().isEmpty()) {
+            String lowerCat = category.trim().toLowerCase();
+            responses = responses.stream()
+                    .filter(r -> r.getCategory() != null && r.getCategory().toLowerCase().equalsIgnoreCase(lowerCat))
+                    .collect(Collectors.toList());
+        }
+        
+        if (status != null && !status.trim().isEmpty()) {
+            String lowerStatus = status.trim().toLowerCase();
+            responses = responses.stream()
+                    .filter(r -> r.getStatus() != null && r.getStatus().toLowerCase().replaceAll("\\s+", "").equals(lowerStatus.replaceAll("\\s+", "")))
+                    .collect(Collectors.toList());
+        }
+        
+        int total = responses.size();
+        int start = page * size;
+        int end = Math.min(start + size, total);
+        
+        List<StockResponse> pageContent = new ArrayList<>();
+        if (start < total) {
+            pageContent = responses.subList(start, end);
+        }
+        
+        return new PageImpl<>(
+                pageContent,
+                PageRequest.of(page, size),
+                total
+        );
     }
 }

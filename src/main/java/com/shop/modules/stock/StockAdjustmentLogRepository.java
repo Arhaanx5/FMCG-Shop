@@ -11,4 +11,5 @@ import java.util.UUID;
 public interface StockAdjustmentLogRepository extends JpaRepository<StockAdjustmentLog, UUID> {
     List<StockAdjustmentLog> findAllByOrderByTimestampDesc();
     Page<StockAdjustmentLog> findAllByOrderByTimestampDesc(Pageable pageable);
+    List<StockAdjustmentLog> findAllByTimestampAfter(java.time.LocalDateTime timestamp);
 }

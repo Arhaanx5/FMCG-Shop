@@ -257,7 +257,7 @@ export default function Layout() {
   const currentPage = pageNames[location.pathname] || 'Lari Traders'
 
   return (
-    <div className="flex min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 transition-colors duration-200">
+    <div className="flex min-h-screen bg-[var(--color-bg)] text-slate-900 dark:text-slate-100 transition-colors duration-200">
       {/* Mobile overlay */}
       <AnimatePresence>
         {mobileOpen && (

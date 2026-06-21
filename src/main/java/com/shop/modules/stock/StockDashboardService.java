@@ -128,7 +128,7 @@ public class StockDashboardService {
             } else {
                 outOfStockCount++;
             }
-            if (qty <= p.getLowStockAlertInSecondary()) {
+            if (qty > 0 && qty <= p.getLowStockAlertInSecondary()) {
                 lowStockCount++;
             }
         }

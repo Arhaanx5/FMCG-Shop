@@ -47,9 +47,11 @@ public class StockController {
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<ApiResponse<Page<StockResponse>>> getAllStockPaged(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        Page<StockResponse> result = stockService.getAllStockPaged(page, size)
-                .map(reportService::toStockResponse);
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) String status) {
+        Page<StockResponse> result = reportService.getFilteredStockPaged(page, size, search, category, status);
         return ResponseEntity.ok(ApiResponse.success(result));
     }
 
@@ -183,6 +185,7 @@ public class StockController {
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<ApiResponse<?>> getBatches(
             @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         if (date != null) {
@@ -192,7 +195,7 @@ public class StockController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(ApiResponse.success(responses));
         } else {
-            Page<StockBatchResponse> responses = stockService.getRecentBatchesPaged(page, size)
+            Page<StockBatchResponse> responses = stockService.getRecentBatchesPaged(page, size, search)
                     .map(reportService::toBatchResponse);
             return ResponseEntity.ok(ApiResponse.success(responses));
         }

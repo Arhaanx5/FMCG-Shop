@@ -150,6 +150,16 @@ public class CustomerService {
                 .map(c -> toResponse(c, false));
     }
 
+    public org.springframework.data.domain.Page<CustomerResponse> getFilteredCustomersPaged(
+            int page, int size, String search, Boolean active) {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(page, size);
+        boolean cleanActive = active == null ? true : active;
+        String cleanSearch = (search != null && !search.isBlank()) ? search.trim() : null;
+        
+        return customerRepository.findCustomersFiltered(cleanSearch, cleanActive, pageable)
+                .map(c -> toResponse(c, false));
+    }
+
     public CustomerResponse getCustomerById(UUID id) {
         return toResponse(customerRepository.findById(id)
                 .orElseThrow(() ->

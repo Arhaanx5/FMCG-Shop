@@ -18,6 +18,18 @@ public interface CustomerRepository extends JpaRepository<Customer, UUID> {
 
     Page<Customer> findByActiveTrue(Pageable pageable);
 
+    @Query("SELECT c FROM Customer c WHERE " +
+           "(COALESCE(:search, '') = '' OR " +
+           " LOWER(c.name) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+           " LOWER(c.shopName) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+           " LOWER(c.phone) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+           " LOWER(c.customerCode) LIKE LOWER(CONCAT('%', :search, '%'))) " +
+           "AND c.active = :active")
+    Page<Customer> findCustomersFiltered(
+            @Param("search") String search,
+            @Param("active") boolean active,
+            Pageable pageable);
+
     List<Customer> findByNameContainingIgnoreCaseAndActiveTrue(String name);
 
     Page<Customer> findByNameContainingIgnoreCaseAndActiveTrue(String name, Pageable pageable);

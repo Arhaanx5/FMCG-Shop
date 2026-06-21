@@ -440,15 +440,10 @@ export default function Customers() {
       params.set('page', pg)
       params.set('size', PAGE_SIZE)
       if (search && search.trim()) params.set('search', search.trim())
-      // Customers API returns all; filter active/inactive client-side on page data
+      params.set('active', tab === 'active' ? 'true' : 'false')
       const res = await api.get(`/customers?${params.toString()}`)
       const pageData = res.data.data
-      const content = pageData?.content || []
-      // Filter by tab (active/inactive)
-      const filtered = tab === 'active'
-        ? content.filter(c => c.active !== false)
-        : content.filter(c => c.active === false)
-      setCustomers(filtered)
+      setCustomers(pageData?.content || [])
       setTotalPages(pageData?.totalPages || 0)
       setTotalElements(pageData?.totalElements || 0)
     } catch { toast.error('Failed to load customers') }

@@ -17,6 +17,20 @@ public interface ProductRepository
 
     Page<Product> findByActiveTrue(Pageable pageable);
 
+    @Query("SELECT p FROM Product p WHERE " +
+           "(COALESCE(:search, '') = '' OR " +
+           " LOWER(p.name) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+           " LOWER(p.brand) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+           " LOWER(p.productCode) LIKE LOWER(CONCAT('%', :search, '%'))) " +
+           "AND (:category IS NULL OR p.category = :category) " +
+           "AND (COALESCE(:otherCategory, '') = '' OR LOWER(p.otherCategoryDetail) = LOWER(:otherCategory)) " +
+           "AND p.active = true")
+    Page<Product> findProductsFiltered(
+            @Param("search") String search,
+            @Param("category") Category category,
+            @Param("otherCategory") String otherCategory,
+            Pageable pageable);
+
     List<Product> findByCategory(Category category);
 
     List<Product> findByNameContainingIgnoreCaseAndActiveTrue(

@@ -1,5 +1,7 @@
 package com.shop.modules.stock;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -54,4 +56,20 @@ public interface StockBatchRepository
     List<StockBatch> findByReceivedAtBetweenOrderByReceivedAtDesc(
             @Param("start") java.time.LocalDateTime start,
             @Param("end") java.time.LocalDateTime end);
+
+    @Query(value = "SELECT b FROM StockBatch b " +
+                   "JOIN FETCH b.product p " +
+                   "WHERE LOWER(p.name) LIKE :query " +
+                   "OR LOWER(b.batchNumber) LIKE :query " +
+                   "OR LOWER(b.supplierName) LIKE :query " +
+                   "OR LOWER(b.invoiceNumber) LIKE :query",
+           countQuery = "SELECT COUNT(b) FROM StockBatch b " +
+                        "JOIN b.product p " +
+                        "WHERE LOWER(p.name) LIKE :query " +
+                        "OR LOWER(b.batchNumber) LIKE :query " +
+                        "OR LOWER(b.supplierName) LIKE :query " +
+                        "OR LOWER(b.invoiceNumber) LIKE :query")
+    Page<StockBatch> searchBatches(
+            @Param("query") String query,
+            Pageable pageable);
 }

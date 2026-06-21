@@ -22,6 +22,12 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class StockBIService {
 
+    @org.springframework.beans.factory.annotation.Value("${app.stock.target-turnover-ratio:0.3}")
+    private double targetTurnoverRatio;
+
+    @org.springframework.beans.factory.annotation.Value("${app.stock.accuracy-evaluation-days:7}")
+    private int accuracyEvaluationDays;
+
     private final ProductRepository productRepository;
     private final StockBatchRepository batchRepository;
     private final BillRepository billRepository;
@@ -79,7 +85,13 @@ public class StockBIService {
                 expiringVal = expiringVal.add(value);
             }
 
-            if (!soldProductIds90Days.contains(p.getId())) {
+            boolean isNewBatch = false;
+            if (b.getStockReceivedDate() != null) {
+                isNewBatch = b.getStockReceivedDate().isAfter(LocalDate.now().minusDays(90));
+            } else if (b.getReceivedAt() != null) {
+                isNewBatch = b.getReceivedAt().toLocalDate().isAfter(LocalDate.now().minusDays(90));
+            }
+            if (!soldProductIds90Days.contains(p.getId()) && !isNewBatch) {
                 deadStockVal = deadStockVal.add(value);
             }
         }
@@ -98,7 +110,8 @@ public class StockBIService {
         long lowStockSKUs = 0;
         for (Product p : products) {
             Stock stock = inventoryService.getOrCreateStock(p.getId());
-            if (stock.getTotalSecondaryUnits() <= p.getLowStockAlertInSecondary()) {
+            int qty = stock.getTotalSecondaryUnits();
+            if (qty > 0 && qty <= p.getLowStockAlertInSecondary()) {
                 lowStockSKUs++;
             }
         }
@@ -120,9 +133,8 @@ public class StockBIService {
             turnoverRate = cogs.divide(totalVal, 4, RoundingMode.HALF_UP).doubleValue();
         }
 
-        List<StockAdjustmentLog> adjustments = adjustmentLogRepository.findAllByOrderByTimestampDesc().stream()
-                .filter(l -> l.getTimestamp().isAfter(thirtyDaysAgo))
-                .collect(Collectors.toList());
+        LocalDateTime accuracyCutoff = LocalDateTime.now().minusDays(accuracyEvaluationDays);
+        List<StockAdjustmentLog> adjustments = adjustmentLogRepository.findAllByTimestampAfter(accuracyCutoff);
         long adjustmentsCount = adjustments.size();
         double adjustmentRatio = totalSKUs > 0 ? (double) adjustmentsCount / totalSKUs : 0.0;
 
@@ -130,8 +142,7 @@ public class StockBIService {
         double expiryScore = (1.0 - expiryRiskRatio) * 25.0;
         double lowStockScore = (1.0 - lowStockRatio) * 20.0;
         
-        double TARGET_TURNOVER = 0.5;
-        double turnoverScore = Math.min(turnoverRate / TARGET_TURNOVER, 1.0) * 20.0;
+        double turnoverScore = Math.min(turnoverRate / targetTurnoverRatio, 1.0) * 20.0;
         
         double accuracyScore = Math.max(0.0, 1.0 - (adjustmentsCount * 0.05)) * 10.0;
 

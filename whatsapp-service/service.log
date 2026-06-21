@@ -12118,3 +12118,116 @@ tus"}
 {"ts":"2026-06-17T21:41:44.839Z","level":"INFO","module":"API","message":"GET /status"}
 {"ts":"2026-06-17T21:41:48.901Z","level":"INFO","module":"API","message":"GET /status"}
 {"ts":"2026-06-17T22:13:08.778Z","level":"INFO","module":"SYSTEM","message":"Received SIGINT — shutting down"}
+[36m[2026-06-21T10:58:14.667Z] [INFO] [QUEUE] Loaded 0 pending messages from disk[0m
+[36m[2026-06-21T10:58:16.035Z] [INFO] [CHROME] Using Chrome from env: C:\Users\arhaa\.cache\puppeteer\chrome\win64-146.0.7680.31\chrome-win64\chrome.exe[0m
+[36m[2026-06-21T10:58:16.081Z] [INFO] [SYSTEM] 🚀 Lari Traders WhatsApp Service v2.0 starting...[0m
+[36m[2026-06-21T10:58:16.084Z] [INFO] [SYSTEM] Cleaning up any orphaned Chrome/Puppeteer processes...[0m
+[36m[2026-06-21T10:58:23.171Z] [INFO] [SYSTEM] Orphaned Chrome processes cleaned.[0m
+[36m[2026-06-21T10:58:23.704Z] [INFO] [SYSTEM] ✅ HTTP server listening on http://127.0.0.1:3000[0m
+[36m[2026-06-21T10:58:23.714Z] [INFO] [SYSTEM] 📋 Endpoints: /health /status /qr /send /send-bulk /send-media /queue/stats[0m
+[36m[2026-06-21T10:58:23.715Z] [INFO] [WA] Initializing WhatsApp client...[0m
+[36m[2026-06-21T10:58:42.269Z] [INFO] [WA] Loading 0%: WhatsApp[0m
+[36m[2026-06-21T10:58:43.385Z] [INFO] [WA] Loading 1%: WhatsApp[0m
+[36m[2026-06-21T10:58:52.124Z] [INFO] [WA] Loading 2%: WhatsApp[0m
+[36m[2026-06-21T10:58:54.276Z] [INFO] [WA] Loading 3%: WhatsApp[0m
+[36m[2026-06-21T10:58:56.281Z] [INFO] [WA] Loading 4%: WhatsApp[0m
+[36m[2026-06-21T10:58:57.286Z] [INFO] [WA] Loading 5%: WhatsApp[0m
+[36m[2026-06-21T10:58:58.288Z] [INFO] [WA] Loading 6%: WhatsApp[0m
+[36m[2026-06-21T10:59:00.346Z] [INFO] [WA] Loading 7%: WhatsApp[0m
+[36m[2026-06-21T10:59:01.337Z] [INFO] [WA] Loading 8%: WhatsApp[0m
+[36m[2026-06-21T10:59:08.521Z] [INFO] [WA] Loading 9%: WhatsApp[0m
+[36m[2026-06-21T10:59:09.533Z] [INFO] [WA] Loading 10%: WhatsApp[0m
+[36m[2026-06-21T10:59:10.590Z] [INFO] [WA] Loading 11%: WhatsApp[0m
+[36m[2026-06-21T10:59:11.653Z] [INFO] [WA] Loading 12%: WhatsApp[0m
+[36m[2026-06-21T10:59:12.718Z] [INFO] [WA] Loading 13%: WhatsApp[0m
+[36m[2026-06-21T10:59:14.722Z] [INFO] [WA] Loading 15%: WhatsApp[0m
+[36m[2026-06-21T10:59:15.735Z] [INFO] [WA] Loading 16%: WhatsApp[0m
+[36m[2026-06-21T10:59:16.745Z] [INFO] [WA] Loading 18%: WhatsApp[0m
+[36m[2026-06-21T10:59:20.809Z] [INFO] [WA] Loading 19%: WhatsApp[0m
+[36m[2026-06-21T10:59:21.835Z] [INFO] [WA] Loading 21%: WhatsApp[0m
+[36m[2026-06-21T10:59:23.854Z] [INFO] [WA] Loading 24%: WhatsApp[0m
+[36m[2026-06-21T10:59:24.863Z] [INFO] [WA] Loading 27%: WhatsApp[0m
+[36m[2026-06-21T10:59:25.873Z] [INFO] [WA] Loading 30%: WhatsApp[0m
+[36m[2026-06-21T10:59:26.877Z] [INFO] [WA] Loading 33%: WhatsApp[0m
+[36m[2026-06-21T10:59:27.882Z] [INFO] [WA] Loading 34%: WhatsApp[0m
+[36m[2026-06-21T10:59:28.911Z] [INFO] [WA] Loading 37%: WhatsApp[0m
+[36m[2026-06-21T10:59:29.917Z] [INFO] [WA] Loading 40%: WhatsApp[0m
+[36m[2026-06-21T10:59:30.940Z] [INFO] [WA] Loading 41%: WhatsApp[0m
+[36m[2026-06-21T10:59:31.974Z] [INFO] [WA] Loading 42%: WhatsApp[0m
+[36m[2026-06-21T10:59:32.975Z] [INFO] [WA] Loading 45%: WhatsApp[0m
+[36m[2026-06-21T10:59:33.995Z] [INFO] [WA] Loading 48%: WhatsApp[0m
+[36m[2026-06-21T10:59:35.021Z] [INFO] [WA] Loading 51%: WhatsApp[0m
+[36m[2026-06-21T10:59:36.045Z] [INFO] [WA] Loading 52%: WhatsApp[0m
+[36m[2026-06-21T10:59:38.065Z] [INFO] [WA] Loading 56%: WhatsApp[0m
+[36m[2026-06-21T10:59:39.079Z] [INFO] [WA] Loading 60%: WhatsApp[0m
+[36m[2026-06-21T10:59:40.103Z] [INFO] [WA] Loading 63%: WhatsApp[0m
+[36m[2026-06-21T10:59:41.106Z] [INFO] [WA] Loading 64%: WhatsApp[0m
+[36m[2026-06-21T10:59:42.107Z] [INFO] [WA] Loading 67%: WhatsApp[0m
+[36m[2026-06-21T10:59:43.109Z] [INFO] [WA] Loading 72%: WhatsApp[0m
+[36m[2026-06-21T10:59:45.140Z] [INFO] [WA] Loading 74%: WhatsApp[0m
+[36m[2026-06-21T10:59:46.151Z] [INFO] [WA] Loading 77%: WhatsApp[0m
+[36m[2026-06-21T10:59:47.153Z] [INFO] [WA] Loading 81%: WhatsApp[0m
+[36m[2026-06-21T10:59:48.162Z] [INFO] [WA] Loading 85%: WhatsApp[0m
+[36m[2026-06-21T10:59:49.203Z] [INFO] [WA] Loading 87%: WhatsApp[0m
+[36m[2026-06-21T10:59:49.452Z] [INFO] [WA] Loading 88%: WhatsApp[0m
+[36m[2026-06-21T10:59:50.213Z] [INFO] [WA] Loading 89%: WhatsApp[0m
+[36m[2026-06-21T10:59:53.236Z] [INFO] [WA] Loading 91%: WhatsApp[0m
+[36m[2026-06-21T10:59:54.242Z] [INFO] [WA] Loading 94%: WhatsApp[0m
+[36m[2026-06-21T10:59:55.269Z] [INFO] [WA] Loading 97%: WhatsApp[0m
+[36m[2026-06-21T10:59:56.299Z] [INFO] [WA] Loading 99%: WhatsApp[0m
+[36m[2026-06-21T10:59:56.805Z] [INFO] [WA] Loading 100%: WhatsApp[0m
+[36m[2026-06-21T11:00:01.230Z] [INFO] [WA] Authenticated ✅[0m
+[36m[2026-06-21T11:00:02.981Z] [INFO] [WA] WhatsApp READY ✅ — Queue processor started[0m
+[36m[2026-06-21T11:00:02.981Z] [INFO] [QUEUE] Message processor started[0m
+[36m[2026-06-21T11:28:13.962Z] [INFO] [API] GET /status[0m
+[36m[2026-06-21T11:28:16.625Z] [INFO] [API] GET /status[0m
+[36m[2026-06-21T16:24:22.120Z] [INFO] [API] GET /status[0m
+[36m[2026-06-21T16:24:22.228Z] [INFO] [API] GET /status[0m
+[36m[2026-06-21T19:44:45.250Z] [INFO] [API] GET /status[0m
+[36m[2026-06-21T19:44:45.358Z] [INFO] [API] GET /status[0m
+[36m[2026-06-21T20:02:51.108Z] [INFO] [API] GET /status[0m
+[36m[2026-06-21T20:02:51.224Z] [INFO] [API] GET /status[0m
+[36m[2026-06-21T20:02:55.210Z] [INFO] [API] GET /status[0m
+[36m[2026-06-21T20:02:59.281Z] [INFO] [API] GET /status[0m
+[36m[2026-06-21T20:03:03.217Z] [INFO] [API] GET /status[0m
+[36m[2026-06-21T20:03:07.266Z] [INFO] [API] GET /status[0m
+[36m[2026-06-21T20:03:11.195Z] [INFO] [API] GET /status[0m
+[36m[2026-06-21T20:03:15.264Z] [INFO] [API] GET /status[0m
+[36m[2026-06-21T20:03:19.198Z] [INFO] [API] GET /status[0m
+[36m[2026-06-21T20:03:23.265Z] [INFO] [API] GET /status[0m
+[36m[2026-06-21T20:03:27.197Z] [INFO] [API] GET /status[0m
+[36m[2026-06-21T20:03:31.262Z] [INFO] [API] GET /status[0m
+[36m[2026-06-21T20:03:35.198Z] [INFO] [API] GET /status[0m
+evel":"INFO","module":"WA","message":"Loading 77%: WhatsApp"}
+{"ts":"2026-06-21T10:59:47.153Z","level":"INFO","module":"WA","message":"Loading 81%: WhatsApp"}
+{"ts":"2026-06-21T10:59:48.162Z","level":"INFO","module":"WA","message":"Loading 85%: WhatsApp"}
+{"ts":"2026-06-21T10:59:49.203Z","level":"INFO","module":"WA","message":"Loading 87%: WhatsApp"}
+{"ts":"2026-06-21T10:59:49.452Z","level":"INFO","module":"WA","message":"Loading 88%: WhatsApp"}
+{"ts":"2026-06-21T10:59:50.213Z","level":"INFO","module":"WA","message":"Loading 89%: WhatsApp"}
+{"ts":"2026-06-21T10:59:53.236Z","level":"INFO","module":"WA","message":"Loading 91%: WhatsApp"}
+{"ts":"2026-06-21T10:59:54.242Z","level":"INFO","module":"WA","message":"Loading 94%: WhatsApp"}
+{"ts":"2026-06-21T10:59:55.269Z","level":"INFO","module":"WA","message":"Loading 97%: WhatsApp"}
+{"ts":"2026-06-21T10:59:56.299Z","level":"INFO","module":"WA","message":"Loading 99%: WhatsApp"}
+{"ts":"2026-06-21T10:59:56.805Z","level":"INFO","module":"WA","message":"Loading 100%: WhatsApp"}
+{"ts":"2026-06-21T11:00:01.230Z","level":"INFO","module":"WA","message":"Authenticated ✅"}
+{"ts":"2026-06-21T11:00:02.981Z","level":"INFO","module":"WA","message":"WhatsApp READY ✅ — Queue processor started"}
+{"ts":"2026-06-21T11:00:02.981Z","level":"INFO","module":"QUEUE","message":"Message processor started"}
+{"ts":"2026-06-21T11:28:13.962Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-21T11:28:16.625Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-21T16:24:22.120Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-21T16:24:22.228Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-21T19:44:45.250Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-21T19:44:45.358Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-21T20:02:51.108Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-21T20:02:51.224Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-21T20:02:55.210Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-21T20:02:59.281Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-21T20:03:03.217Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-21T20:03:07.266Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-21T20:03:11.195Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-21T20:03:15.264Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-21T20:03:19.198Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-21T20:03:23.265Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-21T20:03:27.197Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-21T20:03:31.262Z","level":"INFO","module":"API","message":"GET /status"}
+{"ts":"2026-06-21T20:03:35.198Z","level":"INFO","module":"API","message":"GET /status"}

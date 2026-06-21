@@ -119,6 +119,7 @@ export default function Stock() {
   const [batchTotalPages, setBatchTotalPages] = useState(0)
   const [batchTotalElements, setBatchTotalElements] = useState(0)
   const [batchSearchTerm, setBatchSearchTerm] = useState('')
+  const [debouncedBatchSearchTerm, setDebouncedBatchSearchTerm] = useState('')
   const [batchView, setBatchView] = useState('list') // 'list' | 'invoices'
   const [allBatchList, setAllBatchList] = useState([]) // all batches for invoice grouping
   const [invoicePage, setInvoicePage] = useState(0)
@@ -140,7 +141,9 @@ export default function Stock() {
   const [reportData, setReportData] = useState([])
   const [reportPage, setReportPage] = useState(0)
   const [reportTotalPages, setReportTotalPages] = useState(0)
+  const [reportTotalElements, setReportTotalElements] = useState(0)
   const [reportLoading, setReportLoading] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   // 8. BI & Forecasting State
   const [biHealth, setBiHealth] = useState(null)
@@ -170,10 +173,17 @@ export default function Stock() {
   }
 
   // Fetch Inventory List
-  const loadInventory = async (page = 0) => {
+  const loadInventory = async (page = 0, search = searchTerm, category = selectedCategory, status = selectedStatus) => {
     setLoading(true)
     try {
-      const res = await api.get(`/stock/paged?page=${page}&size=${INV_PAGE_SIZE}`)
+      const params = new URLSearchParams()
+      params.set('page', page)
+      params.set('size', INV_PAGE_SIZE)
+      if (search && search.trim()) params.set('search', search.trim())
+      if (category) params.set('category', category)
+      if (status) params.set('status', status)
+
+      const res = await api.get(`/stock/paged?${params.toString()}`)
       setInventoryList(res.data.data?.content || [])
       setInvTotalPages(res.data.data?.totalPages || 0)
       setInvTotalElements(res.data.data?.totalElements || 0)
@@ -198,9 +208,15 @@ export default function Stock() {
   }
 
   // Fetch Batches (paginated)
-  const loadBatches = async (page = 0) => {
+  const loadBatches = async (page = 0, search = batchSearchTerm) => {
     try {
-      const res = await api.get(`/stock/batches?page=${page}&size=15`)
+      const queryParams = new URLSearchParams()
+      queryParams.set('page', page)
+      queryParams.set('size', 15)
+      if (search && search.trim().length >= 2) {
+        queryParams.set('search', search.trim())
+      }
+      const res = await api.get(`/stock/batches?${queryParams.toString()}`)
       setBatchList(res.data.data?.content || res.data.data || [])
       setBatchTotalPages(res.data.data?.totalPages || 0)
       setBatchTotalElements(res.data.data?.totalElements || 0)
@@ -269,9 +285,11 @@ export default function Stock() {
       if (selectedReport === 'profitability') {
         setReportData(res.data.data || [])
         setReportTotalPages(1)
+        setReportTotalElements(res.data.data?.length || 0)
       } else {
         setReportData(res.data.data?.content || [])
         setReportTotalPages(res.data.data?.totalPages || 0)
+        setReportTotalElements(res.data.data?.totalElements || 0)
       }
     } catch {
       toast.error('Failed to generate report')
@@ -285,16 +303,25 @@ export default function Stock() {
     loadDashboard()
   }, [])
 
+  // Debounce batch search term and reset page
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedBatchSearchTerm(batchSearchTerm)
+      setBatchPage(0)
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [batchSearchTerm])
+
   // Trigger loads based on active tab
   useEffect(() => {
     if (activeTab === 'dashboard') loadDashboard()
-    else if (activeTab === 'overview') loadInventory(invPage)
-    else if (activeTab === 'batches' || activeTab === 'invoices') loadBatches(batchPage)
+    else if (activeTab === 'overview') loadInventory(invPage, searchTerm, selectedCategory, selectedStatus)
+    else if (activeTab === 'batches' || activeTab === 'invoices') loadBatches(batchPage, debouncedBatchSearchTerm)
     else if (activeTab === 'movements') loadMovements(movementPage)
     else if (activeTab === 'audit' && isAdmin) loadAuditLogs(auditPage)
     else if (activeTab === 'bi') loadBI()
     else if (activeTab === 'reports') loadReports(reportPage)
-  }, [activeTab, invPage, batchPage, movementPage, auditPage, reportPage, selectedReport, selectedMovementType])
+  }, [activeTab, invPage, batchPage, movementPage, auditPage, reportPage, selectedReport, selectedMovementType, searchTerm, selectedCategory, selectedStatus, debouncedBatchSearchTerm])
 
   // Single Manual Receive Form Submit
   const handleReceiveSubmit = async (e) => {
@@ -933,49 +960,68 @@ export default function Stock() {
   };
 
   // Export report CSV
-  const exportToCSV = () => {
-    if (reportData.length === 0) return
-    let csvContent = 'data:text/csv;charset=utf-8,'
-    if (selectedReport === 'valuation') {
-      csvContent += 'Product,Category,Brand,Stock,Avg Cost,Selling Price,Value,Status\n'
-      reportData.forEach(row => {
-        csvContent += `"${row.productName}","${row.category}","${row.brand}",${row.currentStock},${row.avgCost},${row.sellingPrice},${row.inventoryValue},"${row.status}"\n`
-      })
-    } else if (selectedReport === 'expiry') {
-      csvContent += 'Batch,Product,Expiry Date,Remaining,Cost Value,Days to Expiry,Risk\n'
-      reportData.forEach(row => {
-        csvContent += `"${row.batchNumber}","${row.productName}","${row.expiryDate}",${row.remainingQty},${row.costValue},${row.daysToExpiry},"${row.riskBucket}"\n`
-      })
-    } else if (selectedReport === 'aging') {
-      csvContent += 'Batch,Product,Received Date,Remaining,Age (Days),Bucket\n'
-      reportData.forEach(row => {
-        csvContent += `"${row.batchNumber}","${row.productName}","${row.stockReceivedDate}",${row.remainingQty},${row.ageDays},"${row.ageBucket}"\n`
-      })
-    } else if (selectedReport === 'profitability') {
-      csvContent += 'Category,Cost Value,Selling Value,Profit Potential,Margin %\n'
-      reportData.forEach(row => {
-        csvContent += `"${row.categoryName}",${row.costValue},${row.sellingValue},${row.profitPotential},${row.marginPercent}\n`
-      })
-    }
+  const exportToCSV = async () => {
+    if (exporting) return
+    setExporting(true)
+    try {
+      toast.info('Fetching full report data for export...')
+      let endpoint = `/stock/reports/valuation/export`
+      if (selectedReport === 'expiry') endpoint = `/stock/reports/expiry/export`
+      else if (selectedReport === 'aging') endpoint = `/stock/reports/aging/export`
+      else if (selectedReport === 'profitability') endpoint = `/stock/reports/profitability/category`
 
-    const encodedUri = encodeURI(csvContent)
-    const link = document.createElement('a')
-    link.setAttribute('href', encodedUri)
-    link.setAttribute('download', `Stock_Report_${selectedReport}_${new Date().toISOString().split('T')[0]}.csv`)
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+      const res = await api.get(endpoint)
+      const fullData = res.data.data || []
+
+      if (fullData.length === 0) {
+        toast.warning('No data to export')
+        return
+      }
+
+      const escape = (val) => val == null ? '' : String(val).replace(/"/g, '""')
+
+      const rows = []
+      if (selectedReport === 'valuation') {
+        rows.push('Product,Category,Brand,Stock,Avg Cost,Selling Price,Value,Status')
+        fullData.forEach(row => {
+          rows.push(`"${escape(row.productName)}","${escape(row.category)}","${escape(row.brand)}",${row.currentStock},${row.avgCost},${row.sellingPrice},${row.inventoryValue},"${escape(row.status)}"`)
+        })
+      } else if (selectedReport === 'expiry') {
+        rows.push('Batch,Product,Expiry Date,Remaining,Cost Value,Days to Expiry,Risk')
+        fullData.forEach(row => {
+          rows.push(`"${escape(row.batchNumber)}","${escape(row.productName)}","${escape(row.expiryDate)}",${row.remainingQty},${row.costValue},${row.daysToExpiry},"${escape(row.riskBucket)}"`)
+        })
+      } else if (selectedReport === 'aging') {
+        rows.push('Batch,Product,Received Date,Remaining,Age (Days),Bucket')
+        fullData.forEach(row => {
+          rows.push(`"${escape(row.batchNumber)}","${escape(row.productName)}","${escape(row.stockReceivedDate)}",${row.remainingQty},${row.ageDays},"${escape(row.ageBucket)}"`)
+        })
+      } else if (selectedReport === 'profitability') {
+        rows.push('Category,Cost Value,Selling Value,Profit Potential,Margin %')
+        fullData.forEach(row => {
+          rows.push(`"${escape(row.categoryName)}",${row.costValue},${row.sellingValue},${row.profitPotential},${row.marginPercent}`)
+        })
+      }
+
+      const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + rows.join('\n')
+      const encodedUri = encodeURI(csvContent)
+      const link = document.createElement('a')
+      link.setAttribute('href', encodedUri)
+      link.setAttribute('download', `Stock_Report_${selectedReport}_${new Date().toISOString().split('T')[0]}.csv`)
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      toast.success('Report exported successfully!')
+    } catch (err) {
+      toast.error('Failed to export report CSV')
+      console.error(err)
+    } finally {
+      setExporting(false)
+    }
   }
 
-  // Local filters
-  const filteredInventory = inventoryList.filter(item => {
-    const matchesSearch = item.productName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          item.brand?.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesCategory = !selectedCategory || item.category === selectedCategory
-    const matchesBrand = !selectedBrand || item.brand === selectedBrand
-    const matchesStatus = !selectedStatus || item.status === selectedStatus
-    return matchesSearch && matchesCategory && matchesBrand && matchesStatus
-  })
+  // Server-side filtered inventory
+  const filteredInventory = inventoryList
 
   // Dynamic Chart tooltip style
   const chartTooltipStyle = {
@@ -986,7 +1032,7 @@ export default function Stock() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 p-4 md:p-8 font-sans transition-colors duration-300">
+    <div className="min-h-screen bg-[var(--color-bg)] text-slate-900 dark:text-slate-100 p-4 md:p-8 font-sans transition-colors duration-300">
       {/* Header and Branding */}
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-8 gap-4">
         <div>
@@ -1543,13 +1589,19 @@ export default function Stock() {
                     type="text"
                     placeholder="Search by Product name, Brand..."
                     value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onChange={(e) => {
+                      setSearchTerm(e.target.value)
+                      setInvPage(0)
+                    }}
                     className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-250 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-slate-100"
                   />
                 </div>
                 <select
                   value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedCategory(e.target.value)
+                    setInvPage(0)
+                  }}
                   className="px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-250 dark:border-slate-800 rounded-xl text-slate-800 dark:text-slate-300 focus:ring-2 focus:ring-indigo-500"
                 >
                   <option value="">All Categories</option>
@@ -1557,7 +1609,10 @@ export default function Stock() {
                 </select>
                 <select
                   value={selectedStatus}
-                  onChange={(e) => setSelectedStatus(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedStatus(e.target.value)
+                    setInvPage(0)
+                  }}
                   className="px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-250 dark:border-slate-800 rounded-xl text-slate-800 dark:text-slate-300 focus:ring-2 focus:ring-indigo-500"
                 >
                   <option value="">All Statuses</option>
@@ -1574,6 +1629,7 @@ export default function Stock() {
                     setSearchTerm('')
                     setSelectedCategory('')
                     setSelectedStatus('')
+                    setInvPage(0)
                   }}
                   className="flex items-center gap-1 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition"
                 >
@@ -2272,8 +2328,16 @@ export default function Stock() {
                     placeholder="Filter by product name, batch number..."
                     value={batchSearchTerm}
                     onChange={(e) => setBatchSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-slate-100 text-sm"
+                    className="w-full pl-10 pr-10 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-slate-100 text-sm"
                   />
+                  {batchSearchTerm && (
+                    <button
+                      onClick={() => setBatchSearchTerm('')}
+                      className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -2296,14 +2360,16 @@ export default function Stock() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-800 text-sm">
-                    {batchList.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="py-8 text-center text-slate-400 dark:text-slate-505 font-medium">
-                          No batches found.
-                        </td>
-                      </tr>
-                    ) : (
-                      batchList.map(batch => (
+                    {(() => {
+                      const filteredBatchList = batchList
+                      if (filteredBatchList.length === 0) return (
+                        <tr>
+                          <td colSpan={8} className="py-8 text-center text-slate-400 dark:text-slate-505 font-medium">
+                            {batchSearchTerm.trim() ? `No batches match "${batchSearchTerm}"` : 'No batches found.'}
+                          </td>
+                        </tr>
+                      )
+                      return filteredBatchList.map(batch => (
                         <tr key={batch.id} className="hover:bg-slate-100/40 dark:hover:bg-slate-800/40 transition-colors">
                           <td className="py-2 px-4">
                             <span className="font-semibold text-slate-800 dark:text-slate-100 block">{batch.productName}</span>
@@ -2384,7 +2450,7 @@ export default function Stock() {
                           </td>
                         </tr>
                       ))
-                    )}
+                    })()}
                   </tbody>
                 </table>
               </div>
@@ -2688,9 +2754,10 @@ export default function Stock() {
 
               <button
                 onClick={exportToCSV}
-                className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold py-2 px-5 rounded-xl text-sm shadow hover:scale-105 transition duration-300"
+                disabled={exporting}
+                className={`flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold py-2 px-5 rounded-xl text-sm shadow hover:scale-105 transition duration-300 ${exporting ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
-                <Download className="w-4 h-4" /> Export Report (CSV)
+                <Download className="w-4 h-4" /> {exporting ? 'Exporting...' : 'Export Report (CSV)'}
               </button>
             </div>
 
@@ -2716,7 +2783,7 @@ export default function Stock() {
                         <tr key={row.productId} className="hover:bg-slate-100/40 dark:hover:bg-slate-800/40 transition-colors">
                           <td className="py-4 px-6 font-semibold text-slate-800 dark:text-slate-200">{row.productName}</td>
                           <td className="py-4 px-6 text-slate-500 dark:text-slate-400">{row.category}</td>
-                          <td className="py-4 px-6 font-mono text-slate-800 dark:text-slate-250">{row.currentStock} Units</td>
+                          <td className="py-4 px-6 font-mono text-slate-800 dark:text-slate-200">{row.currentStock} Units</td>
                           <td className="py-4 px-6 font-mono text-slate-700 dark:text-slate-300">₹{row.avgCost}</td>
                           <td className="py-4 px-6 font-mono text-slate-700 dark:text-slate-300">₹{row.sellingPrice}</td>
                           <td className="py-4 px-6 font-mono text-emerald-600 dark:text-emerald-450 font-semibold">₹{(row.currentStock * (row.sellingPrice - row.avgCost)).toFixed(2)}</td>
@@ -2824,6 +2891,13 @@ export default function Stock() {
                   </table>
                 )}
               </div>
+
+              {/* Pagination */}
+              {reportTotalPages > 1 && (
+                <div className="p-4 bg-slate-50 dark:bg-slate-950/80 border-t border-slate-200 dark:border-slate-800">
+                  <Pagination page={reportPage} totalPages={reportTotalPages} totalElements={reportTotalElements} pageSize={15} onPageChange={setReportPage} />
+                </div>
+              )}
             </div>
           </motion.div>
         )}
@@ -2851,47 +2925,91 @@ export default function Stock() {
                       <span className="text-xl text-slate-500 dark:text-slate-400 block mt-2">Classified as: <span className="font-bold text-slate-700 dark:text-slate-300">{biHealth.classification}</span></span>
                     </div>
                   </div>
-                  <div className="space-y-3.5 border-t border-slate-200 dark:border-slate-800 pt-6">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-550 dark:text-slate-400">Dead Stock Penalty Score:</span>
-                      <span className="font-semibold text-rose-500 dark:text-rose-400">-{Math.round((25 - biHealth.deadStockScore) * 100) / 100}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-550 dark:text-slate-400">Expiry Risk Penalty Score:</span>
-                      <span className="font-semibold text-rose-500 dark:text-rose-400">-{Math.round((25 - biHealth.expiryScore) * 100) / 100}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-550 dark:text-slate-400">Low Stock penalty:</span>
-                      <span className="font-semibold text-rose-500 dark:text-rose-400">-{Math.round((20 - biHealth.lowStockScore) * 100) / 100}</span>
+                  <div className="space-y-3 border-t border-slate-200 dark:border-slate-800 pt-5">
+                    {[
+                      { label: 'Dead Stock Score',  score: biHealth.deadStockScore,  max: 25 },
+                      { label: 'Expiry Risk Score',  score: biHealth.expiryScore,     max: 25 },
+                      { label: 'Low Stock Score',    score: biHealth.lowStockScore,   max: 20 },
+                      { label: 'Turnover Score',     score: biHealth.turnoverScore,   max: 20 },
+                      { label: 'Accuracy Score',     score: biHealth.accuracyScore,   max: 10 },
+                    ].map(({ label, score, max }) => {
+                      const pct = max > 0 ? score / max : 0
+                      const color = pct >= 0.8
+                        ? 'text-emerald-500 dark:text-emerald-400'
+                        : pct >= 0.5
+                        ? 'text-amber-500 dark:text-amber-400'
+                        : 'text-rose-500 dark:text-rose-400'
+                      const dot = pct >= 0.8 ? '🟢' : pct >= 0.5 ? '🟡' : '🔴'
+                      return (
+                        <div key={label} className="flex justify-between items-center text-sm">
+                          <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                            <span>{dot}</span>{label}:
+                          </span>
+                          <span className={`font-semibold tabular-nums ${color}`}>
+                            {Math.round(score * 10) / 10} / {max}
+                          </span>
+                        </div>
+                      )
+                    })}
+                    <div className="flex justify-between items-center text-sm font-bold border-t border-slate-200 dark:border-slate-700 pt-3 mt-1">
+                      <span className="text-slate-700 dark:text-slate-200">Total Score:</span>
+                      <span className="text-indigo-600 dark:text-indigo-400 tabular-nums">{biHealth.overallScore} / 100</span>
                     </div>
                   </div>
                 </div>
 
                 {/* Suggestions Engine Widget */}
                 <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-2xl shadow-sm flex flex-col">
-                  <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-                    <ShieldAlert className="w-5 h-5 text-indigo-550" /> Purchase Recommendation Engine
+                  <h3 className="text-xl font-bold mb-3 flex items-center gap-2">
+                    <ShieldAlert className="w-5 h-5 text-indigo-500" /> Purchase Recommendation Engine
                   </h3>
-                  <div className="overflow-y-auto max-h-[360px] flex-1 divide-y divide-slate-200 dark:divide-slate-800">
+
+                  {/* No-sales-data banner — shown if ALL items have 0 daily sales */}
+                  {biReorders.length > 0 && biReorders.every(r => r.avgDailySales === 0) && (
+                    <div className="flex items-start gap-2.5 mb-4 px-3.5 py-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-400 text-xs">
+                      <span className="text-base leading-none mt-0.5">⚠️</span>
+                      <span>
+                        <span className="font-semibold">No sales data available yet.</span>{' '}
+                        Suggestions below are based on reorder levels only — they will become accurate once sales transactions are recorded.
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="overflow-y-auto max-h-[320px] flex-1 divide-y divide-slate-200 dark:divide-slate-800">
                     {biReorders.length === 0 ? (
                       <p className="text-slate-500 dark:text-slate-400 text-sm py-4">No reorder recommendations needed right now.</p>
                     ) : (
-                      biReorders.map((reorder, i) => (
-                        <div key={i} className="flex justify-between items-center py-4">
-                          <div>
-                            <span className="font-bold text-slate-800 dark:text-slate-200 block">{reorder.productName}</span>
-                            <span className="text-xs text-slate-500 dark:text-slate-400">
-                              Current Stock: {reorder.currentStock} Units | Daily Sales average: {reorder.avgDailySales.toFixed(2)} units/day
-                            </span>
+                      biReorders.map((reorder, i) => {
+                        const noSales = reorder.avgDailySales === 0
+                        return (
+                          <div key={i} className="flex justify-between items-center py-3.5 gap-4">
+                            <div className="flex-1 min-w-0">
+                              <span className="font-bold text-slate-800 dark:text-slate-200 block truncate">{reorder.productName}</span>
+                              <span className="text-xs text-slate-500 dark:text-slate-400">
+                                Stock: {reorder.currentStock} units
+                                {noSales
+                                  ? <span className="ml-2 text-amber-500 dark:text-amber-400 font-medium">· No sales history</span>
+                                  : <span className="ml-2">· Avg {reorder.avgDailySales.toFixed(2)} units/day</span>
+                                }
+                              </span>
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              {noSales ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700 text-xs font-medium">
+                                  ⚠️ No data
+                                </span>
+                              ) : (
+                                <>
+                                  <span className="text-xs text-slate-500 dark:text-slate-400 block mb-1">Suggest Order Qty:</span>
+                                  <span className="px-3 py-1 rounded bg-indigo-500/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 font-bold font-mono">
+                                    +{reorder.suggestedReorderQty}
+                                  </span>
+                                </>
+                              )}
+                            </div>
                           </div>
-                          <div className="text-right">
-                            <span className="text-xs text-slate-500 dark:text-slate-450 block mb-1">Suggest Order Qty:</span>
-                            <span className="px-3 py-1 rounded bg-indigo-500/10 dark:bg-indigo-650/20 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 font-bold font-mono">
-                              +{reorder.suggestedReorderQty}
-                            </span>
-                          </div>
-                        </div>
-                      ))
+                        )
+                      })
                     )}
                   </div>
                 </div>
@@ -2903,7 +3021,7 @@ export default function Stock() {
 
       {/* Adjust Stock Modal */}
       {adjustingBatch && (
-        <Modal title="Correct & Adjust Batch Quantity" onClose={() => setAdjustingBatch(null)}>
+        <Modal isOpen={!!adjustingBatch} title="Correct & Adjust Batch Quantity" onClose={() => setAdjustingBatch(null)}>
           <form onSubmit={handleAdjustSubmit} className="space-y-6">
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Editing quantities will write a line item to the movement history logs and adjustment audit tables.
@@ -2992,7 +3110,7 @@ export default function Stock() {
 
       {/* Quick Add Product Modal */}
       {showQuickProductModal && (
-        <Modal title="Create Product Database SKU" onClose={() => setShowQuickProductModal(false)}>
+        <Modal isOpen={showQuickProductModal} title="Create Product Database SKU" onClose={() => setShowQuickProductModal(false)}>
           <form onSubmit={handleQuickProductSubmit} className="space-y-4 text-xs md:text-sm">
             <div className="grid grid-cols-2 gap-4">
               <div>

@@ -473,6 +473,14 @@ public class StockService {
     }
 
     public Page<StockBatch> getRecentBatchesPaged(int page, int size) {
+        return getRecentBatchesPaged(page, size, null);
+    }
+
+    public Page<StockBatch> getRecentBatchesPaged(int page, int size, String search) {
+        if (search != null && !search.trim().isEmpty()) {
+            String q = "%" + search.trim().toLowerCase() + "%";
+            return batchRepository.searchBatches(q, PageRequest.of(page, size, Sort.by("receivedAt").descending()));
+        }
         return batchRepository.findAll(PageRequest.of(page, size, Sort.by("receivedAt").descending()));
     }
 
