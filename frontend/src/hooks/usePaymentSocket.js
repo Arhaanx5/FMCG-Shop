@@ -1,10 +1,20 @@
 import { useEffect, useState, useRef } from 'react'
+import { ENV } from '../config/env'
 
-const WS_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-  ? `ws://localhost:8085/ws/websocket`
-  : (window.location.protocol === 'https:'
-    ? `wss://${window.location.host}/ws/websocket`
-    : `ws://${window.location.host}/ws/websocket`)
+const getWsUrl = () => {
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return 'ws://localhost:8085/ws/websocket'
+  }
+  try {
+    const url = new URL(ENV.apiUrl)
+    const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${protocol}//${url.host}/ws/websocket`
+  } catch (e) {
+    return (window.location.protocol === 'https:' ? 'wss:' : 'ws:') + '//api.laritraders.store/ws/websocket'
+  }
+}
+
+const WS_BASE = getWsUrl()
 
 // Parse a raw STOMP frame string into { command, headers, body }
 function parseStompFrame(raw) {
