@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import jakarta.persistence.EntityNotFoundException;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -31,6 +32,7 @@ public class KhataService {
     private final CustomerRepository customerRepository;
     private final BillRepository billRepository;
     private final UserRepository userRepository;
+    private final SimpMessagingTemplate messagingTemplate;
 
     // ─────────────────────────────────────────────────────────────
     // Helpers
@@ -251,31 +253,42 @@ public class KhataService {
             bill = billRepository.findById(req.getBillId()).orElse(null);
         }
 
+        PaymentResponse response;
+
         // ── Case A: No specific bill → legacy FIFO auto-allocation ──
         if (bill == null) {
-            return recordGeneralPayment(req, customer, collector);
+            response = recordGeneralPayment(req, customer, collector);
+        } else {
+            BigDecimal amount = req.getAmount();
+            BigDecimal pending = bill.getPendingAmount();
+
+            // ── Case B: Normal payment (amount ≤ pending) ──
+            if (amount.compareTo(pending) <= 0) {
+                response = recordNormalPayment(req, customer, bill, collector, amount);
+            } else {
+                // ── Case C: Overpayment ──
+                // Require user to have confirmed a resolution
+                if (!req.isConfirmedByUser() || req.getAdjustmentType() == null) {
+                    throw new RuntimeException(
+                            "Overpayment detected. Please choose an adjustment option and confirm.");
+                }
+
+                response = switch (req.getAdjustmentType()) {
+                    case MANUAL_ADJUST -> recordManualAdjust(req, customer, bill, collector, amount, pending);
+                    case AUTO_ADJUST   -> recordAutoAdjust(req, customer, bill, collector, amount, pending);
+                    default -> throw new RuntimeException("Invalid adjustment type for overpayment.");
+                };
+            }
         }
 
-        BigDecimal amount = req.getAmount();
-        BigDecimal pending = bill.getPendingAmount();
-
-        // ── Case B: Normal payment (amount ≤ pending) ──
-        if (amount.compareTo(pending) <= 0) {
-            return recordNormalPayment(req, customer, bill, collector, amount);
+        // Broadcast live payment activity over WebSocket
+        try {
+            messagingTemplate.convertAndSend("/topic/payments", response);
+        } catch (Exception e) {
+            System.err.println("Failed to broadcast live payment: " + e.getMessage());
         }
 
-        // ── Case C: Overpayment ──
-        // Require user to have confirmed a resolution
-        if (!req.isConfirmedByUser() || req.getAdjustmentType() == null) {
-            throw new RuntimeException(
-                    "Overpayment detected. Please choose an adjustment option and confirm.");
-        }
-
-        return switch (req.getAdjustmentType()) {
-            case MANUAL_ADJUST -> recordManualAdjust(req, customer, bill, collector, amount, pending);
-            case AUTO_ADJUST   -> recordAutoAdjust(req, customer, bill, collector, amount, pending);
-            default -> throw new RuntimeException("Invalid adjustment type for overpayment.");
-        };
+        return response;
     }
 
     // ── B: Normal payment ──

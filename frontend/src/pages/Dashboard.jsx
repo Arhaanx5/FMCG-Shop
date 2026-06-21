@@ -11,15 +11,51 @@ import StatCard from '../components/StatCard'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
 import Modal from '../components/Modal'
+import { usePaymentSocketContext } from '../context/PaymentSocketContext'
+
+function formatRelativeTime(dateStr) {
+  if (!dateStr) return 'Just now'
+  try {
+    const d = new Date(dateStr)
+    const now = new Date()
+    const diffMs = now - d
+    const diffSec = Math.floor(diffMs / 1000)
+    const diffMin = Math.floor(diffSec / 60)
+    const diffHr = Math.floor(diffMin / 60)
+
+    if (diffSec < 60 || diffMs < 0) return 'Just now'
+    if (diffMin < 60) return `${diffMin}m ago`
+    if (diffHr < 24) return `${diffHr}h ago`
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+  } catch (e) {
+    return 'Just now'
+  }
+}
 
 const PIE_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899']
 const MODERN_PIE_COLORS = ['#8b5cf6', '#a78bfa', '#ec4899', '#f97316', '#f59e0b', '#10b981']
 const CYBER_PIE_COLORS = ['#00d2ff', '#3b82f6', '#60a5fa', '#0a80df', '#38bdf8', '#1e3a8a']
 const NEON_PIE_COLORS = ['#00ffcc', '#d946ef', '#10b981', '#f43f5e', '#a855f7', '#06b6d4']
 
-function LiveActivityWidget({ recentBills = [], lowStockList = [], pendingDeliveries = [] }) {
+function LiveActivityWidget({ recentBills = [], lowStockList = [], pendingDeliveries = [], livePayments = [] }) {
   const activities = []
 
+  // 1. Add real-time payments first
+  livePayments.forEach((payment) => {
+    const amt = Number(payment.amount || 0).toLocaleString('en-IN')
+    const shop = payment.customerShopName ? ` (${payment.customerShopName})` : ''
+    activities.push({
+      id: `payment-${payment.id || Math.random()}`,
+      type: 'payment',
+      title: `₹${amt} Received`,
+      subtitle: `${payment.customerName}${shop} • By ${payment.collectedBy}`,
+      time: formatRelativeTime(payment.paidAt),
+      color: '#10b981', // green for success
+      icon: <IndianRupee size={14} />,
+    })
+  })
+
+  // 2. Add invoices
   recentBills.slice(0, 3).forEach((bill, idx) => {
     const displayNum = bill.billNumber || (bill.id ? bill.id.slice(0, 8) : (idx + 101));
     activities.push({
@@ -33,6 +69,7 @@ function LiveActivityWidget({ recentBills = [], lowStockList = [], pendingDelive
     })
   })
 
+  // 3. Add stock alerts
   lowStockList.slice(0, 2).forEach((item, idx) => {
     activities.push({
       id: `stock-${item.productId || idx}`,
@@ -45,6 +82,7 @@ function LiveActivityWidget({ recentBills = [], lowStockList = [], pendingDelive
     })
   })
 
+  // 4. Add pending deliveries
   pendingDeliveries.slice(0, 2).forEach((item, idx) => {
     activities.push({
       id: `delivery-${item.id || idx}`,
@@ -318,6 +356,7 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const [uiTheme] = useOutletContext()
   const { aiEnabled, isAdmin, isManager } = useAuth()
+  const { livePayments } = usePaymentSocketContext()
   const [today, setToday] = useState(null)
   const [monthly, setMonthly] = useState(null)
   const [yearly, setYearly] = useState(null)
@@ -918,6 +957,7 @@ export default function Dashboard() {
               recentBills={recentBills}
               lowStockList={lowStockList}
               pendingDeliveries={pendingDeliveriesList}
+              livePayments={livePayments}
             />
 
             {/* Lari AI Copilot */}

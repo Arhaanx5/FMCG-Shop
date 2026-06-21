@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '../context/AuthContext'
+import { usePaymentSocketContext } from '../context/PaymentSocketContext'
 import api from '../services/api'
 import lariLogo from '../assets/lari-traders-logo.png'
 import {
@@ -55,6 +56,9 @@ export default function Layout() {
   const { user, logout } = useAuth()
   const location = useLocation()
   const [collapsed, setCollapsed] = useState(false)
+
+  // Subscribes to payment socket notifications globally
+  usePaymentSocketContext()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
