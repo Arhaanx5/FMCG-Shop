@@ -31,7 +31,8 @@ export function PaymentSocketProvider({ children }) {
       const amtStr = Number(payment.amount || 0).toLocaleString('en-IN')
       const shopStr = payment.customerShopName ? ` (${payment.customerShopName})` : ''
       toast.success(
-        `₹${amtStr} collected from ${payment.customerName}${shopStr} by ${payment.collectedBy}`
+        `₹${amtStr} collected from ${payment.customerName}${shopStr} by ${payment.collectedBy}`,
+        15000
       )
     }
 
