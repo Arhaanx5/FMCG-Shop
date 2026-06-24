@@ -1,6 +1,7 @@
 package com.shop.modules.stock;
 
 import com.shop.modules.product.Product;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
@@ -24,10 +25,12 @@ public class StockMovement {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "product_id", nullable = false)
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
     private Product product;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "batch_id")
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
     private StockBatch batch;
 
     @Column(name = "movement_type", nullable = false, length = 50)

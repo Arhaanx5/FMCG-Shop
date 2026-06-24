@@ -15,14 +15,14 @@ public class RecordPaymentRequest {
 
     private UUID billId;
 
-    @NotNull(message = "Amount is required")
-    @Positive(message = "Amount must be positive")
     private BigDecimal amount;
 
     @NotNull(message = "Payment mode is required")
     private String paymentMode;
 
     private String notes;
+    private String paymentSource;
+    private BigDecimal waivedAmount;
 
     // ── Overpayment resolution fields (sent only when excess is detected) ──
     /** How to handle excess: MANUAL_ADJUST or AUTO_ADJUST */

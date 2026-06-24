@@ -19,6 +19,8 @@ public class MonthlyReportResponse {
     private BigDecimal totalCollectedUpi;
     private BigDecimal totalCollectedUdhar;
     private BigDecimal totalPending;
+    private BigDecimal totalWaived;
+    private BigDecimal totalNewUdhar;
     private Long totalBills;
 
     // Expenses
@@ -33,4 +35,37 @@ public class MonthlyReportResponse {
 
     // Top products
     private Map<String, Integer> topProductsByQty;
+
+    // Period comparison
+    private BigDecimal lastMonthRevenue;
+    private BigDecimal lastMonthCollection;
+    private BigDecimal lastMonthExpenses;
+    private BigDecimal lastMonthNewUdhar;
+    private BigDecimal lastYearRevenue;
+    private BigDecimal lastYearCollection;
+
+    // Always current
+    private BigDecimal totalInventoryValue;
+    private BigDecimal codPendingAmount;
+    private Long codPendingBillsCount;
+    private Integer codOverdueCount;
+    private Long lowStockCount;
+    private Long npaCustomersCount;
+    private BigDecimal npaCustomersAmount;
+    private Long oldestPendingDays;
+    private BigDecimal totalOutstandingUdhar;
+
+    // Period / Health
+    private BigDecimal netProfitMarginPct;
+    private BigDecimal avgBillValue;
+    private BigDecimal damageLossMTD;
+    private Long newCustomersThisMonth;
+    private BigDecimal codSuccessRate;
+    private BigDecimal avgCollectionDays;
+    private Long activeCustomersToday;
+    private Long activeCustomersMonth;
+    private Long activeCustomersYear;
+
+    // Sparkline/trend
+    private java.util.List<DailyTrendPoint> sevenDayTrend;
 }

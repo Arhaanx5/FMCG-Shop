@@ -12,7 +12,7 @@ import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
 import { getCustomerLedger, generateLedgerHtml, getCustomerLedgerForPeriod } from '../utils/ledger'
 
-const emptyForm = { customerId: '', billId: '', amount: '', paymentMode: 'CASH', notes: '' }
+const emptyForm = { customerId: '', billId: '', amount: '', paymentMode: 'CASH', notes: '', waivedAmount: '' }
 
 const computeRunningOutstandings = (paymentsList, billsList, customersList) => {
   const paymentsByCustomer = {}
@@ -917,11 +917,26 @@ Please clear your outstanding balance as soon as possible. Thank you for doing b
 
   const handleSave = async (e) => {
     e.preventDefault()
+    
+    const enteredAmount = Number(form.amount || 0)
+    const enteredWaive = form.waivedAmount ? Number(form.waivedAmount) : 0
+
+    if (enteredAmount <= 0 && enteredWaive <= 0) {
+      toast.error('Please enter Amount or Waive-off Amount.')
+      return
+    }
+
+    if (enteredWaive > 200) {
+      toast.error('Waive-off amount cannot exceed ₹200.')
+      return
+    }
+
     setSaving(true)
     try {
       const payload = {
         ...form,
-        amount: Number(form.amount || 0),
+        amount: enteredAmount,
+        waivedAmount: enteredWaive > 0 ? enteredWaive : null,
         billId: form.billId || null
       }
 
@@ -969,7 +984,7 @@ Please clear your outstanding balance as soon as possible. Thank you for doing b
         confirmedByUser: true
       }
       const res = await api.post('/payments', payload)
-      const savedPayment = res.data
+      const savedPayment = res.data?.data || res.data
 
       // Build success summary toast
       const appliedAmt = savedPayment?.appliedAmount || pendingPaymentForm.amount
@@ -1274,7 +1289,7 @@ Please clear your outstanding balance as soon as possible. Thank you for doing b
           <div className="form-row">
             <div className="form-group">
               <label className="form-label">Amount ₹ *</label>
-              <input className="form-input" type="number" min="1" step="0.01" value={form.amount} onChange={e => updateField('amount', e.target.value)} required placeholder="0.00" />
+              <input className="form-input" type="number" min="0" step="0.01" value={form.amount} onChange={e => updateField('amount', e.target.value)} placeholder="0.00" />
             </div>
             <div className="form-group">
               <label className="form-label">Payment Mode *</label>
@@ -1284,6 +1299,21 @@ Please clear your outstanding balance as soon as possible. Thank you for doing b
               </select>
             </div>
           </div>
+          {(isAdmin || isManager) && (
+            <div className="form-group">
+              <label className="form-label">Waive-off Amount ₹ (Optional, Max ₹200)</label>
+              <input 
+                className="form-input" 
+                type="number" 
+                min="0" 
+                max="200" 
+                step="0.01" 
+                value={form.waivedAmount || ''} 
+                onChange={e => updateField('waivedAmount', e.target.value)} 
+                placeholder="0.00" 
+              />
+            </div>
+          )}
           <div className="form-group">
             <label className="form-label">Notes</label>
             <textarea className="form-textarea" value={form.notes} onChange={e => updateField('notes', e.target.value)} placeholder="Optional notes..." rows={2} />
@@ -1317,11 +1347,19 @@ Please clear your outstanding balance as soon as possible. Thank you for doing b
               <label className="form-label">Amount Paid</label>
               <input className="form-input" value={`₹${Number(editingPayment.amount || 0).toLocaleString('en-IN')}`} disabled style={{ opacity: 0.7 }} />
             </div>
-            <div className="form-group">
+             <div className="form-group">
               <label className="form-label">Payment Mode</label>
-              <select className="form-select" value={editPaymentMode} onChange={e => setEditPaymentMode(e.target.value)}>
+              <select 
+                className="form-select" 
+                value={editPaymentMode} 
+                onChange={e => setEditPaymentMode(e.target.value)}
+                disabled={editingPayment?.paymentMode === 'WAIVE_OFF'}
+              >
                 <option value="CASH">Cash</option>
                 <option value="UPI">UPI</option>
+                {editingPayment?.paymentMode === 'WAIVE_OFF' && (
+                  <option value="WAIVE_OFF">Waive-off / Round-off</option>
+                )}
               </select>
             </div>
             <div className="form-group">

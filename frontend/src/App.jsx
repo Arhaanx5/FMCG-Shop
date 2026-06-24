@@ -25,6 +25,7 @@ import SchedulerManager from './pages/SchedulerManager'
 import HealthReport from './pages/HealthReport'
 import TrendDashboard from './pages/TrendDashboard'
 import UdharCollection from './pages/UdharCollection'
+import CODCollectionDashboard from './pages/CODCollectionDashboard'
 
 function ProtectedRoute({ children, roles }) {
   const { isAuthenticated, user } = useAuth()
@@ -91,6 +92,7 @@ export default function App() {
         <Route path="health-report" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><HealthReport /></ProtectedRoute>} />
         <Route path="health-trend" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><TrendDashboard /></ProtectedRoute>} />
         <Route path="receivables" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><UdharCollection /></ProtectedRoute>} />
+        <Route path="cod-dashboard" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><CODCollectionDashboard /></ProtectedRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

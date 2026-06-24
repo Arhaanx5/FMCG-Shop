@@ -26,7 +26,6 @@ public class ReceiveStockRequest {
     @NotNull(message = "Stock received date is required")
     private LocalDate stockReceivedDate;
 
-    @NotNull(message = "Manufacturing date is required")
     private LocalDate manufacturingDate;
 
     private String remarks;

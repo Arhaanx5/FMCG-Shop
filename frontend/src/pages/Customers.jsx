@@ -70,7 +70,7 @@ const getCustomerLedger = (customer, allBills, allPayments) => {
 
   // 3. Payments
   custPayments.forEach(p => {
-    const baseDesc = `Payment Received (${p.paymentMode})`
+    const baseDesc = p.paymentMode === 'WAIVE_OFF' ? 'Round-off Adjustment' : `Payment Received (${p.paymentMode})`
     const billLink = p.billNumber ? ` — Bill ${p.billNumber}` : ''
     const notePart = p.notes ? ` · ${p.notes}` : ''
     const adjustNote = p.adjustmentNote ? ` 🔁 ${p.adjustmentNote}` : ''

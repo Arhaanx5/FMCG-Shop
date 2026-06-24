@@ -9,12 +9,15 @@ import java.math.BigDecimal;
 @Builder
 public class BillItemResponse {
 
+    private java.util.UUID id;
+    private java.util.UUID productId;
     private String productName;
     private String brand;
     private UnitType unitType;
     private int quantity;
     private int freeQuantity;
     private BigDecimal rate;
+    private BigDecimal originalRate;
 
     // GST — show only percent and amount
     private BigDecimal gstPercent;

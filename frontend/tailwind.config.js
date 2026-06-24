@@ -10,6 +10,16 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Custom intermediate slate colors used across the codebase
+        'slate-105': '#f1f5f9',
+        'slate-150': '#e8edf2',
+        'slate-350': '#b4c6dd',
+        'slate-450': '#7a8ba3',
+        'slate-550': '#556780',
+        'slate-605': '#40516b',
+        'slate-650': '#384961',
+        'slate-750': '#243247',
+        'slate-850': '#131d2e',
         // Theme colors matching the premium Material-inspired palette
         primary: {
           50: '#fffbeb',

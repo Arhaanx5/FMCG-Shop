@@ -390,6 +390,11 @@ client.on('disconnected', (reason) => {
     scheduleReconnect();
 });
 
+client.on('message', async (msg) => {
+    if (msg.fromMe) return;
+    log('INFO', 'RECEIVE', `Incoming message from ${msg.from} ignored (1-Way OTP system active)`);
+});
+
 // Keep-alive heartbeat
 setInterval(async () => {
     if (clientStatus !== 'CONNECTED') return;
@@ -455,17 +460,14 @@ app.use(express.json({ limit: '20mb' }));
 
 // ── Internal Secret Auth Middleware ──────────────────
 // Protects sensitive endpoints from SSRF / unauthorized access
-const INTERNAL_SECRET = process.env.WA_INTERNAL_SECRET || null;
+const INTERNAL_SECRET = process.env.WA_INTERNAL_SECRET;
+if (!INTERNAL_SECRET) {
+    log('ERROR', 'SECURITY', 'WA_INTERNAL_SECRET missing — refusing to start.');
+    process.exit(1);
+}
+const BACKEND_PORT = process.env.BACKEND_PORT || 8085; // 8085 = UAT, 8086 = Prod
 
 function requireInternalSecret(req, res, next) {
-    if (!INTERNAL_SECRET) {
-        // If no secret configured, only allow localhost
-        const ip = req.ip || req.connection.remoteAddress || '';
-        if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') {
-            return next();
-        }
-        return res.status(403).json({ error: 'Forbidden' });
-    }
     const provided = req.headers['x-internal-secret'];
     if (provided !== INTERNAL_SECRET) {
         log('WARN', 'AUTH', `Rejected request — invalid internal secret from ${req.ip}`);

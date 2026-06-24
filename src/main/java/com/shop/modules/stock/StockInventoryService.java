@@ -75,11 +75,19 @@ public class StockInventoryService {
         Stock stock = getOrCreateStock(product.getId());
 
         int oldSecondaryRemaining = batch.getSecondaryRemaining();
-        int change = newSecondaryRemaining - oldSecondaryRemaining;
-
         int oldOfferRemaining = batch.getOfferSecondaryRemaining() != null ? batch.getOfferSecondaryRemaining() : 0;
-        int offerChange = newOfferSecondaryRemaining != null ? (newOfferSecondaryRemaining - oldOfferRemaining) : 0;
+        BigDecimal oldBuyPrice = batch.getBuyPriceWithoutTax();
 
+        boolean qtyChanged = oldSecondaryRemaining != newSecondaryRemaining;
+        boolean offerChanged = newOfferSecondaryRemaining != null && (oldOfferRemaining != newOfferSecondaryRemaining);
+        boolean priceChanged = newBuyPriceWithoutTax != null && (oldBuyPrice == null || oldBuyPrice.compareTo(newBuyPriceWithoutTax) != 0);
+
+        if (!qtyChanged && !offerChanged && !priceChanged) {
+            return;
+        }
+
+        int change = newSecondaryRemaining - oldSecondaryRemaining;
+        int offerChange = newOfferSecondaryRemaining != null ? (newOfferSecondaryRemaining - oldOfferRemaining) : 0;
         int totalChange = change + offerChange;
 
         int qtyBefore = stock.getTotalSecondaryUnits();
@@ -102,7 +110,6 @@ public class StockInventoryService {
             }
         }
 
-        BigDecimal oldBuyPrice = batch.getBuyPriceWithoutTax();
         if (newBuyPriceWithoutTax != null) {
             batch.setBuyPriceWithoutTax(newBuyPriceWithoutTax);
             BigDecimal gstRate = product.getGstPercent().divide(BigDecimal.valueOf(100));
@@ -142,7 +149,7 @@ public class StockInventoryService {
                 .build();
         stockAdjustmentLogRepository.save(log);
 
-        movementService.logMovementAsync(
+        movementService.logMovement(
                 product,
                 batch,
                 "ADJUSTMENT",

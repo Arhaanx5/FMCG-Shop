@@ -356,7 +356,7 @@ export default function HealthReport() {
                 .map((key) => {
                   const data = report[key]
                   if (!data) return null
-                  const isVisible = activeTab === key
+                  const isVisible = key.startsWith(activeTab)
 
                   return (
                     <div

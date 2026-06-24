@@ -47,22 +47,28 @@ function buildStompFrame(command, headers = {}, body = '') {
   return frame
 }
 
-export default function usePaymentSocket(onPaymentReceived, enabled = true) {
+export default function usePaymentSocket(onPaymentReceived, onDeliveryReceived, enabled = true) {
   const [connected, setConnected] = useState(false)
   const wsRef = useRef(null)
   const heartbeatRef = useRef(null)
   const callbackRef = useRef(onPaymentReceived)
+  const deliveryCallbackRef = useRef(onDeliveryReceived)
 
-  // Keep callback ref updated to prevent unnecessary socket re-registrations
+  // Keep callback refs updated to prevent unnecessary socket re-registrations
   useEffect(() => {
     callbackRef.current = onPaymentReceived
   }, [onPaymentReceived])
+
+  useEffect(() => {
+    deliveryCallbackRef.current = onDeliveryReceived
+  }, [onDeliveryReceived])
 
   useEffect(() => {
     if (!enabled) return
 
     let ws = null
     const subId = 'sub-payments'
+    const delSubId = 'sub-deliveries'
     let isDestroyed = false
     let retryDelay = 3000 // Start reconnect at 3s
 
@@ -91,11 +97,15 @@ export default function usePaymentSocket(onPaymentReceived, enabled = true) {
           const frame = parseStompFrame(raw)
 
           if (frame.command === 'CONNECTED') {
-            console.log('🔌 Payment WS: STOMP Connected, subscribing to /topic/payments')
+            console.log('🔌 Payment WS: STOMP Connected, subscribing to topics')
             setConnected(true)
             ws.send(buildStompFrame('SUBSCRIBE', {
               id: subId,
               destination: `/topic/payments`,
+            }))
+            ws.send(buildStompFrame('SUBSCRIBE', {
+              id: delSubId,
+              destination: `/topic/deliveries`,
             }))
 
             // Heartbeat frame every 10s to keep connection alive
@@ -109,13 +119,20 @@ export default function usePaymentSocket(onPaymentReceived, enabled = true) {
           if (frame.command === 'MESSAGE' && frame.body) {
             try {
               const data = JSON.parse(frame.body)
-              console.log('📡 Payment WS: Received payment notification:', data)
-              // Basic validation to check required fields before triggering callback
-              if (data && data.amount && data.customerName && callbackRef.current) {
-                callbackRef.current(data)
+              const dest = frame.headers.destination
+              if (dest && dest.includes('/topic/payments')) {
+                console.log('📡 Payment WS: Received payment notification:', data)
+                if (data && data.amount && data.customerName && callbackRef.current) {
+                  callbackRef.current(data)
+                }
+              } else if (dest && dest.includes('/topic/deliveries')) {
+                console.log('📡 Payment WS: Received delivery notification:', data)
+                if (deliveryCallbackRef.current) {
+                  deliveryCallbackRef.current(data)
+                }
               }
             } catch (err) {
-              console.warn('📡 Payment WS: Invalid payment frame JSON:', err)
+              console.warn('📡 Payment WS: Invalid frame JSON:', err)
             }
           }
         }

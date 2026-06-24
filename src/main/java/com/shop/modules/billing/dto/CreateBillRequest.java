@@ -59,5 +59,6 @@ public class CreateBillRequest {
         private java.math.BigDecimal gstPercent;
         private java.math.BigDecimal cessPercent;
         private boolean offer = false;
+        private java.math.BigDecimal customRate;
     }
 }

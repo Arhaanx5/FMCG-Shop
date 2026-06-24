@@ -114,7 +114,7 @@ public class StockReceiveService {
             movementType = "OPENING_STOCK";
         }
 
-        movementService.logMovementAsync(
+        movementService.logMovement(
                 product,
                 batch,
                 movementType,

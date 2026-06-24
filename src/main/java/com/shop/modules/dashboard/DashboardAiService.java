@@ -254,6 +254,7 @@ public class DashboardAiService {
           .append("- Monthly Revenue: INR ").append(monthly.getTotalRevenue()).append("\n")
           .append("- Monthly Collected: INR ").append(monthly.getTotalCollected())
           .append(" (Cash: INR ").append(monthly.getTotalCollectedCash()).append(", UPI: INR ").append(monthly.getTotalCollectedUpi()).append(", Udhar Collected: INR ").append(monthly.getTotalCollectedUdhar()).append(")\n")
+          .append("- Waived Off / Round-off Adjustments: INR ").append(monthly.getTotalWaived()).append("\n")
           .append("- Total Monthly Expenses: INR ").append(monthly.getTotalExpenses()).append("\n")
           .append("  (Expense Breakdown by Category: ").append(monthly.getExpensesByCategory()).append(")\n")
           .append("- Net Profit: INR ").append(monthly.getNetProfit()).append("\n")
@@ -285,6 +286,9 @@ public class DashboardAiService {
             sb.append("### DATA RELIABILITY NOTE:\n")
               .append("- COGS batch-fallback disclosure: ").append(String.format("%.2f", fallbackPercentage))
               .append("% of COGS used current product catalog default pricing. Minor margin estimation variance is possible.\n\n");
+        } else {
+            sb.append("### DATA RELIABILITY NOTE:\n")
+              .append("- COGS batch-fallback disclosure: 0.00% of COGS used current product catalog default pricing. 100% of transaction costs are accurately tracked using batches.\n\n");
         }
 
         sb.append("Generate the report using the following JSON schema format. Return ONLY the JSON object:\n")

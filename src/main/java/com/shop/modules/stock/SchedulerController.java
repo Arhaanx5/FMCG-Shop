@@ -3,6 +3,7 @@ package com.shop.modules.stock;
 import com.shop.common.ApiResponse;
 import com.shop.modules.backup.BackupService;
 import com.shop.modules.billing.SoftReserveScheduler;
+import com.shop.modules.delivery.CODReconciliationScheduler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -26,6 +27,9 @@ public class SchedulerController {
     @Autowired(required = false)
     private SoftReserveScheduler softReserveScheduler;
 
+    @Autowired(required = false)
+    private CODReconciliationScheduler codReconciliationScheduler;
+
     // ── GET all schedulers status ──
     @GetMapping("/status")
     @PreAuthorize("hasRole('ADMIN')")
@@ -46,6 +50,11 @@ public class SchedulerController {
         statuses.put("softReserve", Map.of(
             "name", "Soft Reservation Release Sweep",
             "status", softReserveScheduler != null ? softReserveScheduler.getStatus() : Map.of("enabled", false, "message", "Disabled")
+        ));
+
+        statuses.put("codReconciliation", Map.of(
+            "name", "COD Reconciliation & Escalation Sweep",
+            "status", codReconciliationScheduler != null ? codReconciliationScheduler.getStatus() : Map.of("enabled", false, "message", "Disabled")
         ));
 
         return ResponseEntity.ok(ApiResponse.success("Schedulers status retrieved", statuses));
@@ -105,5 +114,27 @@ public class SchedulerController {
         int count = softReserveScheduler.runSweep();
         return ResponseEntity.ok(ApiResponse.success(
                 "Soft reserve cleanup sweep completed. " + count + " expired draft bill(s) cancelled and released.", null));
+    }
+
+    // ── POST run COD EOD now ──
+    @PostMapping("/cod-reconciliation/run-now")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<String>> runCodReconciliationNow() {
+        if (codReconciliationScheduler == null) {
+            return ResponseEntity.ok(ApiResponse.success("COD Reconciliation Scheduler is disabled in configurations.", null));
+        }
+        codReconciliationScheduler.runEodNow();
+        return ResponseEntity.ok(ApiResponse.success("COD EOD reconciliation report generation triggered successfully.", null));
+    }
+
+    // ── POST run COD Escalation now ──
+    @PostMapping("/cod-escalation/run-now")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<String>> runCodEscalationNow() {
+        if (codReconciliationScheduler == null) {
+            return ResponseEntity.ok(ApiResponse.success("COD Reconciliation Scheduler is disabled in configurations.", null));
+        }
+        codReconciliationScheduler.runEscalationNow();
+        return ResponseEntity.ok(ApiResponse.success("COD outstanding deliveries escalation check completed.", null));
     }
 }

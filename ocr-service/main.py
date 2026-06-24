@@ -180,10 +180,11 @@ async def scan_invoice(file: UploadFile = File(...)):
         
         # List of models to try in sequence to bypass 20 requests/day/model free tier limit or deprecated models
         models_to_try = [
+            "gemini-3.1-flash-lite",
+            "gemini-3-flash-preview",
             "gemini-2.5-flash",
             "gemini-3.5-flash",
             "gemini-2.5-flash-lite",
-            "gemini-3.1-flash-lite",
             "gemini-2.0-flash"
         ]
         
@@ -298,6 +299,64 @@ async def scan_invoice(file: UploadFile = File(...)):
         logger.error(f"Error processing invoice scanning: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+async def call_gemini_with_fallback(prompt: str, system_instruction: Optional[str] = None, json_mode: bool = False) -> str:
+    models_to_try = [
+        "gemini-3.1-flash-lite",
+        "gemini-3-flash-preview",
+        "gemini-2.5-flash",
+        "gemini-3.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash"
+    ]
+    
+    last_error = None
+    headers = {"Content-Type": "application/json"}
+    
+    for model_name in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+        
+        generation_config = {}
+        if json_mode:
+            generation_config["responseMimeType"] = "application/json"
+            
+        if model_name.startswith("gemini-2.5"):
+            generation_config["thinkingConfig"] = {
+                "thinkingBudget": 0
+            }
+            
+        payload = {
+            "contents": [{
+                "parts": [{"text": prompt}]
+            }],
+            "generationConfig": generation_config
+        }
+        
+        if system_instruction:
+            payload["systemInstruction"] = {
+                "parts": [{"text": system_instruction}]
+            }
+            
+        logger.info(f"Calling Gemini with model: {model_name}...")
+        try:
+            res = await asyncio.to_thread(requests.post, url, json=payload, headers=headers)
+            if res.status_code == 200:
+                response_json = res.json()
+                text = response_json['candidates'][0]['content']['parts'][0]['text'].strip()
+                logger.info(f"Successfully received response from model: {model_name}")
+                return text
+            else:
+                logger.warning(f"Model {model_name} returned status code {res.status_code}: {res.text}")
+                last_error = f"{res.status_code}: {res.text}"
+        except Exception as e:
+            logger.error(f"Error calling model {model_name}: {e}")
+            last_error = str(e)
+            
+    raise HTTPException(
+        status_code=500,
+        detail=f"All Gemini models exhausted or failed. Last error: {last_error}"
+    )
+
 class TextGenerationRequest(BaseModel):
     prompt: str
 
@@ -309,74 +368,26 @@ class StructuredRequest(BaseModel):
 async def generate_text(req: TextGenerationRequest):
     if not api_key:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not configured.")
-    try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
-        payload = {
-            "contents": [{
-                "parts": [{"text": req.prompt}]
-            }]
-        }
-        headers = {"Content-Type": "application/json"}
-        response = requests.post(url, json=payload, headers=headers)
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=response.text)
-        
-        response_json = response.json()
-        try:
-            text = response_json['candidates'][0]['content']['parts'][0]['text'].strip()
-            return {"text": text}
-        except (KeyError, IndexError):
-            raise HTTPException(status_code=500, detail="Unexpected response structure from Gemini API")
-    except Exception as e:
-        logger.error(f"Error in generate_text: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    text = await call_gemini_with_fallback(req.prompt, json_mode=False)
+    return {"text": text}
 
 @app.post("/ocr/parse-structured")
 async def parse_structured(req: StructuredRequest):
     if not api_key:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not configured.")
-    try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
-        payload = {
-            "contents": [{
-                "parts": [{"text": req.prompt}]
-            }],
-            "generationConfig": {
-                "responseMimeType": "application/json"
-            }
-        }
+    response_text = await call_gemini_with_fallback(req.prompt, req.systemInstruction, json_mode=True)
+    
+    # Clean JSON fences if present
+    if "```json" in response_text:
+        response_text = response_text.split("```json")[1].split("```")[0].strip()
+    elif "```" in response_text:
+        response_text = response_text.split("```")[1].split("```")[0].strip()
         
-        if req.systemInstruction:
-            payload["systemInstruction"] = {
-                "parts": [{"text": req.systemInstruction}]
-            }
-            
-        headers = {"Content-Type": "application/json"}
-        response = requests.post(url, json=payload, headers=headers)
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=response.text)
-            
-        response_json = response.json()
-        try:
-            response_text = response_json['candidates'][0]['content']['parts'][0]['text'].strip()
-        except (KeyError, IndexError):
-            raise HTTPException(status_code=500, detail="Unexpected response structure from Gemini API")
-            
-        # Clean JSON fences if present, though responseMimeType: application/json should return raw JSON
-        if "```json" in response_text:
-            response_text = response_text.split("```json")[1].split("```")[0].strip()
-        elif "```" in response_text:
-            response_text = response_text.split("```")[1].split("```")[0].strip()
-            
-        try:
-            parsed_json = json.loads(response_text)
-            return parsed_json
-        except json.JSONDecodeError:
-            return {"rawText": response_text}
-            
-    except Exception as e:
-        logger.error(f"Error in parse_structured: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    try:
+        parsed_json = json.loads(response_text)
+        return parsed_json
+    except json.JSONDecodeError:
+        return {"rawText": response_text}
 
 if __name__ == "__main__":
     import uvicorn

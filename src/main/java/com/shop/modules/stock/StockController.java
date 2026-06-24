@@ -270,4 +270,30 @@ public class StockController {
         @jakarta.validation.constraints.NotBlank(message = "Reason for adjustment must be specified")
         private String reason;
     }
+
+    @PostMapping("/batches/{batchId}/mark-damage")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<Void>> markDamage(
+            @PathVariable UUID batchId,
+            @Valid @RequestBody MarkDamageRequest req,
+            java.security.Principal principal) {
+        
+        String username = principal != null ? principal.getName() : "System";
+        stockService.markBatchDamage(batchId, req.getQuantity(), req.getDamageType(), req.getReason(), username);
+        
+        return ResponseEntity.ok(ApiResponse.success("Stock damage logged successfully", null));
+    }
+
+    @lombok.Data
+    public static class MarkDamageRequest {
+        @jakarta.validation.constraints.NotNull(message = "Quantity cannot be null")
+        @jakarta.validation.constraints.Min(value = 1, message = "Quantity must be at least 1")
+        private Integer quantity;
+
+        @jakarta.validation.constraints.NotBlank(message = "Damage type must be specified")
+        private String damageType;
+
+        @jakarta.validation.constraints.NotBlank(message = "Reason must be specified")
+        private String reason;
+    }
 }

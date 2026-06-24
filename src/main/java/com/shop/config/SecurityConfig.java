@@ -101,6 +101,7 @@ public class SecurityConfig {
                                 "/schedulers",
                                 "/api/auth/**",
                                 "/api/config/**",
+                                "/api/deliveries/whatsapp-reply",
                                 "/ws/**",
                                 "/actuator/health",   // Only health check is public
                                 "/error"
@@ -161,7 +162,8 @@ public class SecurityConfig {
                 "https://*.trycloudflare.com",
                 "https://uat.laritraders.store",
                 "https://app.laritraders.store",
-                "https://*.laritraders.store"
+                "https://*.laritraders.store",
+                "https://*.pages.dev"
         ));
         config.setAllowedMethods(List.of("GET","POST","PUT","DELETE","OPTIONS"));
         config.setAllowedHeaders(List.of("*"));

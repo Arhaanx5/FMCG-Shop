@@ -44,6 +44,11 @@ public class BillService {
     private final ProductService productService;
     private final com.shop.modules.stock.StockBatchRepository stockBatchRepository;
     private final PaymentRepository paymentRepository;
+    private final BillEditHistoryRepository billEditHistoryRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private com.shop.modules.delivery.DeliveryService deliveryService;
 
     // ── Convert entity to response DTO ──
     private BillResponse toResponse(Bill bill) {
@@ -57,6 +62,9 @@ public class BillService {
                 new ArrayList<>();
 
         for (BillItem item : bill.getItems()) {
+            if (item.getQuantity() <= 0) {
+                continue;
+            }
             totalQuantity += item.getQuantity();
 
             BigDecimal itemSubtotal = item.getRate()
@@ -77,6 +85,8 @@ public class BillService {
             }
 
             itemResponses.add(BillItemResponse.builder()
+                    .id(item.getId())
+                    .productId(item.getProduct().getId())
                     .productName(
                             item.getProduct().getName())
                     .brand(item.getProduct().getBrand())
@@ -84,6 +94,7 @@ public class BillService {
                     .quantity(item.getQuantity())
                     .freeQuantity(item.getFreeQuantity())
                     .rate(item.getRate())
+                    .originalRate(item.getOriginalRate() != null ? item.getOriginalRate() : item.getRate())
                     .gstPercent(item.getGstPercent())
                     .gstAmount(item.getGstAmount())
                     .cessPercent(item.getCessPercent())
@@ -144,6 +155,7 @@ public class BillService {
                 .items(itemResponses)
                 .totalItems(itemResponses.size())
                 .totalQuantity(totalQuantity)
+                .version(bill.getVersion())
                 .build();
     }
 
@@ -195,6 +207,19 @@ public class BillService {
                                         "Bill not found: " + id)));
     }
 
+    public BillResponse getBillById(UUID id, String username) {
+        Bill bill = billRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Bill not found: " + id));
+        User user = userRepository.findByPhone(username)
+                .orElseThrow(() -> new RuntimeException("User not found: " + username));
+        if (user.getRole() == UserRole.SALESMAN || user.getRole() == UserRole.DELIVERY_BOY) {
+            if (bill.getCreatedBy() == null || !bill.getCreatedBy().getId().equals(user.getId())) {
+                throw new org.springframework.security.access.AccessDeniedException("You are not authorized to view this bill");
+            }
+        }
+        return toResponse(bill);
+    }
+
     // ── Get pending bills ──
     public List<BillResponse> getPendingBills() {
         return billRepository.findPendingBills()
@@ -214,11 +239,90 @@ public class BillService {
                 .collect(Collectors.toList());
     }
 
+    public com.shop.common.PagedResponse<BillResponse> getBillsPaged(
+            BillStatus status,
+            Boolean excludeDrafts,
+            String search,
+            int page,
+            int size,
+            String sort,
+            String username) {
+        User user = userRepository.findByPhone(username)
+                .orElseThrow(() -> new RuntimeException("User not found: " + username));
+        
+        String[] sortParts = sort.split(",");
+        org.springframework.data.domain.Sort sortObj = org.springframework.data.domain.Sort.unsorted();
+        if (sortParts.length == 2) {
+            org.springframework.data.domain.Sort.Direction dir = sortParts[1].equalsIgnoreCase("desc")
+                    ? org.springframework.data.domain.Sort.Direction.DESC
+                    : org.springframework.data.domain.Sort.Direction.ASC;
+            sortObj = org.springframework.data.domain.Sort.by(dir, sortParts[0]);
+        }
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(page, size, sortObj);
+
+        String searchVal = (search == null || search.trim().isEmpty()) ? null : search.trim();
+        UUID salesmanId = (user.getRole() == UserRole.SALESMAN || user.getRole() == UserRole.DELIVERY_BOY) ? user.getId() : null;
+
+        org.springframework.data.domain.Page<Bill> bills = billRepository.findBillsPaged(
+                status,
+                excludeDrafts != null && excludeDrafts,
+                salesmanId,
+                searchVal,
+                pageable
+        );
+
+        List<BillResponse> content = bills.getContent().stream().map(this::toResponse).collect(Collectors.toList());
+        return com.shop.common.PagedResponse.<BillResponse>builder()
+                .content(content)
+                .currentPage(bills.getNumber())
+                .totalPages(bills.getTotalPages())
+                .totalElements(bills.getTotalElements())
+                .size(bills.getSize())
+                .first(bills.isFirst())
+                .last(bills.isLast())
+                .build();
+    }
+
+    public com.shop.common.PagedResponse<BillResponse> getCustomerHistoryPaged(
+            UUID customerId,
+            int page,
+            int size,
+            String username) {
+        User user = userRepository.findByPhone(username)
+                .orElseThrow(() -> new RuntimeException("User not found: " + username));
+        
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(
+                page, size, org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "createdAt")
+        );
+
+        UUID salesmanId = (user.getRole() == UserRole.SALESMAN || user.getRole() == UserRole.DELIVERY_BOY) ? user.getId() : null;
+        org.springframework.data.domain.Page<Bill> bills = billRepository.findCustomerHistoryPaged(customerId, salesmanId, pageable);
+
+        List<BillResponse> content = bills.getContent().stream().map(this::toResponse).collect(Collectors.toList());
+        return com.shop.common.PagedResponse.<BillResponse>builder()
+                .content(content)
+                .currentPage(bills.getNumber())
+                .totalPages(bills.getTotalPages())
+                .totalElements(bills.getTotalElements())
+                .size(bills.getSize())
+                .first(bills.isFirst())
+                .last(bills.isLast())
+                .build();
+    }
+
     // ── Create bill ──
     @Transactional(rollbackFor = RuntimeException.class)
     public BillResponse createBill(
             CreateBillRequest req,
             String createdByPhone) {
+        return createBill(req, createdByPhone, false);
+    }
+
+    @Transactional(rollbackFor = RuntimeException.class)
+    public BillResponse createBill(
+            CreateBillRequest req,
+            String createdByPhone,
+            boolean overrideCost) {
 
         // Validate customer
         Customer customer = customerService.findCustomerByIdentifier(req.getCustomerId());
@@ -287,6 +391,7 @@ public class BillService {
                 : req.getItems()) {
             Product product = productService.findProductByIdentifier(itemReq.getProductId());
             checkStockAvailability(product, itemReq, isDraft);
+            checkPriceOverrideLimits(product, itemReq, user, overrideCost);
         }
 
         String billNumber = generateBillNumber();
@@ -313,10 +418,15 @@ public class BillService {
 
             Product product = productService.findProductByIdentifier(itemReq.getProductId());
 
-            // Get rate based on unit type (stored inclusive of tax)
-            BigDecimal inclusivePrice = getRateForUnit(
-                    product,
-                    itemReq.getUnitType().name());
+            // Get rate based on unit type (stored inclusive of tax, or overridden by customRate)
+            BigDecimal inclusivePrice;
+            if (itemReq.getCustomRate() != null && itemReq.getCustomRate().compareTo(BigDecimal.ZERO) >= 0) {
+                inclusivePrice = itemReq.getCustomRate();
+            } else {
+                inclusivePrice = getRateForUnit(
+                        product,
+                        itemReq.getUnitType().name());
+            }
 
             BigDecimal itemGstPercent = product.getGstPercent();
             BigDecimal itemCessPercent = product.getCessPercent() != null ? product.getCessPercent() : BigDecimal.ZERO;
@@ -331,9 +441,11 @@ public class BillService {
             BigDecimal gstAmount;
             BigDecimal cessAmount;
             BigDecimal rate;
+            BigDecimal originalRate;
 
             if (itemReq.isOffer()) {
                 rate = BigDecimal.ZERO;
+                originalRate = BigDecimal.ZERO;
                 itemTotal = BigDecimal.ZERO;
                 itemSubtotal = BigDecimal.ZERO;
                 gstAmount = BigDecimal.ZERO;
@@ -367,6 +479,14 @@ public class BillService {
 
                 // 5. Back-calculate the base unit rate for display / storage
                 rate = itemSubtotal.divide(BigDecimal.valueOf(itemReq.getQuantity()), 4, RoundingMode.HALF_UP);
+
+                // 6. Calculate default original base rate (excluding tax)
+                BigDecimal defaultInclusivePrice = getRateForUnit(product, itemReq.getUnitType().name());
+                BigDecimal originalTotal = defaultInclusivePrice
+                        .multiply(BigDecimal.valueOf(itemReq.getQuantity()))
+                        .setScale(2, RoundingMode.HALF_UP);
+                BigDecimal originalSubtotal = originalTotal.divide(taxDivisor, 2, RoundingMode.HALF_UP);
+                originalRate = originalSubtotal.divide(BigDecimal.valueOf(itemReq.getQuantity()), 4, RoundingMode.HALF_UP);
             }
 
             // Get source batch
@@ -397,6 +517,7 @@ public class BillService {
                     .freeQuantity(
                             itemReq.getFreeQuantity())
                     .rate(rate)
+                    .originalRate(originalRate)
                     .gstPercent(itemReq.isOffer() ? BigDecimal.ZERO : itemGstPercent)
                     .gstAmount(gstAmount)
                     .cessPercent(itemReq.isOffer() ? BigDecimal.ZERO : itemCessPercent)
@@ -418,33 +539,60 @@ public class BillService {
                             product.getPrimaryUnit());
 
             int totalQtyToDeduct = itemReq.getQuantity() + itemReq.getFreeQuantity();
+            int secondaryQty = isPrimary ? totalQtyToDeduct * product.getSecondaryPerPrimary() : totalQtyToDeduct;
+
+            BigDecimal ratePerSecondary = BigDecimal.ZERO;
+            if (!itemReq.isOffer()) {
+                if (isPrimary) {
+                    ratePerSecondary = rate.divide(BigDecimal.valueOf(product.getSecondaryPerPrimary()), 4, RoundingMode.HALF_UP);
+                } else {
+                    ratePerSecondary = rate;
+                }
+            }
 
             if (itemReq.isOffer()) {
                 if (!isDraft) {
-                    int secondaryQty = isPrimary ? totalQtyToDeduct * product.getSecondaryPerPrimary() : totalQtyToDeduct;
-                    stockService.deductOfferUnits(linkedBatch.getId(), secondaryQty);
+                    stockService.deductOfferUnits(linkedBatch.getId(), secondaryQty, createdByPhone, billNumber, ratePerSecondary, "Sale of offer unit via bill " + billNumber);
                 }
             } else {
                 if (isDraft) {
                     if (linkedBatch != null) {
-                        int totalSecondaryRequested = isPrimary
-                                ? totalQtyToDeduct * product.getSecondaryPerPrimary()
-                                : totalQtyToDeduct;
                         linkedBatch.setSecondarySoftReserved(
-                                (linkedBatch.getSecondarySoftReserved() != null ? linkedBatch.getSecondarySoftReserved() : 0) + totalSecondaryRequested);
+                                (linkedBatch.getSecondarySoftReserved() != null ? linkedBatch.getSecondarySoftReserved() : 0) + secondaryQty);
                         stockBatchRepository.save(linkedBatch);
                     }
                 } else {
+                    List<com.shop.modules.stock.dto.BatchDeductionRecord> depletions;
                     if (isPrimary) {
-                        stockService.deductByPrimary(
+                        depletions = stockService.deductByPrimary(
                                 product.getId(),
                                 totalQtyToDeduct,
-                                itemReq.getBatchId());
+                                itemReq.getBatchId(),
+                                createdByPhone,
+                                billNumber,
+                                ratePerSecondary,
+                                "Sale via bill " + billNumber);
                     } else {
-                        stockService.deductBySecondary(
+                        depletions = stockService.deductBySecondary(
                                 product.getId(),
                                 totalQtyToDeduct,
-                                itemReq.getBatchId());
+                                itemReq.getBatchId(),
+                                createdByPhone,
+                                billNumber,
+                                ratePerSecondary,
+                                "Sale via bill " + billNumber);
+                    }
+
+                    item.getBatchDeductions().clear();
+                    for (com.shop.modules.stock.dto.BatchDeductionRecord depletion : depletions) {
+                        StockBatch actualBatch = stockBatchRepository.findById(depletion.getBatchId())
+                                .orElseThrow(() -> new RuntimeException("Batch not found: " + depletion.getBatchId()));
+                        BillItemBatchDeduction deduction = BillItemBatchDeduction.builder()
+                                .billItem(item)
+                                .batch(actualBatch)
+                                .quantityDeducted(depletion.getQuantityDeducted())
+                                .build();
+                        item.getBatchDeductions().add(deduction);
                     }
                 }
             }
@@ -475,6 +623,10 @@ public class BillService {
                 bill.setPaidAmount(BigDecimal.ZERO);
                 bill.setPendingAmount(grandTotal);
             }
+            case COD -> {
+                bill.setPaidAmount(BigDecimal.ZERO);
+                bill.setPendingAmount(grandTotal);
+            }
             case PARTIAL -> {
                 BigDecimal paid =
                         req.getPaidAmount();
@@ -496,7 +648,9 @@ public class BillService {
         }
 
         if (targetStatus != BillStatus.DRAFT && targetStatus != BillStatus.CANCELLED) {
-            if (bill.getPendingAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            if (req.getPaymentMode() == PaymentMode.COD) {
+                bill.setStatus(BillStatus.COD_PENDING);
+            } else if (bill.getPendingAmount().compareTo(BigDecimal.ZERO) <= 0) {
                 bill.setStatus(BillStatus.PAID);
             } else if (bill.getPaidAmount().compareTo(BigDecimal.ZERO) > 0) {
                 bill.setStatus(BillStatus.PARTIAL);
@@ -667,15 +821,52 @@ public class BillService {
 
     // ── Generate bill number ──
     private String generateBillNumber() {
-        Integer max =
-                billRepository.findMaxBillSequence();
-        int next = (max != null ? max : 0) + 1;
+        Long next = billRepository.getNextBillSequence();
         return String.format("BILL-%05d", next);
+    }
+
+    private void checkPriceOverrideLimits(
+            Product product,
+            CreateBillRequest.BillItemRequest itemReq,
+            User user,
+            boolean overrideCost) {
+        
+        if (itemReq.isOffer()) {
+            return;
+        }
+        if (itemReq.getCustomRate() == null || itemReq.getCustomRate().compareTo(BigDecimal.ZERO) < 0) {
+            return;
+        }
+        
+        if (user.getRole() == UserRole.ADMIN) {
+            return;
+        }
+        
+        boolean isPrimary = itemReq.getUnitType().name().equalsIgnoreCase(product.getPrimaryUnit());
+        BigDecimal costLimit = isPrimary ? product.getBuyPriceWithTax()
+            : product.getBuyPriceWithTax().divide(BigDecimal.valueOf(product.getSecondaryPerPrimary()), 4, RoundingMode.HALF_UP);
+            
+        if (itemReq.getCustomRate().compareTo(costLimit) < 0) {
+            if (user.getRole() == UserRole.SALESMAN || user.getRole() == UserRole.DELIVERY_BOY) {
+                throw new RuntimeException("Price override not allowed: Custom rate for " 
+                        + product.getName() + " cannot be lower than purchase cost of ₹" + costLimit);
+            } else if (user.getRole() == UserRole.MANAGER) {
+                if (!overrideCost) {
+                    throw new com.shop.common.BelowCostWarningException("Warning: Custom rate for " 
+                            + product.getName() + " (₹" + itemReq.getCustomRate() + ") is lower than purchase cost of ₹" + costLimit);
+                }
+            }
+        }
     }
 
     // ── Cancel bill ──
     @Transactional
     public void cancelBill(UUID id) {
+        cancelBill(id, "System");
+    }
+
+    @Transactional
+    public void cancelBill(UUID id, String username) {
         Bill bill = billRepository.findById(id)
                 .orElseThrow(() ->
                         new jakarta.persistence.EntityNotFoundException(
@@ -709,43 +900,62 @@ public class BillService {
 
         // Add stock back for each item
         for (BillItem item : bill.getItems()) {
-
-            String unitType =
-                    item.getUnitType().name();
-            boolean isPrimary = unitType
-                    .equalsIgnoreCase(
-                            item.getProduct()
-                                    .getPrimaryUnit());
-
+            String unitType = item.getUnitType().name();
+            boolean isPrimary = unitType.equalsIgnoreCase(item.getProduct().getPrimaryUnit());
             int primaryQty = 0;
             int secondaryQty = 0;
-
             int totalItemQty = item.getQuantity() + item.getFreeQuantity();
 
             if (isPrimary) {
                 primaryQty = totalItemQty;
-                secondaryQty = totalItemQty
-                        * item.getProduct()
-                        .getSecondaryPerPrimary();
+                secondaryQty = totalItemQty * item.getProduct().getSecondaryPerPrimary();
             } else {
                 secondaryQty = totalItemQty;
             }
 
-            if (item.getOffer() != null && item.getOffer()) {
-                stockService.addBackOfferStock(item.getProduct().getId(), item.getBatch().getId(), secondaryQty);
-            } else {
-                stockService.addBackStock(
-                        item.getProduct().getId(),
-                        primaryQty,
-                        secondaryQty);
+            BigDecimal ratePerSecondary = isPrimary ? item.getRate().divide(BigDecimal.valueOf(item.getProduct().getSecondaryPerPrimary()), 4, RoundingMode.HALF_UP) : item.getRate();
 
-                stockService.restoreStockToBatches(
-                        item.getProduct().getId(),
-                        secondaryQty);
+            if (item.getBatchDeductions() != null && !item.getBatchDeductions().isEmpty()) {
+                for (BillItemBatchDeduction deduction : item.getBatchDeductions()) {
+                    int qty = deduction.getQuantityDeducted();
+                    if (item.getOffer() != null && item.getOffer()) {
+                        stockService.addBackOfferStock(item.getProduct().getId(), deduction.getBatch().getId(), qty, username, bill.getBillNumber(), BigDecimal.ZERO, "Cancelled bill " + bill.getBillNumber());
+                    } else {
+                        stockService.addBackStockToBatch(
+                                item.getProduct().getId(),
+                                deduction.getBatch().getId(),
+                                0,
+                                qty,
+                                username,
+                                bill.getBillNumber(),
+                                ratePerSecondary,
+                                "Cancelled bill " + bill.getBillNumber());
+                    }
+                }
+            } else {
+                // Fallback for legacy bills
+                if (item.getOffer() != null && item.getOffer()) {
+                    stockService.addBackOfferStock(item.getProduct().getId(), item.getBatch() != null ? item.getBatch().getId() : null, secondaryQty, username, bill.getBillNumber(), BigDecimal.ZERO, "Cancelled bill " + bill.getBillNumber());
+                } else {
+                    stockService.addBackStockToBatch(
+                            item.getProduct().getId(),
+                            item.getBatch() != null ? item.getBatch().getId() : null,
+                            primaryQty,
+                            secondaryQty,
+                            username,
+                            bill.getBillNumber(),
+                            ratePerSecondary,
+                            "Cancelled bill " + bill.getBillNumber());
+                }
             }
         }
 
         bill.setStatus(BillStatus.CANCELLED);
+
+        // Cancel linked deliveries
+        if (deliveryService != null) {
+            deliveryService.cancelDeliveryForBill(bill.getId(), "Linked Bill " + bill.getBillNumber() + " was cancelled");
+        }
 
         billRepository.save(bill);
         recalculateCustomerPending(bill.getCustomer());
@@ -754,6 +964,11 @@ public class BillService {
     // ── Return Items ──
     @Transactional(rollbackFor = RuntimeException.class)
     public BillResponse returnItems(UUID billId, ReturnItemsRequest req) {
+        return returnItems(billId, req, "System");
+    }
+
+    @Transactional(rollbackFor = RuntimeException.class)
+    public BillResponse returnItems(UUID billId, ReturnItemsRequest req, String username) {
         Bill bill = billRepository.findById(billId)
                 .orElseThrow(() -> new RuntimeException("Bill not found: " + billId));
 
@@ -765,6 +980,13 @@ public class BillService {
         BigDecimal totalSubtotalReduction = BigDecimal.ZERO;
         BigDecimal totalGstReduction = BigDecimal.ZERO;
         BigDecimal totalCessReduction = BigDecimal.ZERO;
+        BigDecimal totalDiscountReduction = BigDecimal.ZERO;
+
+        BigDecimal totalBeforeDiscount = bill.getSubtotal().add(bill.getGstTotal()).add(bill.getCessTotal());
+        BigDecimal discountRatio = BigDecimal.ZERO;
+        if (totalBeforeDiscount.compareTo(BigDecimal.ZERO) > 0 && bill.getDiscount().compareTo(BigDecimal.ZERO) > 0) {
+            discountRatio = bill.getDiscount().divide(totalBeforeDiscount, 6, RoundingMode.HALF_UP);
+        }
 
         for (ReturnItemsRequest.ReturnedItemRequest reqItem : req.getReturnedItems()) {
             BillItem item = bill.getItems().stream()
@@ -792,10 +1014,15 @@ public class BillService {
             // Proportional Subtotal reduction (total - gst - cess)
             BigDecimal subtotalReduction = refundAmount.subtract(gstReduction).subtract(cessReduction);
 
-            totalRefundAmount = totalRefundAmount.add(refundAmount);
+            // Deduct proportional discount share
+            BigDecimal discountShare = refundAmount.multiply(discountRatio).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal netRefundAmount = refundAmount.subtract(discountShare);
+
+            totalRefundAmount = totalRefundAmount.add(netRefundAmount);
             totalSubtotalReduction = totalSubtotalReduction.add(subtotalReduction);
             totalGstReduction = totalGstReduction.add(gstReduction);
             totalCessReduction = totalCessReduction.add(cessReduction);
+            totalDiscountReduction = totalDiscountReduction.add(discountShare);
 
             // Stock return calculations
             String unitType = item.getUnitType().name();
@@ -810,54 +1037,83 @@ public class BillService {
                 secondaryQty = reqItem.getQuantityToReturn();
             }
 
-            // Add stock back to inventory
-            if (item.getOffer() != null && item.getOffer()) {
-                stockService.addBackOfferStock(item.getProduct().getId(), item.getBatch().getId(), secondaryQty);
-            } else {
-                stockService.addBackStock(item.getProduct().getId(), primaryQty, secondaryQty);
+            BigDecimal ratePerSecondary = isPrimary ? item.getRate().divide(BigDecimal.valueOf(item.getProduct().getSecondaryPerPrimary()), 4, RoundingMode.HALF_UP) : item.getRate();
 
-                // Restore stock to specific batch
-                if (item.getBatch() != null) {
-                    stockService.addBackStockToSpecificBatch(item.getBatch().getId(), secondaryQty);
+            // Precise batch-wise stock restore
+            if (item.getBatchDeductions() != null && !item.getBatchDeductions().isEmpty()) {
+                int remainingToRestore = secondaryQty;
+                List<BillItemBatchDeduction> deductions = new ArrayList<>(item.getBatchDeductions());
+                deductions.sort((d1, d2) -> d2.getCreatedAt().compareTo(d1.getCreatedAt())); // LIFO return on batch depletions
+
+                for (BillItemBatchDeduction deduction : deductions) {
+                    if (remainingToRestore <= 0) break;
+                    int deducted = deduction.getQuantityDeducted();
+                    if (deducted > 0) {
+                        int restoreAmt = Math.min(remainingToRestore, deducted);
+                        if (item.getOffer() != null && item.getOffer()) {
+                            stockService.addBackOfferStock(item.getProduct().getId(), deduction.getBatch().getId(), restoreAmt, username, bill.getBillNumber(), BigDecimal.ZERO, "Return item from bill " + bill.getBillNumber());
+                        } else {
+                            stockService.addBackStockToBatch(
+                                    item.getProduct().getId(),
+                                    deduction.getBatch().getId(),
+                                    0,
+                                    restoreAmt,
+                                    username,
+                                    bill.getBillNumber(),
+                                    ratePerSecondary,
+                                    "Return item from bill " + bill.getBillNumber());
+                        }
+                        deduction.setQuantityDeducted(deducted - restoreAmt);
+                        remainingToRestore -= restoreAmt;
+                    }
+                }
+                item.getBatchDeductions().removeIf(d -> d.getQuantityDeducted() <= 0);
+            } else {
+                // Fallback for legacy bills
+                if (item.getOffer() != null && item.getOffer()) {
+                    stockService.addBackOfferStock(item.getProduct().getId(), item.getBatch() != null ? item.getBatch().getId() : null, secondaryQty, username, bill.getBillNumber(), BigDecimal.ZERO, "Return item from bill " + bill.getBillNumber());
                 } else {
-                    stockService.restoreStockToBatches(item.getProduct().getId(), secondaryQty);
+                    stockService.addBackStockToBatch(
+                            item.getProduct().getId(),
+                            item.getBatch() != null ? item.getBatch().getId() : null,
+                            primaryQty,
+                            secondaryQty,
+                            username,
+                            bill.getBillNumber(),
+                            ratePerSecondary,
+                            "Return item from bill " + bill.getBillNumber());
                 }
             }
 
-            // Update item record
+            // Update item record (keep in DB with quantity=0)
             item.setQuantity(item.getQuantity() - reqItem.getQuantityToReturn());
             item.setTotal(item.getTotal().subtract(refundAmount));
             item.setGstAmount(item.getGstAmount().subtract(gstReduction));
             item.setCessAmount(item.getCessAmount().subtract(cessReduction));
         }
 
-        // Clean up empty bill items
-        bill.getItems().removeIf(item -> item.getQuantity() <= 0);
-
         // Adjust bill totals
         bill.setSubtotal(bill.getSubtotal().subtract(totalSubtotalReduction));
         bill.setGstTotal(bill.getGstTotal().subtract(totalGstReduction));
         bill.setCessTotal(bill.getCessTotal().subtract(totalCessReduction));
+        bill.setDiscount(bill.getDiscount().subtract(totalDiscountReduction));
 
         // Adjust grand total, paid, and pending
         BigDecimal oldPending = bill.getPendingAmount();
         BigDecimal newPending = oldPending.subtract(totalRefundAmount);
-        BigDecimal pendingReduction = BigDecimal.ZERO;
 
         if (newPending.compareTo(BigDecimal.ZERO) < 0) {
-            pendingReduction = oldPending;
             bill.setPendingAmount(BigDecimal.ZERO);
             BigDecimal paidRefund = totalRefundAmount.subtract(oldPending);
             bill.setPaidAmount(bill.getPaidAmount().subtract(paidRefund));
         } else {
-            pendingReduction = totalRefundAmount;
             bill.setPendingAmount(newPending);
         }
 
         bill.setGrandTotal(bill.getGrandTotal().subtract(totalRefundAmount));
 
-        // Update bill status
-        boolean allReturned = bill.getItems().isEmpty();
+        // Update bill status (all items returned check)
+        boolean allReturned = bill.getItems().stream().allMatch(item -> item.getQuantity() <= 0);
         if (allReturned) {
             bill.setStatus(BillStatus.CANCELLED);
         }
@@ -884,12 +1140,40 @@ public class BillService {
                             + "Cancel the bill first.");
         }
 
+        // Nullify bill reference on payments and add audit notes to payments
+        List<com.shop.modules.khata.Payment> payments = paymentRepository.findByBillIdIn(List.of(bill.getId()));
+        for (com.shop.modules.khata.Payment payment : payments) {
+            payment.setBill(null);
+            String oldNotes = payment.getNotes() != null ? payment.getNotes() : "";
+            payment.setNotes((oldNotes + " | (Linked Bill " + bill.getBillNumber() + " was deleted)").trim());
+            paymentRepository.save(payment);
+        }
+
         billRepository.delete(bill);
     }
 
     // ── Update bill details (ADMIN/MANAGER only) ──
-    @Transactional(rollbackFor = RuntimeException.class)
+    @Transactional(rollbackFor = Exception.class)
     public BillResponse updateBillDetails(UUID id, PaymentMode paymentMode, String notes, BillStatus status, BigDecimal paidAmount) {
+        return updateBillDetails(id, paymentMode, notes, status, paidAmount, null, null, null, null, "System");
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public BillResponse updateBillDetails(UUID id, PaymentMode paymentMode, String notes, BillStatus status, BigDecimal paidAmount, String username) {
+        return updateBillDetails(id, paymentMode, notes, status, paidAmount, null, null, null, null, username);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public BillResponse updateBillDetails(UUID id, PaymentMode paymentMode, String notes, BillStatus status, BigDecimal paidAmount,
+                                          BigDecimal discount, Integer version, String editReason,
+                                          List<CreateBillRequest.BillItemRequest> newItems, String username) {
+        return updateBillDetails(id, paymentMode, notes, status, paidAmount, discount, version, editReason, newItems, false, username);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public BillResponse updateBillDetails(UUID id, PaymentMode paymentMode, String notes, BillStatus status, BigDecimal paidAmount,
+                                          BigDecimal discount, Integer version, String editReason,
+                                          List<CreateBillRequest.BillItemRequest> newItems, boolean overrideCost, String username) {
         if (paidAmount != null && paidAmount.compareTo(BigDecimal.ZERO) < 0) {
             throw new RuntimeException("Paid amount cannot be negative");
         }
@@ -897,55 +1181,297 @@ public class BillService {
         Bill bill = billRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Bill not found: " + id));
 
-        Customer customer = bill.getCustomer();
+        // 1. Concurrency Protection (Optimistic Locking Check)
+        if (version != null && !version.equals(bill.getVersion())) {
+            throw new RuntimeException("This bill has been modified by another user. Please refresh and try again.");
+        }
 
-        // 1. Handle Status Change
+        // 2. Validate Edit Reason for non-draft bills on material edits
+        boolean isMaterialChange = (newItems != null || discount != null);
+        if (isMaterialChange && bill.getStatus() != BillStatus.DRAFT) {
+            if (editReason == null || editReason.trim().isEmpty()) {
+                throw new RuntimeException("Edit reason is required for modifying confirmed bills.");
+            }
+        }
+
+        Customer customer = bill.getCustomer();
+        User user = userRepository.findByPhone(username)
+                .orElseThrow(() -> new RuntimeException("User not found: " + username));
+
+        // Save old snapshot for audit log
+        String oldJson = getBillSnapshotJson(bill);
+
+        // 3. Handle Status Change (before new items processed, keep aligned)
         if (status != null && status != bill.getStatus()) {
             if (status == BillStatus.CANCELLED) {
-                cancelBill(id);
+                cancelBill(id, username);
                 bill = billRepository.findById(id).orElseThrow();
             } else if (status == BillStatus.CONFIRMED && bill.getStatus() == BillStatus.CANCELLED) {
-                restoreBill(id);
+                restoreBill(id, username);
                 bill = billRepository.findById(id).orElseThrow();
             } else if (status == BillStatus.CONFIRMED && bill.getStatus() == BillStatus.DRAFT) {
-                confirmBill(id);
+                confirmBill(id, username);
                 bill = billRepository.findById(id).orElseThrow();
             }
         }
 
-        // 2. Handle Payment Mode & Paid Amount changes (only if bill is not CANCELLED)
+        // 4. Stock Restoration Phase
+        if (newItems != null && bill.getStatus() != BillStatus.CANCELLED) {
+            for (BillItem item : bill.getItems()) {
+                Product product = item.getProduct();
+                StockBatch batch = item.getBatch();
+                int qty = item.getQuantity() + item.getFreeQuantity();
+                boolean isPrimary = item.getUnitType().name().equalsIgnoreCase(product.getPrimaryUnit());
+                int secondaryQty = isPrimary ? qty * product.getSecondaryPerPrimary() : qty;
+
+                if (bill.getStatus() == BillStatus.DRAFT) {
+                    // Restore soft reservation
+                    if (batch != null && batch.getSecondarySoftReserved() != null) {
+                        int newReserved = batch.getSecondarySoftReserved() - secondaryQty;
+                        batch.setSecondarySoftReserved(Math.max(0, newReserved));
+                        stockBatchRepository.save(batch);
+                    }
+                } else {
+                    // Restore physical stock batch-wise
+                    BigDecimal ratePerSecondary = isPrimary ? item.getRate().divide(BigDecimal.valueOf(product.getSecondaryPerPrimary()), 4, RoundingMode.HALF_UP) : item.getRate();
+                    if (item.getOffer() != null && item.getOffer()) {
+                        stockService.addBackOfferStock(product.getId(), batch.getId(), secondaryQty, username, bill.getBillNumber(), BigDecimal.ZERO, "Edit bill restoration " + bill.getBillNumber());
+                    } else {
+                        stockService.addBackStockToBatch(
+                                product.getId(),
+                                batch != null ? batch.getId() : null,
+                                isPrimary ? qty : 0,
+                                secondaryQty,
+                                username,
+                                bill.getBillNumber(),
+                                ratePerSecondary,
+                                "Edit bill restoration " + bill.getBillNumber());
+                    }
+                }
+            }
+            bill.getItems().clear();
+            billRepository.saveAndFlush(bill);
+        }
+
+        // 5. Recalculation & Stock Validation/Deduction
+        boolean isDraft = (status != null ? status == BillStatus.DRAFT : bill.getStatus() == BillStatus.DRAFT);
+        BigDecimal subtotal = BigDecimal.ZERO;
+        BigDecimal gstTotal = BigDecimal.ZERO;
+        BigDecimal cessTotal = BigDecimal.ZERO;
+
+        if (newItems != null && bill.getStatus() != BillStatus.CANCELLED) {
+            // Check stock availability and price override limits first for new items
+            for (CreateBillRequest.BillItemRequest itemReq : newItems) {
+                Product product = productService.findProductByIdentifier(itemReq.getProductId());
+                checkStockAvailability(product, itemReq, isDraft);
+                checkPriceOverrideLimits(product, itemReq, user, overrideCost);
+            }
+
+            // Populate and deduct stock
+            for (CreateBillRequest.BillItemRequest itemReq : newItems) {
+                Product product = productService.findProductByIdentifier(itemReq.getProductId());
+                boolean isPrimary = itemReq.getUnitType().name().equalsIgnoreCase(product.getPrimaryUnit());
+
+                BigDecimal inclusivePrice;
+                if (itemReq.getCustomRate() != null && itemReq.getCustomRate().compareTo(BigDecimal.ZERO) >= 0) {
+                    inclusivePrice = itemReq.getCustomRate();
+                } else {
+                    inclusivePrice = getRateForUnit(product, itemReq.getUnitType().name());
+                }
+
+                BigDecimal itemGstPercent = product.getGstPercent();
+                BigDecimal itemCessPercent = product.getCessPercent() != null ? product.getCessPercent() : BigDecimal.ZERO;
+                BigDecimal taxDivisor = BigDecimal.ONE.add(
+                        itemGstPercent.add(itemCessPercent).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)
+                );
+
+                BigDecimal itemTotal;
+                BigDecimal itemSubtotal;
+                BigDecimal gstAmount;
+                BigDecimal cessAmount;
+                BigDecimal rate;
+                BigDecimal originalRate;
+
+                if (itemReq.isOffer()) {
+                    rate = BigDecimal.ZERO;
+                    originalRate = BigDecimal.ZERO;
+                    itemTotal = BigDecimal.ZERO;
+                    itemSubtotal = BigDecimal.ZERO;
+                    gstAmount = BigDecimal.ZERO;
+                    cessAmount = BigDecimal.ZERO;
+                } else {
+                    itemTotal = inclusivePrice.multiply(BigDecimal.valueOf(itemReq.getQuantity())).setScale(2, RoundingMode.HALF_UP);
+                    itemSubtotal = itemTotal.divide(taxDivisor, 2, RoundingMode.HALF_UP);
+                    
+                    BigDecimal gstRate = itemGstPercent.divide(BigDecimal.valueOf(100));
+                    gstAmount = itemSubtotal.multiply(gstRate).setScale(2, RoundingMode.HALF_UP);
+
+                    BigDecimal cessRate = itemCessPercent.divide(BigDecimal.valueOf(100));
+                    cessAmount = itemSubtotal.multiply(cessRate).setScale(2, RoundingMode.HALF_UP);
+
+                    BigDecimal calculatedTotal = itemSubtotal.add(gstAmount).add(cessAmount);
+                    if (calculatedTotal.compareTo(itemTotal) != 0) {
+                        BigDecimal diff = itemTotal.subtract(calculatedTotal);
+                        gstAmount = gstAmount.add(diff);
+                    }
+
+                    rate = itemSubtotal.divide(BigDecimal.valueOf(itemReq.getQuantity()), 4, RoundingMode.HALF_UP);
+                    
+                    BigDecimal defaultInclusivePrice = getRateForUnit(product, itemReq.getUnitType().name());
+                    BigDecimal originalTotal = defaultInclusivePrice.multiply(BigDecimal.valueOf(itemReq.getQuantity())).setScale(2, RoundingMode.HALF_UP);
+                    BigDecimal originalSubtotal = originalTotal.divide(taxDivisor, 2, RoundingMode.HALF_UP);
+                    originalRate = originalSubtotal.divide(BigDecimal.valueOf(itemReq.getQuantity()), 4, RoundingMode.HALF_UP);
+                }
+
+                // Sourced Batch
+                StockBatch linkedBatch = null;
+                if (itemReq.getBatchId() != null) {
+                    linkedBatch = stockService.getBatchById(itemReq.getBatchId());
+                } else {
+                    List<StockBatch> activeBatches = stockService.getBatchesByProduct(product.getId());
+                    if (itemReq.isOffer()) {
+                        linkedBatch = activeBatches.stream()
+                                .filter(b -> b.getOfferSecondaryRemaining() != null && b.getOfferSecondaryRemaining() > 0)
+                                .findFirst()
+                                .orElse(!activeBatches.isEmpty() ? activeBatches.get(0) : null);
+                    } else {
+                        linkedBatch = activeBatches.stream()
+                                .filter(b -> b.getSecondaryRemaining() > 0)
+                                .findFirst()
+                                .orElse(!activeBatches.isEmpty() ? activeBatches.get(0) : null);
+                    }
+                }
+
+                BillItem item = BillItem.builder()
+                        .bill(bill)
+                        .product(product)
+                        .batch(linkedBatch)
+                        .unitType(itemReq.getUnitType())
+                        .quantity(itemReq.getQuantity())
+                        .freeQuantity(itemReq.getFreeQuantity())
+                        .rate(rate)
+                        .originalRate(originalRate)
+                        .gstPercent(itemReq.isOffer() ? BigDecimal.ZERO : itemGstPercent)
+                        .gstAmount(gstAmount)
+                        .cessPercent(itemReq.isOffer() ? BigDecimal.ZERO : itemCessPercent)
+                        .cessAmount(cessAmount)
+                        .total(itemTotal)
+                        .offer(itemReq.isOffer())
+                        .build();
+
+                bill.getItems().add(item);
+                subtotal = subtotal.add(itemSubtotal);
+                gstTotal = gstTotal.add(gstAmount);
+                cessTotal = cessTotal.add(cessAmount);
+
+                int totalQtyToDeduct = itemReq.getQuantity() + itemReq.getFreeQuantity();
+                int secondaryQty = isPrimary ? totalQtyToDeduct * product.getSecondaryPerPrimary() : totalQtyToDeduct;
+
+                BigDecimal ratePerSecondary = BigDecimal.ZERO;
+                if (!itemReq.isOffer()) {
+                    ratePerSecondary = isPrimary ? rate.divide(BigDecimal.valueOf(product.getSecondaryPerPrimary()), 4, RoundingMode.HALF_UP) : rate;
+                }
+
+                List<com.shop.modules.stock.dto.BatchDeductionRecord> depletions;
+                if (itemReq.isOffer()) {
+                    if (!isDraft) {
+                        stockService.deductOfferUnits(linkedBatch.getId(), secondaryQty, username, bill.getBillNumber(), ratePerSecondary, "Sale of offer unit via bill edit " + bill.getBillNumber());
+                    }
+                    depletions = new ArrayList<>();
+                } else {
+                    if (isDraft) {
+                        if (linkedBatch != null) {
+                            linkedBatch.setSecondarySoftReserved(
+                                    (linkedBatch.getSecondarySoftReserved() != null ? linkedBatch.getSecondarySoftReserved() : 0) + secondaryQty);
+                            stockBatchRepository.save(linkedBatch);
+                        }
+                        depletions = new ArrayList<>();
+                    } else {
+                        if (isPrimary) {
+                            depletions = stockService.deductByPrimary(product.getId(), totalQtyToDeduct, linkedBatch.getId(), username, bill.getBillNumber(), ratePerSecondary, "Sale via bill edit " + bill.getBillNumber());
+                        } else {
+                            depletions = stockService.deductBySecondary(product.getId(), totalQtyToDeduct, linkedBatch.getId(), username, bill.getBillNumber(), ratePerSecondary, "Sale via bill edit " + bill.getBillNumber());
+                        }
+                    }
+                }
+
+                item.getBatchDeductions().clear();
+                for (com.shop.modules.stock.dto.BatchDeductionRecord depletion : depletions) {
+                    StockBatch actualBatch = stockBatchRepository.findById(depletion.getBatchId())
+                            .orElseThrow(() -> new RuntimeException("Batch not found: " + depletion.getBatchId()));
+                    BillItemBatchDeduction deduction = BillItemBatchDeduction.builder()
+                            .billItem(item)
+                            .batch(actualBatch)
+                            .quantityDeducted(depletion.getQuantityDeducted())
+                            .build();
+                    item.getBatchDeductions().add(deduction);
+                }
+            }
+
+            bill.setSubtotal(subtotal);
+            bill.setGstTotal(gstTotal);
+            bill.setCessTotal(cessTotal);
+        }
+
+        // 6. Discount & Grand Total Recalculation
+        if (discount != null) {
+            bill.setDiscount(discount);
+        }
+        
+        BigDecimal computedGrandTotal = bill.getSubtotal()
+                .add(bill.getGstTotal())
+                .add(bill.getCessTotal())
+                .subtract(bill.getDiscount());
+
+        if (bill.getDiscount().compareTo(computedGrandTotal.add(bill.getDiscount())) > 0) {
+            throw new RuntimeException("Discount cannot exceed subtotal with taxes");
+        }
+        bill.setGrandTotal(computedGrandTotal);
+
+        // 7. Payment Reconciliation and Credit Limit Checks (ordered correctly: before save)
         if (bill.getStatus() != BillStatus.CANCELLED) {
+            bill.setForceStatusChange(true);
             BigDecimal oldPending = bill.getPendingAmount();
-            BigDecimal newPending = oldPending;
+            BigDecimal newPending;
 
             if (paymentMode != null) {
                 bill.setPaymentMode(paymentMode);
             }
 
+            BigDecimal totalPaymentsApplied = paymentRepository.findByBillIdIn(List.of(bill.getId()))
+                    .stream()
+                    .map(p -> p.getAppliedAmount() != null ? p.getAppliedAmount() : p.getAmount())
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
             if (bill.getPaymentMode() == PaymentMode.UDHAR) {
                 bill.setPaidAmount(BigDecimal.ZERO);
-                bill.setPendingAmount(bill.getGrandTotal());
-                newPending = bill.getGrandTotal();
+            } else if (bill.getPaymentMode() == PaymentMode.COD) {
+                bill.setPaidAmount(BigDecimal.ZERO);
             } else if (bill.getPaymentMode() == PaymentMode.PARTIAL) {
                 BigDecimal paid = paidAmount != null ? paidAmount : bill.getPaidAmount();
                 if (paid.compareTo(bill.getGrandTotal()) > 0) {
-                    throw new RuntimeException("Paid amount cannot exceed grand total of " + bill.getGrandTotal());
+                    paid = bill.getGrandTotal();
                 }
                 bill.setPaidAmount(paid);
-                bill.setPendingAmount(bill.getGrandTotal().subtract(paid));
-                newPending = bill.getGrandTotal().subtract(paid);
             } else {
-                // CASH or UPI
+                // CASH / UPI
                 bill.setPaidAmount(bill.getGrandTotal());
-                bill.setPendingAmount(BigDecimal.ZERO);
-                newPending = BigDecimal.ZERO;
             }
 
-            // Update customer pending balance based on change in pending amount
+            BigDecimal spotPaid = bill.getPaidAmount();
+            BigDecimal totalCredited = spotPaid.add(totalPaymentsApplied);
+            if (totalCredited.compareTo(bill.getGrandTotal()) >= 0) {
+                bill.setPendingAmount(BigDecimal.ZERO);
+                newPending = BigDecimal.ZERO;
+            } else {
+                bill.setPendingAmount(bill.getGrandTotal().subtract(totalCredited));
+                newPending = bill.getGrandTotal().subtract(totalCredited);
+            }
+
+            // Update customer pending based on outstanding changes & check limits
             if (newPending.compareTo(oldPending) != 0) {
                 BigDecimal diff = newPending.subtract(oldPending);
 
-                // If credit increases, check limits & NPA
                 if (diff.compareTo(BigDecimal.ZERO) > 0) {
                     if (customer.getIsNpa() != null && customer.getIsNpa()) {
                         throw new RuntimeException("Credit sales are blocked for NPA customer: " 
@@ -964,31 +1490,101 @@ public class BillService {
                 }
             }
 
-            // Derive and update status
+            // Set final status dynamically
             if (bill.getStatus() != BillStatus.CANCELLED && bill.getStatus() != BillStatus.DRAFT) {
-                if (bill.getPendingAmount().compareTo(BigDecimal.ZERO) <= 0) {
-                    bill.setStatus(BillStatus.PAID);
-                } else if (bill.getPaidAmount().compareTo(BigDecimal.ZERO) > 0) {
-                    bill.setStatus(BillStatus.PARTIAL);
+                if (bill.getPaymentMode() == PaymentMode.COD) {
+                    if (bill.getPaidAmount().compareTo(BigDecimal.ZERO) == 0) {
+                        bill.setStatus(BillStatus.COD_PENDING);
+                    } else if (bill.getPendingAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                        bill.setStatus(BillStatus.COD_COLLECTED);
+                    } else {
+                        bill.setStatus(BillStatus.PARTIAL);
+                    }
                 } else {
-                    bill.setStatus(BillStatus.CONFIRMED);
+                    if (bill.getPendingAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                        bill.setStatus(BillStatus.PAID);
+                    } else if (bill.getPaidAmount().compareTo(BigDecimal.ZERO) > 0) {
+                        bill.setStatus(BillStatus.PARTIAL);
+                    } else {
+                        bill.setStatus(BillStatus.CONFIRMED);
+                    }
                 }
             }
         }
 
-        // 3. Handle Notes
         if (notes != null) {
             bill.setNotes(notes);
         }
 
         Bill savedBill = billRepository.save(bill);
         recalculateCustomerPending(customer);
+
+        // 8. Capture Audit Log
+        String newJson = getBillSnapshotJson(savedBill);
+        if (isMaterialChange) {
+            BillEditHistory history = BillEditHistory.builder()
+                    .billId(savedBill.getId())
+                    .billNumber(savedBill.getBillNumber())
+                    .editedBy(username)
+                    .editedAt(LocalDateTime.now())
+                    .oldJson(oldJson)
+                    .newJson(newJson)
+                    .reason(editReason != null ? editReason : "Updated bill details")
+                    .build();
+            billEditHistoryRepository.save(history);
+        }
+
         return toResponse(savedBill);
     }
 
+    private String getBillSnapshotJson(Bill bill) {
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            java.util.Map<String, Object> snapshot = new java.util.HashMap<>();
+            snapshot.put("billNumber", bill.getBillNumber());
+            snapshot.put("customerName", bill.getCustomer().getName());
+            snapshot.put("subtotal", bill.getSubtotal());
+            snapshot.put("gstTotal", bill.getGstTotal());
+            snapshot.put("cessTotal", bill.getCessTotal());
+            snapshot.put("discount", bill.getDiscount());
+            snapshot.put("grandTotal", bill.getGrandTotal());
+            snapshot.put("paidAmount", bill.getPaidAmount());
+            snapshot.put("pendingAmount", bill.getPendingAmount());
+            snapshot.put("paymentMode", bill.getPaymentMode() != null ? bill.getPaymentMode().name() : null);
+            snapshot.put("status", bill.getStatus() != null ? bill.getStatus().name() : null);
+            
+            java.util.List<java.util.Map<String, Object>> itemsList = new java.util.ArrayList<>();
+            for (BillItem item : bill.getItems()) {
+                java.util.Map<String, Object> itemMap = new java.util.HashMap<>();
+                itemMap.put("productName", item.getProduct().getName());
+                itemMap.put("quantity", item.getQuantity());
+                itemMap.put("freeQuantity", item.getFreeQuantity());
+                itemMap.put("rate", item.getRate());
+                itemMap.put("total", item.getTotal());
+                itemMap.put("offer", item.getOffer() != null && item.getOffer());
+                itemMap.put("unitType", item.getUnitType() != null ? item.getUnitType().name() : null);
+                itemsList.add(itemMap);
+            }
+            snapshot.put("items", itemsList);
+            return mapper.writeValueAsString(snapshot);
+        } catch (Exception e) {
+            return "{}";
+        }
+    }
 
-    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW, rollbackFor = RuntimeException.class)
+
+    @Transactional(rollbackFor = RuntimeException.class)
     public BillResponse confirmBill(UUID billId) {
+        return confirmBill(billId, false, "System");
+    }
+
+    @Transactional(rollbackFor = RuntimeException.class)
+    public BillResponse confirmBill(UUID billId, String username) {
+        return confirmBill(billId, false, username);
+    }
+
+    @Transactional(rollbackFor = RuntimeException.class)
+    public BillResponse confirmBill(UUID billId, boolean overrideCost, String username) {
         Bill bill = billRepository.findById(billId)
                 .orElseThrow(() -> new RuntimeException("Bill not found: " + billId));
 
@@ -997,6 +1593,8 @@ public class BillService {
         }
 
         Customer customer = bill.getCustomer();
+        User user = userRepository.findByPhone(username)
+                .orElseThrow(() -> new RuntimeException("User not found: " + username));
 
         // Validate NPA customer credit block
         if (customer.getIsNpa() != null && customer.getIsNpa()) {
@@ -1019,6 +1617,18 @@ public class BillService {
             }
         }
 
+        // Run price override checks first
+        for (BillItem item : bill.getItems()) {
+            CreateBillRequest.BillItemRequest itemReq = new CreateBillRequest.BillItemRequest();
+            itemReq.setProductId(item.getProduct().getId().toString());
+            itemReq.setQuantity(item.getQuantity());
+            itemReq.setFreeQuantity(item.getFreeQuantity());
+            itemReq.setUnitType(item.getUnitType());
+            itemReq.setCustomRate(item.getRate());
+            itemReq.setOffer(item.getOffer() != null && item.getOffer());
+            checkPriceOverrideLimits(item.getProduct(), itemReq, user, overrideCost);
+        }
+
         // Validate and deduct stock, and release soft reservations
         for (BillItem item : bill.getItems()) {
             Product product = item.getProduct();
@@ -1032,6 +1642,8 @@ public class BillService {
                 throw new RuntimeException("Sourced stock batch missing for product: " + product.getName());
             }
 
+            BigDecimal ratePerSecondary = isPrimary ? item.getRate().divide(BigDecimal.valueOf(product.getSecondaryPerPrimary()), 4, RoundingMode.HALF_UP) : item.getRate();
+
             if (item.getOffer() != null && item.getOffer()) {
                 int available = batch.getOfferSecondaryRemaining() != null ? batch.getOfferSecondaryRemaining() : 0;
                 if (available < secondaryQty) {
@@ -1040,7 +1652,7 @@ public class BillService {
                             + " | Available: " + available
                             + " | Requested: " + secondaryQty);
                 }
-                stockService.deductOfferUnits(batch.getId(), secondaryQty);
+                stockService.deductOfferUnits(batch.getId(), secondaryQty, username, bill.getBillNumber(), BigDecimal.ZERO, "Confirmed bill " + bill.getBillNumber());
                 continue;
             }
 
@@ -1059,10 +1671,23 @@ public class BillService {
             }
 
             // Deduct actual stock
+            List<com.shop.modules.stock.dto.BatchDeductionRecord> depletions;
             if (isPrimary) {
-                stockService.deductByPrimary(product.getId(), qty, batch.getId());
+                depletions = stockService.deductByPrimary(product.getId(), qty, batch.getId(), username, bill.getBillNumber(), ratePerSecondary, "Confirmed bill " + bill.getBillNumber());
             } else {
-                stockService.deductBySecondary(product.getId(), qty, batch.getId());
+                depletions = stockService.deductBySecondary(product.getId(), qty, batch.getId(), username, bill.getBillNumber(), ratePerSecondary, "Confirmed bill " + bill.getBillNumber());
+            }
+
+            item.getBatchDeductions().clear();
+            for (com.shop.modules.stock.dto.BatchDeductionRecord depletion : depletions) {
+                StockBatch actualBatch = stockBatchRepository.findById(depletion.getBatchId())
+                        .orElseThrow(() -> new RuntimeException("Batch not found: " + depletion.getBatchId()));
+                BillItemBatchDeduction deduction = BillItemBatchDeduction.builder()
+                        .billItem(item)
+                        .batch(actualBatch)
+                        .quantityDeducted(depletion.getQuantityDeducted())
+                        .build();
+                item.getBatchDeductions().add(deduction);
             }
         }
 
@@ -1087,6 +1712,11 @@ public class BillService {
 
     @Transactional(rollbackFor = RuntimeException.class)
     public BillResponse restoreBill(UUID id) {
+        return restoreBill(id, "System");
+    }
+
+    @Transactional(rollbackFor = RuntimeException.class)
+    public BillResponse restoreBill(UUID id, String username) {
         Bill bill = billRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Bill not found: " + id));
 
@@ -1126,22 +1756,32 @@ public class BillService {
             boolean isPrimary = item.getUnitType().name().equalsIgnoreCase(product.getPrimaryUnit());
             int secondaryQty = isPrimary ? qty * product.getSecondaryPerPrimary() : qty;
 
-            if (batch == null) {
-                throw new RuntimeException("Sourced stock batch missing for product: " + product.getName());
-            }
+            BigDecimal ratePerSecondary = isPrimary ? item.getRate().divide(BigDecimal.valueOf(product.getSecondaryPerPrimary()), 4, RoundingMode.HALF_UP) : item.getRate();
 
-            if (batch.getSecondaryRemaining() < secondaryQty) {
-                throw new RuntimeException("Insufficient physical stock in batch " + batch.getBatchNumber()
-                        + " for product: " + product.getName()
-                        + " | Available: " + batch.getSecondaryRemaining()
-                        + " | Required: " + secondaryQty);
+            // Flexible restoration fallback: try original batch first, if not sufficient, fallback to dynamic FIFO
+            UUID batchIdToDeduct = null;
+            if (batch != null && batch.getSecondaryRemaining() >= secondaryQty && !batch.getExhausted() && batch.getBatchStatus() == com.shop.modules.stock.BatchStatus.ACTIVE) {
+                batchIdToDeduct = batch.getId();
             }
 
             // Deduct stock
+            List<com.shop.modules.stock.dto.BatchDeductionRecord> depletions;
             if (isPrimary) {
-                stockService.deductByPrimary(product.getId(), qty, batch.getId());
+                depletions = stockService.deductByPrimary(product.getId(), qty, batchIdToDeduct, username, bill.getBillNumber(), ratePerSecondary, "Restored bill " + bill.getBillNumber());
             } else {
-                stockService.deductBySecondary(product.getId(), qty, batch.getId());
+                depletions = stockService.deductBySecondary(product.getId(), qty, batchIdToDeduct, username, bill.getBillNumber(), ratePerSecondary, "Restored bill " + bill.getBillNumber());
+            }
+
+            item.getBatchDeductions().clear();
+            for (com.shop.modules.stock.dto.BatchDeductionRecord depletion : depletions) {
+                StockBatch actualBatch = stockBatchRepository.findById(depletion.getBatchId())
+                        .orElseThrow(() -> new RuntimeException("Batch not found: " + depletion.getBatchId()));
+                BillItemBatchDeduction deduction = BillItemBatchDeduction.builder()
+                        .billItem(item)
+                        .batch(actualBatch)
+                        .quantityDeducted(depletion.getQuantityDeducted())
+                        .build();
+                item.getBatchDeductions().add(deduction);
             }
         }
 
@@ -1163,10 +1803,15 @@ public class BillService {
 
     @Transactional(rollbackFor = RuntimeException.class)
     public List<BulkConfirmResult> bulkConfirmBills(List<UUID> billIds) {
+        return bulkConfirmBills(billIds, "System");
+    }
+
+    @Transactional(rollbackFor = RuntimeException.class)
+    public List<BulkConfirmResult> bulkConfirmBills(List<UUID> billIds, String username) {
         List<BulkConfirmResult> results = new ArrayList<>();
         for (UUID id : billIds) {
             try {
-                confirmBill(id);
+                confirmBill(id, username);
                 results.add(new BulkConfirmResult(id, true, "Confirmed successfully"));
             } catch (Exception e) {
                 results.add(new BulkConfirmResult(id, false, e.getMessage()));

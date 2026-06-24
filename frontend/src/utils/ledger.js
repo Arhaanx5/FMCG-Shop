@@ -20,14 +20,18 @@ export const getCustomerLedger = (customer, allBills, allPayments) => {
 
   // 2. Bills (Udhar/Partial only — use grandTotal as immutable debit amount)
   custBills.forEach(b => {
-    if (b.status === 'CANCELLED' || (b.paymentMode !== 'UDHAR' && b.paymentMode !== 'PARTIAL')) return
+    if (b.status === 'CANCELLED' || (b.paymentMode !== 'UDHAR' && b.paymentMode !== 'PARTIAL' && b.paymentMode !== 'COD')) return
     const billAmount = Number(b.grandTotal || 0)
     if (billAmount <= 0) return
     ledger.push({
       type: 'BILL',
       id: b.id,
       billNumber: b.billNumber,
-      description: b.paymentMode === 'PARTIAL' ? `Partial Bill #${b.billNumber}` : `Credit Bill #${b.billNumber}`,
+      description: b.paymentMode === 'PARTIAL' 
+        ? `Partial Bill #${b.billNumber}` 
+        : b.paymentMode === 'COD' 
+          ? `COD Bill #${b.billNumber}` 
+          : `Credit Bill #${b.billNumber}`,
       debit: billAmount,
       credit: 0,
       date: new Date(b.createdAt).getTime(),
@@ -57,7 +61,7 @@ export const getCustomerLedger = (customer, allBills, allPayments) => {
 
   // 3. Payments
   custPayments.forEach(p => {
-    const baseDesc = `Payment Received (${p.paymentMode})`
+    const baseDesc = p.paymentMode === 'WAIVE_OFF' ? 'Round-off Adjustment' : `Payment Received (${p.paymentMode})`
     const billLink = p.billNumber ? ` — Bill ${p.billNumber}` : ''
     const notePart = p.notes ? ` · ${p.notes}` : ''
     const adjustNote = p.adjustmentNote ? ` 🔁 ${p.adjustmentNote}` : ''

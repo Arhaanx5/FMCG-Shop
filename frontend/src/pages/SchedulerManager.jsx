@@ -299,7 +299,75 @@ export default function SchedulerManager() {
             </button>
           </div>
         )}
+        {/* COD Reconciliation Card */}
+        {schedulerData?.codReconciliation && (
+          <div className="card" style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: 'var(--space-4)', alignItems: 'start', borderLeft: '4px solid var(--color-warning)' }}>
+            <div style={{ padding: 'var(--space-3)', background: 'var(--color-warning-soft)', borderRadius: 'var(--radius-md)', color: 'var(--color-warning)' }}>
+              <ShieldAlert size={24} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                <h3 className="font-bold text-sm text-slate-800 dark:text-slate-100 uppercase tracking-wider">{schedulerData.codReconciliation.name}</h3>
+                {renderStatusBadge(schedulerData.codReconciliation.status)}
+              </div>
+              <p className="text-xs text-muted">
+                Generates Daily EOD Collection Reports at 8:00 PM and checks outstanding deliveries older than 4 hours every 10 minutes to alert managers/admins.
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
+                <div className="text-xs">
+                  <span className="text-muted font-medium">EOD Report Cron: </span>
+                  <code style={{ background: 'var(--color-bg-secondary)', padding: '2px 6px', borderRadius: '4px' }}>{schedulerData.codReconciliation.status?.cronExpression || '0 0 20 * * *'}</code>
+                </div>
+                <div className="text-xs">
+                  <span className="text-muted font-medium">Escalation Interval: </span>
+                  <code style={{ background: 'var(--color-bg-secondary)', padding: '2px 6px', borderRadius: '4px' }}>Every 10 Mins</code>
+                </div>
+                <div className="text-xs">
+                  <span className="text-muted font-medium">Last EOD Run: </span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-200">{formatDateTime(schedulerData.codReconciliation.status?.lastRunTime)}</span>
+                </div>
+                <div className="text-xs">
+                  <span className="text-muted font-medium">Last Escalation Run: </span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-200">{formatDateTime(schedulerData.codReconciliation.status?.lastEscalationRunTime)}</span>
+                </div>
+                <div className="text-xs" style={{ gridColumn: '1 / -1' }}>
+                  <span className="text-muted font-medium">Last EOD Status: </span>
+                  <span className={`font-semibold ${schedulerData.codReconciliation.status?.lastRunStatus?.includes('Success') ? 'text-success' : 'text-danger'}`}>
+                    {schedulerData.codReconciliation.status?.lastRunStatus || 'Never executed'}
+                  </span>
+                </div>
+                <div className="text-xs" style={{ gridColumn: '1 / -1' }}>
+                  <span className="text-muted font-medium">Last Escalation Status: </span>
+                  <span className={`font-semibold ${schedulerData.codReconciliation.status?.lastEscalationRunStatus?.includes('Success') ? 'text-success' : 'text-danger'}`}>
+                    {schedulerData.codReconciliation.status?.lastEscalationRunStatus || 'Never executed'}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', alignSelf: 'center' }}>
+              <button 
+                className="btn btn-primary"
+                disabled={actionLoading !== null}
+                onClick={() => runScheduler('COD EOD Report', 'cod-reconciliation/run-now')}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', alignSelf: 'center', background: 'var(--color-warning)', color: '#0f172a' }}
+              >
+                {actionLoading === 'COD EOD Report' ? <RefreshCw className="animate-spin" size={14} /> : <Play size={14} />}
+                Run EOD Now
+              </button>
+              <button 
+                className="btn btn-secondary"
+                disabled={actionLoading !== null}
+                onClick={() => runScheduler('COD Escalation Check', 'cod-escalation/run-now')}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', alignSelf: 'center' }}
+              >
+                {actionLoading === 'COD Escalation Check' ? <RefreshCw className="animate-spin" size={14} /> : <Play size={14} />}
+                Run Escalation Now
+              </button>
+            </div>
+          </div>
+        )}
       </div>
+
 
       {/* Backup History Table */}
       <div className="card" style={{ marginTop: 'var(--space-6)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>

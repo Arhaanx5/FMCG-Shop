@@ -1,0 +1,315 @@
+﻿diff --git a/frontend/src/pages/Stock.jsx b/frontend/src/pages/Stock.jsx
+index 9bb6351..19f9734 100644
+--- a/frontend/src/pages/Stock.jsx
++++ b/frontend/src/pages/Stock.jsx
+@@ -80,7 +80,7 @@ export default function Stock() {
+   const [bulkReceivedDate, setBulkReceivedDate] = useState(new Date().toISOString().split('T')[0])
+   const [bulkRemarks, setBulkRemarks] = useState('')
+   const [bulkRows, setBulkRows] = useState([
+-    { productId: '', batchNumber: '', manufacturingDate: '', expiryDate: '', primaryReceived: '', extraSecondaryReceived: '', offerSecondaryReceived: '', buyPriceWithoutTax: '', gstPercent: '5' }
++    { productId: '', batchNumber: '', expiryDate: '', primaryReceived: '', extraSecondaryReceived: '', offerSecondaryReceived: '', buyPriceWithoutTax: '', gstPercent: '5' }
+   ])
+ 
+   // AI Invoice Scanner OCR States
+@@ -92,9 +92,10 @@ export default function Stock() {
+   const [scannerInvoiceNumber, setScannerInvoiceNumber] = useState('')
+   const [invoiceAlreadyScanned, setInvoiceAlreadyScanned] = useState(false)
+ 
+-  // Quick Add Product States (for new products parsed via OCR)
++  // Quick Add Product States (for new products parsed via OCR or Bulk Entry)
+   const [showQuickProductModal, setShowQuickProductModal] = useState(false)
+   const [quickProductIndex, setQuickProductIndex] = useState(null)
++  const [bulkQuickProductIndex, setBulkQuickProductIndex] = useState(null)
+   const [quickProductForm, setQuickProductForm] = useState({
+     name: '', brand: '', category: 'SNACKS', otherCategoryDetail: '', gstPercent: '5', cessPercent: '0', isCessApplicable: false,
+     primaryUnit: 'BOX', secondaryUnit: 'LADI', customSecondaryUnit: '', secondaryPerPrimary: '20',
+@@ -321,8 +322,43 @@ export default function Stock() {
+     else if (activeTab === 'audit' && isAdmin) loadAuditLogs(auditPage)
+     else if (activeTab === 'bi') loadBI()
+     else if (activeTab === 'reports') loadReports(reportPage)
++    // Always refresh products list when receive tab is opened
++    if (activeTab === 'receive') loadProducts()
+   }, [activeTab, invPage, batchPage, movementPage, auditPage, reportPage, selectedReport, selectedMovementType, searchTerm, selectedCategory, selectedStatus, debouncedBatchSearchTerm])
+ 
++  // Helper to handle product change in single receive form (pre-fill fields)
++  const handleSingleProductChange = (productId) => {
++    const prod = products.find(p => p.id === productId)
++    if (prod) {
++      setManualForm(f => ({
++        ...f,
++        productId,
++        buyPriceWithoutTax: prod.buyPriceWithoutTax ?? '',
++        gstPercent: prod.gstPercent !== undefined && prod.gstPercent !== null ? String(Math.round(prod.gstPercent)) : '5',
++        sellPricePrimary: prod.sellPricePrimary ?? '',
++        sellPriceSecondary: prod.sellPriceSecondary ?? ''
++      }))
++    } else {
++      setManualForm(f => ({ ...f, productId }))
++    }
++  }
++
++  // Calculate summary values for Single Entry receive
++  const getSingleEntrySummary = () => {
++    const selectedProd = products.find(p => p.id === manualForm.productId)
++    const ratio = selectedProd?.secondaryPerPrimary || 12
++    const pAdded = manualForm.primaryReceived === '' ? 0 : (Number(manualForm.primaryReceived) || 0)
++    const sAdded = manualForm.extraSecondaryReceived === '' ? 0 : (Number(manualForm.extraSecondaryReceived) || 0)
++    const buyPrice = Number(manualForm.buyPriceWithoutTax || 0)
++    const gst = Number(manualForm.gstPercent || 0)
++
++    const totalTaxable = (pAdded * buyPrice) + (sAdded * (buyPrice / ratio))
++    const totalGst = totalTaxable * (gst / 100)
++    const totalNet = totalTaxable + totalGst
++
++    return { totalTaxable, totalGst, totalNet }
++  }
++
+   // Single Manual Receive Form Submit
+   const handleReceiveSubmit = async (e) => {
+     e.preventDefault()
+@@ -338,7 +374,8 @@ export default function Stock() {
+         primaryReceived: manualForm.primaryReceived === '' ? 0 : Number(manualForm.primaryReceived),
+         extraSecondaryReceived: manualForm.extraSecondaryReceived === '' ? 0 : Number(manualForm.extraSecondaryReceived),
+         offerSecondaryReceived: manualForm.offerSecondaryReceived === '' ? 0 : Number(manualForm.offerSecondaryReceived),
+-        buyPriceWithoutTax: Number(manualForm.buyPriceWithoutTax)
++        buyPriceWithoutTax: Number(manualForm.buyPriceWithoutTax),
++        manufacturingDate: null
+       }
+ 
+       await api.post('/stock/receive', payload)
+@@ -771,6 +808,25 @@ export default function Stock() {
+         })
+       }
+ 
++      // Auto-select newly created product in the bulk entry row
++      if (bulkQuickProductIndex !== null) {
++        setBulkRows(prev => {
++          const updated = [...prev]
++          const row = updated[bulkQuickProductIndex]
++          if (!row) return prev
++          updated[bulkQuickProductIndex] = {
++            ...row,
++            productId: newProduct.id,
++            gstPercent: (newProduct.gstPercent || 5).toString(),
++            buyPriceWithoutTax: newProduct.buyPriceWithoutTax && Number(newProduct.buyPriceWithoutTax) > 0
++              ? Number(newProduct.buyPriceWithoutTax).toString()
++              : row.buyPriceWithoutTax,
++          }
++          return updated
++        })
++        setBulkQuickProductIndex(null)
++      }
++
+       toast.success('Product created and mapped successfully!')
+       setShowQuickProductModal(false)
+     } catch (err) {
+@@ -830,6 +886,28 @@ export default function Stock() {
+             setShowQuickProductModal(false)
+             return
+           }
++
++          // Handle "already exists" for bulk entry row
++          if (matchedProduct && bulkQuickProductIndex !== null) {
++            setBulkRows(prev => {
++              const updated = [...prev]
++              const row = updated[bulkQuickProductIndex]
++              if (!row) return prev
++              updated[bulkQuickProductIndex] = {
++                ...row,
++                productId: matchedProduct.id,
++                gstPercent: (matchedProduct.gstPercent || 5).toString(),
++                buyPriceWithoutTax: matchedProduct.buyPriceWithoutTax && Number(matchedProduct.buyPriceWithoutTax) > 0
++                  ? Number(matchedProduct.buyPriceWithoutTax).toString()
++                  : row.buyPriceWithoutTax,
++              }
++              return updated
++            })
++            setBulkQuickProductIndex(null)
++            toast.success('Product already exists! Row successfully mapped.')
++            setShowQuickProductModal(false)
++            return
++          }
+         } catch (fetchErr) {
+           console.error("Failed to recover and map existing product", fetchErr)
+         }
+@@ -849,13 +927,47 @@ export default function Stock() {
+       const p = products.find(prod => prod.id === value)
+       if (p) {
+         updated[index].gstPercent = (p.gstPercent || 5).toString()
++        // Auto-fill buy price from product master
++        if (p.buyPriceWithoutTax && Number(p.buyPriceWithoutTax) > 0) {
++          updated[index].buyPriceWithoutTax = Number(p.buyPriceWithoutTax).toString()
++        }
+       }
+     }
+     setBulkRows(updated)
+   }
+ 
++  // Open Quick Product modal for a specific bulk entry row
++  const openBulkQuickProductModal = (index, searchQuery = '') => {
++    setBulkQuickProductIndex(index)
++    setQuickProductForm({
++      name: searchQuery,
++      brand: '',
++      category: 'SNACKS',
++      otherCategoryDetail: '',
++      gstPercent: '5',
++      cessPercent: '0',
++      isCessApplicable: false,
++      primaryUnit: 'BOX',
++      secondaryUnit: 'LADI',
++      customSecondaryUnit: '',
++      secondaryPerPrimary: '20',
++      canSellPrimary: true,
++      canSellSecondary: true,
++      buyPriceWithoutTax: '',
++      buyPriceWithTax: '',
++      sellPricePrimaryExcl: '',
++      sellPricePrimaryIncl: '',
++      sellPriceSecondaryExcl: '',
++      sellPriceSecondaryIncl: '',
++      lowStockAlert: '10',
++      lowStockUnit: 'SECONDARY',
++    })
++    setQuickProductIndex(null) // ensure scanner index is cleared
++    setShowQuickProductModal(true)
++  }
++
+   const addBulkRow = () => {
+-    setBulkRows(prev => [...prev, { productId: '', batchNumber: '', manufacturingDate: '', expiryDate: '', primaryReceived: '', extraSecondaryReceived: '', offerSecondaryReceived: '', buyPriceWithoutTax: '', gstPercent: '5' }])
++    setBulkRows(prev => [{ productId: '', batchNumber: '', expiryDate: '', primaryReceived: '', extraSecondaryReceived: '', offerSecondaryReceived: '', buyPriceWithoutTax: '', gstPercent: '5' }, ...prev])
+   }
+ 
+   const removeBulkRow = (index) => {
+@@ -887,7 +999,6 @@ export default function Stock() {
+         supplierInvoiceNumber: bulkInvoiceNumber,
+         supplierInvoiceDate: bulkInvoiceDate,
+         stockReceivedDate: bulkReceivedDate,
+-        manufacturingDate: row.manufacturingDate || null,
+         primaryReceived: row.primaryReceived === '' ? 0 : Number(row.primaryReceived),
+         extraSecondaryReceived: row.extraSecondaryReceived === '' ? 0 : Number(row.extraSecondaryReceived),
+         offerSecondaryReceived: row.offerSecondaryReceived === '' ? 0 : Number(row.offerSecondaryReceived),
+@@ -901,7 +1012,7 @@ export default function Stock() {
+ 
+       await api.post('/stock/receive-bulk', payload)
+       toast.success('Manual bulk stock batches registered successfully!')
+-      setBulkRows([{ productId: '', batchNumber: '', manufacturingDate: '', expiryDate: '', primaryReceived: '', extraSecondaryReceived: '', offerSecondaryReceived: '', buyPriceWithoutTax: '', gstPercent: '5' }])
++      setBulkRows([{ productId: '', batchNumber: '', expiryDate: '', primaryReceived: '', extraSecondaryReceived: '', offerSecondaryReceived: '', buyPriceWithoutTax: '', gstPercent: '5' }])
+       setBulkRemarks('')
+       setBulkInvoiceNumber('')
+       loadInventory(0)
+@@ -1374,6 +1485,8 @@ export default function Stock() {
+                         <td className="p-3">
+                           <SearchSelect
+                             options={products.filter(p => p.active !== false).map(p => ({ value: p.id, label: `${p.name} (${p.brand})` }))}
++                            labelKey="label"
++                            valueKey="value"
+                             value={item.productId || ''}
+                             onChange={(val) => handleScannerRowProductChange(index, val)}
+                             placeholder="Map product manually..."
+@@ -1788,7 +1901,7 @@ export default function Stock() {
+                       <SearchSelect
+                         options={products}
+                         value={manualForm.productId}
+-                        onChange={(val) => setManualForm(f => ({ ...f, productId: val }))}
++                        onChange={handleSingleProductChange}
+                         placeholder="Search and select product..."
+                         labelKey="name"
+                         valueKey="id"
+@@ -1865,17 +1978,6 @@ export default function Stock() {
+                       />
+                     </div>
+ 
+-                    <div>
+-                      <label className="text-slate-500 dark:text-slate-400 text-sm font-semibold mb-1 block">Manufacturing Date *</label>
+-                      <input
+-                        type="date"
+-                        value={manualForm.manufacturingDate}
+-                        onChange={(e) => setManualForm(f => ({ ...f, manufacturingDate: e.target.value }))}
+-                        required
+-                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500"
+-                      />
+-                    </div>
+-
+                     <div className="grid grid-cols-3 gap-3 md:col-span-2">
+                       <div>
+                         <label className="text-slate-500 dark:text-slate-400 text-xs font-semibold mb-1 block">Primary Qty (BOX)</label>
+@@ -1948,6 +2050,41 @@ export default function Stock() {
+                     </div>
+                   </div>
+ 
++                  {/* Single Entry Summary Cards */}
++                  {manualForm.productId && (
++                    (() => {
++                      const { totalTaxable, totalGst, totalNet } = getSingleEntrySummary();
++                      return (
++                        <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl flex flex-wrap justify-between items-center gap-4 mt-4">
++                          <div>
++                            <h4 className="font-bold text-sm md:text-base">Inward Entry Summary</h4>
++                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Estimated calculation including taxes.</p>
++                          </div>
++                          <div className="flex gap-6 flex-wrap">
++                            <div className="flex flex-col items-end">
++                              <span className="text-xxs font-bold text-slate-400 uppercase tracking-wider">Taxable Value</span>
++                              <span className="text-sm md:text-base font-bold text-slate-700 dark:text-slate-200">
++                                Γé╣{totalTaxable.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
++                              </span>
++                            </div>
++                            <div className="flex flex-col items-end">
++                              <span className="text-xxs font-bold text-slate-400 uppercase tracking-wider">GST Tax ({manualForm.gstPercent}%)</span>
++                              <span className="text-sm md:text-base font-bold text-slate-700 dark:text-slate-200">
++                                Γé╣{totalGst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
++                              </span>
++                            </div>
++                            <div className="flex flex-col items-end border-l border-slate-200 dark:border-slate-800 pl-6">
++                              <span className="text-xxs font-extrabold text-slate-400 uppercase tracking-wider">Grand Total (Incl. Tax)</span>
++                              <span className="text-xl md:text-2xl font-black text-emerald-500">
++                                Γé╣{totalNet.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
++                              </span>
++                            </div>
++                          </div>
++                        </div>
++                      );
++                    })()
++                  )}
++
+                   <button
+                     type="submit"
+                     disabled={savingStock}
+@@ -2023,7 +2160,6 @@ export default function Stock() {
+                           <th className="p-3 min-w-[200px]">Product *</th>
+                           <th className="p-3 min-w-[100px]">Batch No *</th>
+                           <th className="p-3 min-w-[120px]">Expiry *</th>
+-                          <th className="p-3 min-w-[120px]">Mfg Date</th>
+                           <th className="p-3 min-w-[90px]">Qty (BOX)</th>
+                           <th className="p-3 min-w-[90px]">Loose (LADI)</th>
+                           <th className="p-3 min-w-[90px]">Offer (Free)</th>
+@@ -2039,9 +2175,13 @@ export default function Stock() {
+                             <td className="p-2">
+                               <SearchSelect
+                                 options={products.map(p => ({ value: p.id, label: `${p.name} (${p.brand})` }))}
++                                labelKey="label"
++                                valueKey="value"
+                                 value={row.productId}
+                                 onChange={(val) => handleBulkRowChange(index, 'productId', val)}
+                                 placeholder="Search DB product..."
++                                onNoResultsAction={(query) => openBulkQuickProductModal(index, query)}
++                                noResultsActionLabel="+ Create New Product"
+                               />
+                             </td>
+                             <td className="p-2">
+@@ -2063,14 +2203,6 @@ export default function Stock() {
+                                 className="w-28 px-2 py-1 bg-white dark:bg-slate-900 border border-slate-350 dark:border-slate-700 rounded text-xs text-slate-900 dark:text-slate-100"
+                               />
+                             </td>
+-                            <td className="p-2">
+-                              <input
+-                                type="date"
+-                                value={row.manufacturingDate}
+-                                onChange={e => handleBulkRowChange(index, 'manufacturingDate', e.target.value)}
+-                                className="w-28 px-2 py-1 bg-white dark:bg-slate-900 border border-slate-350 dark:border-slate-700 rounded text-xs text-slate-900 dark:text-slate-100"
+-                              />
+-                            </td>
+                             <td className="p-2">
+                               <input
+                                 type="number"

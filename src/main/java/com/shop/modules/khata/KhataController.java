@@ -72,10 +72,31 @@ public class KhataController {
 
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','DELIVERY_BOY','SALESMAN')")
-    public PaymentResponse record(
+    public ResponseEntity<ApiResponse<PaymentResponse>> record(
             @Valid @RequestBody RecordPaymentRequest req,
             Authentication auth) {
-        return khataService.recordPayment(req, auth.getName());
+        if ("WAIVE_OFF".equalsIgnoreCase(req.getPaymentMode())) {
+            boolean isAdminOrManager = auth.getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN")
+                            || a.getAuthority().equals("ROLE_MANAGER"));
+            if (!isAdminOrManager) {
+                return ResponseEntity
+                        .status(org.springframework.http.HttpStatus.FORBIDDEN)
+                        .body(ApiResponse.<PaymentResponse>builder()
+                                .success(false)
+                                .message("Waive-off payment sirf ADMIN ya MANAGER kar sakte hain. Aapke paas permission nahi hai.")
+                                .data(null)
+                                .timestamp(java.time.LocalDateTime.now())
+                                .build());
+            }
+        }
+        PaymentResponse response = khataService.recordPayment(req, auth.getName());
+        return ResponseEntity.ok(ApiResponse.<PaymentResponse>builder()
+                .success(true)
+                .message("Payment recorded successfully")
+                .data(response)
+                .timestamp(java.time.LocalDateTime.now())
+                .build());
     }
 
     // ── Delete payment — ADMIN only ──

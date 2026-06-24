@@ -52,6 +52,7 @@ public class DamageService {
                 .loggedBy(log.getLoggedBy() != null
                         ? log.getLoggedBy().getName() : null)
                 .loggedAt(log.getLoggedAt())
+                .supplierName(log.getSupplierName())
                 .build();
     }
 
@@ -88,6 +89,15 @@ public class DamageService {
             LogDamageRequest req,
             String loggedByPhone) {
 
+        if (req.getReason() == DamageReason.SUPPLIER_RETURN) {
+            if (req.getSupplierName() == null || req.getSupplierName().trim().isEmpty()) {
+                throw new IllegalArgumentException("Supplier name is required for Supplier Returns");
+            }
+            if (req.getBatchId() == null) {
+                throw new IllegalArgumentException("Batch selection is required for Supplier Returns");
+            }
+        }
+
         Product product = productService
                 .findProductByIdentifier(req.getProductId());
 
@@ -116,7 +126,11 @@ public class DamageService {
         // Determine claim status (fallback if null)
         ClaimStatus claimStatus = req.getClaimStatus();
         if (claimStatus == null) {
-            claimStatus = ClaimStatus.NON_CLAIMABLE;
+            if (req.getReason() == DamageReason.SUPPLIER_RETURN) {
+                claimStatus = ClaimStatus.CLAIMABLE;
+            } else {
+                claimStatus = ClaimStatus.NON_CLAIMABLE;
+            }
         }
 
         // Determine unit type to persist
@@ -169,12 +183,22 @@ public class DamageService {
                 .valueLoss(valueLoss)
                 .notes(req.getNotes())
                 .loggedBy(user)
+                .supplierName(req.getReason() == DamageReason.SUPPLIER_RETURN ? req.getSupplierName() : null)
                 .build();
 
         // Deduct exact secondary quantity from stock
+        String movementType = req.getReason() == DamageReason.SUPPLIER_RETURN ? "RETURN_OUT" : "DAMAGE";
         if (totalSecondaryQuantity > 0) {
             stockService.deductBySecondary(
-                    product.getId(), totalSecondaryQuantity);
+                    product.getId(),
+                    totalSecondaryQuantity,
+                    req.getBatchId(),
+                    user.getPhone(),
+                    null,
+                    buyPricePerSecondary,
+                    req.getNotes() != null ? req.getNotes() : (req.getReason() == DamageReason.SUPPLIER_RETURN ? "Return to Supplier" : "Damage Logged"),
+                    movementType
+            );
         }
 
         return toResponse(damageLogRepository.save(log));
@@ -211,24 +235,20 @@ public class DamageService {
         }
 
         // Add stock back to inventory
+        String movementType = log.getReason() == DamageReason.SUPPLIER_RETURN ? "RETURN_IN" : "DAMAGE_REVERSAL";
         if (secondaryToRestore > 0) {
             int primaryToRestore = (level == UnitLevel.PRIMARY)
                     ? log.getQuantity() : 0;
-            stockService.addBackStock(
+            stockService.addBackStockToBatch(
                     product.getId(),
+                    log.getBatch() != null ? log.getBatch().getId() : null,
                     primaryToRestore,
-                    secondaryToRestore);
-
-            // Restore to linked batch if available
-            if (log.getBatch() != null) {
-                stockService.addBackStockToSpecificBatch(
-                        log.getBatch().getId(),
-                        secondaryToRestore);
-            } else {
-                stockService.restoreStockToBatches(
-                        product.getId(),
-                        secondaryToRestore);
-            }
+                    secondaryToRestore,
+                    "System",
+                    null,
+                    product.getBuyPricePerSecondary(),
+                    log.getBatch() != null ? "Restored specific batch stock" : "Restored general inventory stock",
+                    movementType);
         }
 
         damageLogRepository.delete(log);

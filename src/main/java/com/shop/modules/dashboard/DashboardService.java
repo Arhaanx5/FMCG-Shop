@@ -11,6 +11,7 @@ import com.shop.modules.customer.Customer;
 import com.shop.modules.dashboard.dto.DashboardResponse;
 import com.shop.modules.dashboard.dto.MonthlyReportResponse;
 import com.shop.modules.dashboard.dto.DashboardSummaryResponse;
+import com.shop.modules.dashboard.dto.DailyTrendPoint;
 import com.shop.modules.delivery.DeliveryRepository;
 import com.shop.modules.delivery.DeliveryStatus;
 import com.shop.modules.expense.Expense;
@@ -100,6 +101,7 @@ public class DashboardService {
         private BigDecimal collectedCash;
         private BigDecimal collectedUpi;
         private BigDecimal collectedUdhar;
+        private BigDecimal waivedAmount;
     }
 
     public DashboardResponse getTodaySummary() {
@@ -127,6 +129,11 @@ public class DashboardService {
 
         CollectionBreakdown todayCol = calculateCollectionBreakdown(todayBills, start, end);
         BigDecimal todayCollected = todayCol.getTotalCollected();
+
+        BigDecimal todayNewUdhar = todayBills.stream()
+                .filter(b -> b.getPaymentMode() == com.shop.modules.billing.PaymentMode.UDHAR || b.getPaymentMode() == com.shop.modules.billing.PaymentMode.PARTIAL || b.getPaymentMode() == com.shop.modules.billing.PaymentMode.COD)
+                .map(b -> b.getPendingAmount() != null ? b.getPendingAmount() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         BigDecimal todayPending = customerRepository.getTotalPendingBalance();
         if (todayPending == null) {
@@ -164,13 +171,17 @@ public class DashboardService {
             }
             for (BillItem item : bill.getItems()) {
                 int totalQty = item.getQuantity() + item.getFreeQuantity();
+                boolean isPrimary = item.getUnitType() != null && item.getProduct().getPrimaryUnit() != null 
+                        && item.getUnitType().name().equalsIgnoreCase(item.getProduct().getPrimaryUnit());
+                int scale = isPrimary ? (item.getProduct().getSecondaryPerPrimary() != null ? item.getProduct().getSecondaryPerPrimary() : 1) : 1;
+                int totalQtyInSec = totalQty * scale;
                 BigDecimal buyPricePerSec = BigDecimal.ZERO;
                 if (item.getBatch() != null) {
                     buyPricePerSec = item.getBatch().getBuyPricePerSecondary(item.getProduct().getSecondaryPerPrimary());
                 } else {
                     buyPricePerSec = item.getProduct().getBuyPricePerSecondary();
                 }
-                BigDecimal cost = buyPricePerSec.multiply(BigDecimal.valueOf(totalQty));
+                BigDecimal cost = buyPricePerSec.multiply(BigDecimal.valueOf(totalQtyInSec));
                 monthCogs = monthCogs.add(cost);
             }
         }
@@ -322,6 +333,148 @@ public class DashboardService {
             backupStale = lastBackupTime.isBefore(LocalDateTime.now().minusHours(25));
         }
 
+        // Yesterday stats
+        LocalDateTime yesterdayStart = start.minusDays(1);
+        LocalDateTime yesterdayEnd = start;
+        List<Bill> allYesterdayBills = billRepository.findBillsBetween(yesterdayStart, yesterdayEnd);
+        List<Bill> yesterdayBillsList = allYesterdayBills.stream()
+                .filter(b -> b.getStatus() == BillStatus.CONFIRMED || b.getStatus() == BillStatus.PARTIAL || b.getStatus() == BillStatus.PAID)
+                .collect(Collectors.toList());
+
+        BigDecimal yesterdayRevenue = yesterdayBillsList.stream()
+                .map(b -> b.getGrandTotal() != null ? b.getGrandTotal() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        CollectionBreakdown yesterdayCol = calculateCollectionBreakdown(yesterdayBillsList, yesterdayStart, yesterdayEnd);
+        BigDecimal yesterdayCollection = yesterdayCol.getTotalCollected();
+        BigDecimal yesterdayCash = yesterdayCol.getCollectedCash();
+        BigDecimal yesterdayUPI = yesterdayCol.getCollectedUpi();
+        BigDecimal yesterdayUdharRecovery = yesterdayCol.getCollectedUdhar();
+
+        BigDecimal yesterdayNewUdhar = yesterdayBillsList.stream()
+                .filter(b -> b.getPaymentMode() == com.shop.modules.billing.PaymentMode.UDHAR || b.getPaymentMode() == com.shop.modules.billing.PaymentMode.PARTIAL || b.getPaymentMode() == com.shop.modules.billing.PaymentMode.COD)
+                .map(b -> b.getPendingAmount() != null ? b.getPendingAmount() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        Long yesterdayBillsCount = (long) yesterdayBillsList.size();
+
+        // Always current stats
+        List<Bill> codBills = billRepository.findByStatusIn(List.of(BillStatus.COD_PENDING, BillStatus.COD_DELIVERED));
+        BigDecimal codPendingAmount = codBills.stream()
+                .map(b -> b.getPendingAmount() != null ? b.getPendingAmount() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        long codPendingCount = codBills.size();
+
+        LocalDateTime codOverdueCutoff = LocalDateTime.now().minusDays(7);
+        int codOverdueCount = (int) codBills.stream()
+                .filter(b -> b.getCreatedAt() != null && b.getCreatedAt().isBefore(codOverdueCutoff))
+                .count();
+
+        List<Customer> allCustomers = customerRepository.findAll();
+        long npaCustomersCount = allCustomers.stream()
+                .filter(c -> Boolean.TRUE.equals(c.getIsNpa()) && Boolean.TRUE.equals(c.getActive()))
+                .count();
+        BigDecimal npaCustomersAmount = allCustomers.stream()
+                .filter(c -> Boolean.TRUE.equals(c.getIsNpa()) && Boolean.TRUE.equals(c.getActive()))
+                .map(c -> c.getTotalPending() != null ? c.getTotalPending() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        long oldestPendingDays = 0;
+        if (!pendingBills.isEmpty()) {
+            LocalDateTime oldestBillTime = pendingBills.stream()
+                    .map(Bill::getCreatedAt)
+                    .min(Comparator.naturalOrder())
+                    .orElse(null);
+            if (oldestBillTime != null) {
+                oldestPendingDays = java.time.temporal.ChronoUnit.DAYS.between(oldestBillTime, LocalDateTime.now());
+            }
+        }
+        BigDecimal totalOutstandingUdhar = allCustomers.stream()
+                .filter(c -> Boolean.TRUE.equals(c.getActive()))
+                .map(c -> c.getTotalPending() != null ? c.getTotalPending() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal totalInventoryValue = calculateTotalInventoryValue();
+
+        // Today operational expenses
+        List<Expense> todayExpensesList = expenseRepository.findBetween(LocalDate.now(), LocalDate.now());
+        BigDecimal todayOpExpenses = todayExpensesList.stream()
+                .filter(e -> e.getCategory() != com.shop.modules.expense.ExpenseCategory.STOCK_PURCHASE && e.getCategory() != com.shop.modules.expense.ExpenseCategory.OPENING_STOCK)
+                .map(Expense::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // Month operational expenses
+        BigDecimal monthOpExpenses = monthExpenses.stream()
+                .filter(e -> e.getCategory() != com.shop.modules.expense.ExpenseCategory.STOCK_PURCHASE && e.getCategory() != com.shop.modules.expense.ExpenseCategory.OPENING_STOCK)
+                .map(Expense::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // Health calculations for today
+        BigDecimal todayCogs = BigDecimal.ZERO;
+        for (Bill bill : todayBills) {
+            for (BillItem item : bill.getItems()) {
+                int totalQty = item.getQuantity() + item.getFreeQuantity();
+                boolean isPrimary = item.getUnitType() != null && item.getProduct().getPrimaryUnit() != null 
+                        && item.getUnitType().name().equalsIgnoreCase(item.getProduct().getPrimaryUnit());
+                int scale = isPrimary ? (item.getProduct().getSecondaryPerPrimary() != null ? item.getProduct().getSecondaryPerPrimary() : 1) : 1;
+                int totalQtyInSec = totalQty * scale;
+                BigDecimal buyPricePerSec = BigDecimal.ZERO;
+                if (item.getBatch() != null) {
+                    buyPricePerSec = item.getBatch().getBuyPricePerSecondary(item.getProduct().getSecondaryPerPrimary());
+                } else {
+                    buyPricePerSec = item.getProduct().getBuyPricePerSecondary();
+                }
+                todayCogs = todayCogs.add(buyPricePerSec.multiply(BigDecimal.valueOf(totalQtyInSec)));
+            }
+        }
+        BigDecimal todayDamageLoss = damageLogRepository.getTotalDamageLoss(start, end);
+        if (todayDamageLoss == null) todayDamageLoss = BigDecimal.ZERO;
+
+        BigDecimal netProfitMarginPct = BigDecimal.ZERO;
+        if (todayRevenue.compareTo(BigDecimal.ZERO) > 0) {
+            netProfitMarginPct = todayRevenue.subtract(todayCogs).subtract(todayOpExpenses).subtract(todayDamageLoss)
+                    .multiply(BigDecimal.valueOf(100)).divide(todayRevenue, 2, java.math.RoundingMode.HALF_UP);
+        }
+
+        BigDecimal todayAvgBillValue = BigDecimal.ZERO;
+        if (!todayBills.isEmpty()) {
+            todayAvgBillValue = todayRevenue.divide(BigDecimal.valueOf(todayBills.size()), 2, java.math.RoundingMode.HALF_UP);
+        }
+
+        BigDecimal damageLossMTD = damageLogRepository.getTotalDamageLoss(monthStart, end);
+        if (damageLossMTD == null) damageLossMTD = BigDecimal.ZERO;
+
+        long newCustomersThisMonth = allCustomers.stream()
+                .filter(c -> c.getCreatedAt() != null && c.getCreatedAt().isAfter(monthStart) && c.getCreatedAt().isBefore(end))
+                .count();
+
+        List<Bill> allCodBills = billRepository.findAll().stream()
+                .filter(b -> b.getPaymentMode() == com.shop.modules.billing.PaymentMode.COD)
+                .collect(Collectors.toList());
+        BigDecimal codSuccessRate = BigDecimal.ZERO;
+        if (!allCodBills.isEmpty()) {
+            long successCount = allCodBills.stream()
+                    .filter(b -> b.getStatus() == BillStatus.COD_COLLECTED || b.getStatus() == BillStatus.PAID)
+                    .count();
+            codSuccessRate = BigDecimal.valueOf(successCount * 100).divide(BigDecimal.valueOf(allCodBills.size()), 2, java.math.RoundingMode.HALF_UP);
+        }
+
+        List<Payment> periodPayments = paymentRepository.findBetween(start, end);
+        BigDecimal avgCollectionDays = calculateAvgCollectionDays(periodPayments);
+
+        // Active customers period switch
+        LocalDateTime yearStart = LocalDate.now().withDayOfYear(1).atStartOfDay();
+        List<Bill> yearBills = billRepository.findBillsBetween(yearStart, end).stream()
+                .filter(b -> b.getStatus() == BillStatus.CONFIRMED || b.getStatus() == BillStatus.PARTIAL || b.getStatus() == BillStatus.PAID)
+                .collect(Collectors.toList());
+
+        long activeCustomersToday = todayBills.stream().map(Bill::getCustomer).filter(c -> c != null).map(Customer::getId).distinct().count();
+        long activeCustomersMonth = monthBills.stream().map(Bill::getCustomer).filter(c -> c != null).map(Customer::getId).distinct().count();
+        long activeCustomersYear = yearBills.stream().map(Bill::getCustomer).filter(c -> c != null).map(Customer::getId).distinct().count();
+
+        // 7-day trend
+        List<DailyTrendPoint> sevenDayTrend = getTrendData(7);
+
         return DashboardResponse.builder()
                 .todayRevenue(todayRevenue)
                 .todayCollected(todayCollected)
@@ -330,8 +483,13 @@ public class DashboardService {
                 .todayCollectedUdhar(todayCol.getCollectedUdhar())
                 .todayPending(todayPending)
                 .todayBills((long) todayBills.size())
+                .totalInventoryValue(totalInventoryValue)
+                .todayNewUdhar(todayNewUdhar)
+                .codPendingAmount(codPendingAmount)
+                .codPendingBillsCount(codPendingCount)
+                .todayExpenses(todayOpExpenses)
                 .monthRevenue(monthRevenue)
-                .monthExpenses(totalExpenses)
+                .monthExpenses(monthOpExpenses)
                 .monthNetProfit(netProfit)
                 .lowStockCount(lowStockCount)
                 .expiringBatchesCount(expiringCount)
@@ -347,6 +505,34 @@ public class DashboardService {
                 .pendingDeliveries(pendingDeliveriesList)
                 .overdueUdharAlerts(overdueUdharAlerts)
                 .creditLimitExceededAlerts(creditLimitAlerts)
+                .yesterdayRevenue(yesterdayRevenue)
+                .yesterdayCollection(yesterdayCollection)
+                .yesterdayBills(yesterdayBillsCount)
+                .yesterdayCash(yesterdayCash)
+                .yesterdayUPI(yesterdayUPI)
+                .yesterdayUdharRecovery(yesterdayUdharRecovery)
+                .yesterdayNewUdhar(yesterdayNewUdhar)
+                .codOverdueCount(codOverdueCount)
+                .npaCustomersCount(npaCustomersCount)
+                .npaCustomersAmount(npaCustomersAmount)
+                .oldestPendingDays(oldestPendingDays)
+                .totalOutstandingUdhar(totalOutstandingUdhar)
+                .totalNewUdhar(todayNewUdhar)
+                .totalExpenses(monthOpExpenses)
+                .todayCashCollection(todayCol.getCollectedCash())
+                .todayUPICollection(todayCol.getCollectedUpi())
+                .todayUdharRecovery(todayCol.getCollectedUdhar())
+                .totalWaived(todayCol.getWaivedAmount())
+                .netProfitMarginPct(netProfitMarginPct)
+                .avgBillValue(todayAvgBillValue)
+                .damageLossMTD(damageLossMTD)
+                .newCustomersThisMonth(newCustomersThisMonth)
+                .codSuccessRate(codSuccessRate)
+                .avgCollectionDays(avgCollectionDays)
+                .activeCustomersToday(activeCustomersToday)
+                .activeCustomersMonth(activeCustomersMonth)
+                .activeCustomersYear(activeCustomersYear)
+                .sevenDayTrend(sevenDayTrend)
                 .build();
     }
 
@@ -400,19 +586,23 @@ public class DashboardService {
             }
             for (BillItem item : bill.getItems()) {
                 int totalQty = item.getQuantity() + item.getFreeQuantity();
+                boolean isPrimary = item.getUnitType() != null && item.getProduct().getPrimaryUnit() != null 
+                        && item.getUnitType().name().equalsIgnoreCase(item.getProduct().getPrimaryUnit());
+                int scale = isPrimary ? (item.getProduct().getSecondaryPerPrimary() != null ? item.getProduct().getSecondaryPerPrimary() : 1) : 1;
+                int totalQtyInSec = totalQty * scale;
                 BigDecimal buyPricePerSec = BigDecimal.ZERO;
                 if (item.getBatch() != null) {
                     buyPricePerSec = item.getBatch().getBuyPricePerSecondary(item.getProduct().getSecondaryPerPrimary());
                 } else {
                     buyPricePerSec = item.getProduct().getBuyPricePerSecondary();
                 }
-                BigDecimal cost = buyPricePerSec.multiply(BigDecimal.valueOf(totalQty));
+                BigDecimal cost = buyPricePerSec.multiply(BigDecimal.valueOf(totalQtyInSec));
                 monthCogs = monthCogs.add(cost);
             }
         }
 
         BigDecimal opex = expenses.stream()
-                .filter(e -> e.getCategory() != com.shop.modules.expense.ExpenseCategory.STOCK_PURCHASE)
+                .filter(e -> e.getCategory() != com.shop.modules.expense.ExpenseCategory.STOCK_PURCHASE && e.getCategory() != com.shop.modules.expense.ExpenseCategory.OPENING_STOCK)
                 .map(Expense::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
@@ -438,6 +628,121 @@ public class DashboardService {
             }
         }
 
+        // Last Month stats (M-1)
+        LocalDateTime lastMonthStart = start.minusMonths(1);
+        LocalDateTime lastMonthEnd = start;
+        List<Bill> lastMonthBills = billRepository.findBillsBetween(lastMonthStart, lastMonthEnd).stream()
+                .filter(b -> b.getStatus() == BillStatus.CONFIRMED || b.getStatus() == BillStatus.PARTIAL || b.getStatus() == BillStatus.PAID)
+                .collect(Collectors.toList());
+
+        BigDecimal lastMonthRevenue = lastMonthBills.stream()
+                .map(b -> b.getGrandTotal() != null ? b.getGrandTotal() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        CollectionBreakdown lastMonthCol = calculateCollectionBreakdown(lastMonthBills, lastMonthStart, lastMonthEnd);
+        BigDecimal lastMonthCollection = lastMonthCol.getTotalCollected();
+
+        List<Expense> lastMonthExpensesList = expenseRepository.findBetween(lastMonthStart.toLocalDate(), lastMonthEnd.toLocalDate().minusDays(1));
+        BigDecimal lastMonthExpenses = lastMonthExpensesList.stream()
+                .filter(e -> e.getCategory() != com.shop.modules.expense.ExpenseCategory.STOCK_PURCHASE && e.getCategory() != com.shop.modules.expense.ExpenseCategory.OPENING_STOCK)
+                .map(Expense::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal lastMonthNewUdhar = lastMonthBills.stream()
+                .filter(b -> b.getPaymentMode() == com.shop.modules.billing.PaymentMode.UDHAR || b.getPaymentMode() == com.shop.modules.billing.PaymentMode.PARTIAL || b.getPaymentMode() == com.shop.modules.billing.PaymentMode.COD)
+                .map(b -> b.getPendingAmount() != null ? b.getPendingAmount() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // Always current stats
+        List<Bill> codBills = billRepository.findByStatusIn(List.of(BillStatus.COD_PENDING, BillStatus.COD_DELIVERED));
+        BigDecimal codPendingAmount = codBills.stream()
+                .map(b -> b.getPendingAmount() != null ? b.getPendingAmount() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        long codPendingCount = codBills.size();
+
+        LocalDateTime codOverdueCutoff = LocalDateTime.now().minusDays(7);
+        int codOverdueCount = (int) codBills.stream()
+                .filter(b -> b.getCreatedAt() != null && b.getCreatedAt().isBefore(codOverdueCutoff))
+                .count();
+
+        List<Customer> allCustomers = customerRepository.findAll();
+        long npaCustomersCount = allCustomers.stream()
+                .filter(c -> Boolean.TRUE.equals(c.getIsNpa()) && Boolean.TRUE.equals(c.getActive()))
+                .count();
+        BigDecimal npaCustomersAmount = allCustomers.stream()
+                .filter(c -> Boolean.TRUE.equals(c.getIsNpa()) && Boolean.TRUE.equals(c.getActive()))
+                .map(c -> c.getTotalPending() != null ? c.getTotalPending() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        List<Bill> pendingBills = billRepository.findPendingBills();
+        long oldestPendingDays = 0;
+        if (!pendingBills.isEmpty()) {
+            LocalDateTime oldestBillTime = pendingBills.stream()
+                    .map(Bill::getCreatedAt)
+                    .min(Comparator.naturalOrder())
+                    .orElse(null);
+            if (oldestBillTime != null) {
+                oldestPendingDays = java.time.temporal.ChronoUnit.DAYS.between(oldestBillTime, LocalDateTime.now());
+            }
+        }
+        BigDecimal totalOutstandingUdhar = allCustomers.stream()
+                .filter(c -> Boolean.TRUE.equals(c.getActive()))
+                .map(c -> c.getTotalPending() != null ? c.getTotalPending() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal totalInventoryValue = calculateTotalInventoryValue();
+        long lowStockCount = productRepository.findLowStockProducts().size();
+
+        BigDecimal totalNewUdhar = bills.stream()
+                .filter(b -> b.getPaymentMode() == com.shop.modules.billing.PaymentMode.UDHAR || b.getPaymentMode() == com.shop.modules.billing.PaymentMode.PARTIAL || b.getPaymentMode() == com.shop.modules.billing.PaymentMode.COD)
+                .map(b -> b.getPendingAmount() != null ? b.getPendingAmount() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal netProfitMarginPct = BigDecimal.ZERO;
+        if (totalRevenue.compareTo(BigDecimal.ZERO) > 0) {
+            netProfitMarginPct = netProfit.multiply(BigDecimal.valueOf(100)).divide(totalRevenue, 2, java.math.RoundingMode.HALF_UP);
+        }
+
+        BigDecimal avgBillValue = BigDecimal.ZERO;
+        if (!bills.isEmpty()) {
+            avgBillValue = totalRevenue.divide(BigDecimal.valueOf(bills.size()), 2, java.math.RoundingMode.HALF_UP);
+        }
+
+        long newCustomersThisMonth = allCustomers.stream()
+                .filter(c -> c.getCreatedAt() != null && c.getCreatedAt().isAfter(start) && c.getCreatedAt().isBefore(end))
+                .count();
+
+        List<Bill> allCodBills = billRepository.findAll().stream()
+                .filter(b -> b.getPaymentMode() == com.shop.modules.billing.PaymentMode.COD)
+                .collect(Collectors.toList());
+        BigDecimal codSuccessRate = BigDecimal.ZERO;
+        if (!allCodBills.isEmpty()) {
+            long successCount = allCodBills.stream()
+                    .filter(b -> b.getStatus() == BillStatus.COD_COLLECTED || b.getStatus() == BillStatus.PAID)
+                    .count();
+            codSuccessRate = BigDecimal.valueOf(successCount * 100).divide(BigDecimal.valueOf(allCodBills.size()), 2, java.math.RoundingMode.HALF_UP);
+        }
+
+        List<Payment> periodPayments = paymentRepository.findBetween(start, end);
+        BigDecimal avgCollectionDays = calculateAvgCollectionDays(periodPayments);
+
+        LocalDateTime todayStart = LocalDate.now().atStartOfDay();
+        LocalDateTime todayEnd = todayStart.plusDays(1);
+        List<Bill> todayBills = billRepository.findBillsBetween(todayStart, todayEnd).stream()
+                .filter(b -> b.getStatus() == BillStatus.CONFIRMED || b.getStatus() == BillStatus.PARTIAL || b.getStatus() == BillStatus.PAID)
+                .collect(Collectors.toList());
+
+        LocalDateTime yearStart = LocalDate.now().withDayOfYear(1).atStartOfDay();
+        List<Bill> yearBills = billRepository.findBillsBetween(yearStart, end).stream()
+                .filter(b -> b.getStatus() == BillStatus.CONFIRMED || b.getStatus() == BillStatus.PARTIAL || b.getStatus() == BillStatus.PAID)
+                .collect(Collectors.toList());
+
+        long activeCustomersTodayCount = todayBills.stream().map(Bill::getCustomer).filter(c -> c != null).map(Customer::getId).distinct().count();
+        long activeCustomersMonthCount = bills.stream().map(Bill::getCustomer).filter(c -> c != null).map(Customer::getId).distinct().count();
+        long activeCustomersYearCount = yearBills.stream().map(Bill::getCustomer).filter(c -> c != null).map(Customer::getId).distinct().count();
+
+        List<DailyTrendPoint> sevenDayTrend = getTrendData(7);
+
         return MonthlyReportResponse.builder()
                 .year(year)
                 .month(month)
@@ -447,12 +752,37 @@ public class DashboardService {
                 .totalCollectedUpi(monthCol.getCollectedUpi())
                 .totalCollectedUdhar(monthCol.getCollectedUdhar())
                 .totalPending(totalPending)
+                .totalWaived(monthCol.getWaivedAmount())
+                .totalNewUdhar(totalNewUdhar)
                 .totalBills((long) bills.size())
-                .totalExpenses(totalExpenses)
+                .totalExpenses(opex)
                 .expensesByCategory(expensesByCategory)
                 .netProfit(netProfit)
                 .totalDamageLoss(totalDamageLoss)
                 .topProductsByQty(topProductsByQty)
+                .lastMonthRevenue(lastMonthRevenue)
+                .lastMonthCollection(lastMonthCollection)
+                .lastMonthExpenses(lastMonthExpenses)
+                .lastMonthNewUdhar(lastMonthNewUdhar)
+                .totalInventoryValue(totalInventoryValue)
+                .codPendingAmount(codPendingAmount)
+                .codPendingBillsCount(codPendingCount)
+                .codOverdueCount(codOverdueCount)
+                .lowStockCount(lowStockCount)
+                .npaCustomersCount(npaCustomersCount)
+                .npaCustomersAmount(npaCustomersAmount)
+                .oldestPendingDays(oldestPendingDays)
+                .totalOutstandingUdhar(totalOutstandingUdhar)
+                .netProfitMarginPct(netProfitMarginPct)
+                .avgBillValue(avgBillValue)
+                .damageLossMTD(totalDamageLoss)
+                .newCustomersThisMonth(newCustomersThisMonth)
+                .codSuccessRate(codSuccessRate)
+                .avgCollectionDays(avgCollectionDays)
+                .activeCustomersToday(activeCustomersTodayCount)
+                .activeCustomersMonth(activeCustomersMonthCount)
+                .activeCustomersYear(activeCustomersYearCount)
+                .sevenDayTrend(sevenDayTrend)
                 .build();
     }
 
@@ -499,19 +829,23 @@ public class DashboardService {
             }
             for (BillItem item : bill.getItems()) {
                 int totalQty = item.getQuantity() + item.getFreeQuantity();
+                boolean isPrimary = item.getUnitType() != null && item.getProduct().getPrimaryUnit() != null 
+                        && item.getUnitType().name().equalsIgnoreCase(item.getProduct().getPrimaryUnit());
+                int scale = isPrimary ? (item.getProduct().getSecondaryPerPrimary() != null ? item.getProduct().getSecondaryPerPrimary() : 1) : 1;
+                int totalQtyInSec = totalQty * scale;
                 BigDecimal buyPricePerSec = BigDecimal.ZERO;
                 if (item.getBatch() != null) {
                     buyPricePerSec = item.getBatch().getBuyPricePerSecondary(item.getProduct().getSecondaryPerPrimary());
                 } else {
                     buyPricePerSec = item.getProduct().getBuyPricePerSecondary();
                 }
-                BigDecimal cost = buyPricePerSec.multiply(BigDecimal.valueOf(totalQty));
+                BigDecimal cost = buyPricePerSec.multiply(BigDecimal.valueOf(totalQtyInSec));
                 monthCogs = monthCogs.add(cost);
             }
         }
 
         BigDecimal opex = expenses.stream()
-                .filter(e -> e.getCategory() != com.shop.modules.expense.ExpenseCategory.STOCK_PURCHASE)
+                .filter(e -> e.getCategory() != com.shop.modules.expense.ExpenseCategory.STOCK_PURCHASE && e.getCategory() != com.shop.modules.expense.ExpenseCategory.OPENING_STOCK)
                 .map(Expense::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
@@ -534,6 +868,110 @@ public class DashboardService {
             }
         }
 
+        // Last Year stats (Y-1)
+        LocalDateTime lastYearStart = start.minusYears(1);
+        LocalDateTime lastYearEnd = start;
+        List<Bill> lastYearBills = billRepository.findBillsBetween(lastYearStart, lastYearEnd).stream()
+                .filter(b -> b.getStatus() == BillStatus.CONFIRMED || b.getStatus() == BillStatus.PARTIAL || b.getStatus() == BillStatus.PAID)
+                .collect(Collectors.toList());
+
+        BigDecimal lastYearRevenue = lastYearBills.stream()
+                .map(b -> b.getGrandTotal() != null ? b.getGrandTotal() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        CollectionBreakdown lastYearCol = calculateCollectionBreakdown(lastYearBills, lastYearStart, lastYearEnd);
+        BigDecimal lastYearCollection = lastYearCol.getTotalCollected();
+
+        // Always current stats
+        List<Bill> codBills = billRepository.findByStatusIn(List.of(BillStatus.COD_PENDING, BillStatus.COD_DELIVERED));
+        BigDecimal codPendingAmount = codBills.stream()
+                .map(b -> b.getPendingAmount() != null ? b.getPendingAmount() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        long codPendingCount = codBills.size();
+
+        LocalDateTime codOverdueCutoff = LocalDateTime.now().minusDays(7);
+        int codOverdueCount = (int) codBills.stream()
+                .filter(b -> b.getCreatedAt() != null && b.getCreatedAt().isBefore(codOverdueCutoff))
+                .count();
+
+        List<Customer> allCustomers = customerRepository.findAll();
+        long npaCustomersCount = allCustomers.stream()
+                .filter(c -> Boolean.TRUE.equals(c.getIsNpa()) && Boolean.TRUE.equals(c.getActive()))
+                .count();
+        BigDecimal npaCustomersAmount = allCustomers.stream()
+                .filter(c -> Boolean.TRUE.equals(c.getIsNpa()) && Boolean.TRUE.equals(c.getActive()))
+                .map(c -> c.getTotalPending() != null ? c.getTotalPending() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        List<Bill> pendingBills = billRepository.findPendingBills();
+        long oldestPendingDays = 0;
+        if (!pendingBills.isEmpty()) {
+            LocalDateTime oldestBillTime = pendingBills.stream()
+                    .map(Bill::getCreatedAt)
+                    .min(Comparator.naturalOrder())
+                    .orElse(null);
+            if (oldestBillTime != null) {
+                oldestPendingDays = java.time.temporal.ChronoUnit.DAYS.between(oldestBillTime, LocalDateTime.now());
+            }
+        }
+        BigDecimal totalOutstandingUdhar = allCustomers.stream()
+                .filter(c -> Boolean.TRUE.equals(c.getActive()))
+                .map(c -> c.getTotalPending() != null ? c.getTotalPending() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal totalInventoryValue = calculateTotalInventoryValue();
+        long lowStockCount = productRepository.findLowStockProducts().size();
+
+        BigDecimal totalNewUdhar = bills.stream()
+                .filter(b -> b.getPaymentMode() == com.shop.modules.billing.PaymentMode.UDHAR || b.getPaymentMode() == com.shop.modules.billing.PaymentMode.PARTIAL || b.getPaymentMode() == com.shop.modules.billing.PaymentMode.COD)
+                .map(b -> b.getPendingAmount() != null ? b.getPendingAmount() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal netProfitMarginPct = BigDecimal.ZERO;
+        if (totalRevenue.compareTo(BigDecimal.ZERO) > 0) {
+            netProfitMarginPct = netProfit.multiply(BigDecimal.valueOf(100)).divide(totalRevenue, 2, java.math.RoundingMode.HALF_UP);
+        }
+
+        BigDecimal avgBillValue = BigDecimal.ZERO;
+        if (!bills.isEmpty()) {
+            avgBillValue = totalRevenue.divide(BigDecimal.valueOf(bills.size()), 2, java.math.RoundingMode.HALF_UP);
+        }
+
+        long newCustomersThisMonth = allCustomers.stream()
+                .filter(c -> c.getCreatedAt() != null && c.getCreatedAt().isAfter(start) && c.getCreatedAt().isBefore(end))
+                .count();
+
+        List<Bill> allCodBills = billRepository.findAll().stream()
+                .filter(b -> b.getPaymentMode() == com.shop.modules.billing.PaymentMode.COD)
+                .collect(Collectors.toList());
+        BigDecimal codSuccessRate = BigDecimal.ZERO;
+        if (!allCodBills.isEmpty()) {
+            long successCount = allCodBills.stream()
+                    .filter(b -> b.getStatus() == BillStatus.COD_COLLECTED || b.getStatus() == BillStatus.PAID)
+                    .count();
+            codSuccessRate = BigDecimal.valueOf(successCount * 100).divide(BigDecimal.valueOf(allCodBills.size()), 2, java.math.RoundingMode.HALF_UP);
+        }
+
+        List<Payment> periodPayments = paymentRepository.findBetween(start, end);
+        BigDecimal avgCollectionDays = calculateAvgCollectionDays(periodPayments);
+
+        LocalDateTime todayStart = LocalDate.now().atStartOfDay();
+        LocalDateTime todayEnd = todayStart.plusDays(1);
+        List<Bill> todayBills = billRepository.findBillsBetween(todayStart, todayEnd).stream()
+                .filter(b -> b.getStatus() == BillStatus.CONFIRMED || b.getStatus() == BillStatus.PARTIAL || b.getStatus() == BillStatus.PAID)
+                .collect(Collectors.toList());
+
+        LocalDateTime monthStart = LocalDate.now().withDayOfMonth(1).atStartOfDay();
+        List<Bill> monthBills = billRepository.findBillsBetween(monthStart, end).stream()
+                .filter(b -> b.getStatus() == BillStatus.CONFIRMED || b.getStatus() == BillStatus.PARTIAL || b.getStatus() == BillStatus.PAID)
+                .collect(Collectors.toList());
+
+        long activeCustomersTodayCount = todayBills.stream().map(Bill::getCustomer).filter(c -> c != null).map(Customer::getId).distinct().count();
+        long activeCustomersMonthCount = monthBills.stream().map(Bill::getCustomer).filter(c -> c != null).map(Customer::getId).distinct().count();
+        long activeCustomersYearCount = bills.stream().map(Bill::getCustomer).filter(c -> c != null).map(Customer::getId).distinct().count();
+
+        List<DailyTrendPoint> sevenDayTrend = getTrendData(7);
+
         return MonthlyReportResponse.builder()
                 .year(year)
                 .month(12)
@@ -543,12 +981,35 @@ public class DashboardService {
                 .totalCollectedUpi(yearCol.getCollectedUpi())
                 .totalCollectedUdhar(yearCol.getCollectedUdhar())
                 .totalPending(totalPending)
+                .totalWaived(yearCol.getWaivedAmount())
+                .totalNewUdhar(totalNewUdhar)
                 .totalBills((long) bills.size())
-                .totalExpenses(totalExpenses)
+                .totalExpenses(opex)
                 .expensesByCategory(expensesByCategory)
                 .netProfit(netProfit)
                 .totalDamageLoss(totalDamageLoss)
                 .topProductsByQty(topProductsByQty)
+                .lastYearRevenue(lastYearRevenue)
+                .lastYearCollection(lastYearCollection)
+                .totalInventoryValue(totalInventoryValue)
+                .codPendingAmount(codPendingAmount)
+                .codPendingBillsCount(codPendingCount)
+                .codOverdueCount(codOverdueCount)
+                .lowStockCount(lowStockCount)
+                .npaCustomersCount(npaCustomersCount)
+                .npaCustomersAmount(npaCustomersAmount)
+                .oldestPendingDays(oldestPendingDays)
+                .totalOutstandingUdhar(totalOutstandingUdhar)
+                .netProfitMarginPct(netProfitMarginPct)
+                .avgBillValue(avgBillValue)
+                .damageLossMTD(totalDamageLoss)
+                .newCustomersThisMonth(newCustomersThisMonth)
+                .codSuccessRate(codSuccessRate)
+                .avgCollectionDays(avgCollectionDays)
+                .activeCustomersToday(activeCustomersTodayCount)
+                .activeCustomersMonth(activeCustomersMonthCount)
+                .activeCustomersYear(activeCustomersYearCount)
+                .sevenDayTrend(sevenDayTrend)
                 .build();
     }
 
@@ -646,6 +1107,7 @@ public class DashboardService {
         List<Payment> periodPayments = paymentRepository.findBetween(start, end);
 
         BigDecimal collectedUdhar = periodPayments.stream()
+                .filter(p -> !"WAIVE_OFF".equalsIgnoreCase(p.getPaymentMode()))
                 .map(p -> p.getAmount() != null ? p.getAmount() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
@@ -656,6 +1118,11 @@ public class DashboardService {
 
         BigDecimal khataUpi = periodPayments.stream()
                 .filter(p -> "UPI".equalsIgnoreCase(p.getPaymentMode()))
+                .map(p -> p.getAmount() != null ? p.getAmount() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal waivedAmount = periodPayments.stream()
+                .filter(p -> "WAIVE_OFF".equalsIgnoreCase(p.getPaymentMode()))
                 .map(p -> p.getAmount() != null ? p.getAmount() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
@@ -697,6 +1164,115 @@ public class DashboardService {
                 .collectedCash(collectedCash)
                 .collectedUpi(collectedUpi)
                 .collectedUdhar(collectedUdhar)
+                .waivedAmount(waivedAmount)
                 .build();
     }
-}
+
+    private BigDecimal calculateTotalInventoryValue() {
+        List<Product> products = productRepository.findAll();
+        BigDecimal totalValue = BigDecimal.ZERO;
+        for (Product p : products) {
+            List<com.shop.modules.stock.StockBatch> activeBatches = batchRepository.findByProductId(p.getId()).stream()
+                    .filter(b -> b.getExhausted() == null || !b.getExhausted())
+                    .collect(Collectors.toList());
+
+            BigDecimal avgCost = BigDecimal.ZERO;
+            if (activeBatches.isEmpty()) {
+                avgCost = p.getBuyPricePerSecondary() != null ? p.getBuyPricePerSecondary() : BigDecimal.ZERO;
+            } else {
+                int totalQty = 0;
+                BigDecimal totalCost = BigDecimal.ZERO;
+                for (com.shop.modules.stock.StockBatch b : activeBatches) {
+                    int qty = b.getSecondaryRemaining() != null ? b.getSecondaryRemaining() : 0;
+                    if (qty > 0) {
+                        totalQty += qty;
+                        int ratio = p.getSecondaryPerPrimary() != null ? p.getSecondaryPerPrimary() : 1;
+                        BigDecimal unitPrice = b.getBuyPricePerSecondary(ratio);
+                        totalCost = totalCost.add(BigDecimal.valueOf(qty).multiply(unitPrice));
+                    }
+                }
+                if (totalQty == 0) {
+                    avgCost = p.getBuyPricePerSecondary() != null ? p.getBuyPricePerSecondary() : BigDecimal.ZERO;
+                } else {
+                    avgCost = totalCost.divide(BigDecimal.valueOf(totalQty), 2, java.math.RoundingMode.HALF_UP);
+                }
+            }
+
+            com.shop.modules.stock.Stock stock = stockRepository.findByProductId(p.getId()).orElse(null);
+            int currentStock = stock != null ? stock.getTotalSecondaryUnits() : 0;
+            BigDecimal value = BigDecimal.valueOf(currentStock).multiply(avgCost);
+            totalValue = totalValue.add(value);
+        }
+        return totalValue.setScale(2, java.math.RoundingMode.HALF_UP);
+    }
+
+    public List<DailyTrendPoint> getTrendData(int days) {
+        List<DailyTrendPoint> trend = new ArrayList<>();
+        LocalDate today = LocalDate.now();
+        for (int i = days - 1; i >= 0; i--) {
+            LocalDate date = today.minusDays(i);
+            LocalDateTime start = date.atStartOfDay();
+            LocalDateTime end = start.plusDays(1);
+
+            List<Bill> dayBills = billRepository.findBillsBetween(start, end).stream()
+                    .filter(b -> b.getStatus() == BillStatus.CONFIRMED || b.getStatus() == BillStatus.PARTIAL || b.getStatus() == BillStatus.PAID)
+                    .collect(Collectors.toList());
+
+            BigDecimal revenue = dayBills.stream()
+                    .map(b -> b.getGrandTotal() != null ? b.getGrandTotal() : BigDecimal.ZERO)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            CollectionBreakdown dayCol = calculateCollectionBreakdown(dayBills, start, end);
+            BigDecimal collection = dayCol.getTotalCollected();
+
+            BigDecimal newUdhar = dayBills.stream()
+                    .filter(b -> b.getPaymentMode() == com.shop.modules.billing.PaymentMode.UDHAR || b.getPaymentMode() == com.shop.modules.billing.PaymentMode.PARTIAL || b.getPaymentMode() == com.shop.modules.billing.PaymentMode.COD)
+                    .map(b -> b.getPendingAmount() != null ? b.getPendingAmount() : BigDecimal.ZERO)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            String dayName = date.getDayOfWeek().name().substring(0, 3) + " " + date.getDayOfMonth();
+
+            trend.add(DailyTrendPoint.builder()
+                    .date(date)
+                    .dayName(dayName)
+                    .revenue(revenue)
+                    .collection(collection)
+                    .bills((long) dayBills.size())
+                    .newUdhar(newUdhar)
+                    .build());
+        }
+        return trend;
+    }
+
+    private BigDecimal calculateAvgCollectionDays(List<Payment> payments) {
+        List<Payment> paymentsWithBills = payments.stream()
+                .filter(p -> p.getBill() != null && p.getBill().getCreatedAt() != null && p.getPaidAt() != null)
+                .collect(Collectors.toList());
+        if (paymentsWithBills.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        long totalDays = 0;
+        for (Payment p : paymentsWithBills) {
+            long days = java.time.temporal.ChronoUnit.DAYS.between(p.getBill().getCreatedAt(), p.getPaidAt());
+            totalDays += Math.max(0, days);
+        }
+        return BigDecimal.valueOf(totalDays).divide(BigDecimal.valueOf(paymentsWithBills.size()), 2, java.math.RoundingMode.HALF_UP);
+    }
+
+    public Map<String, Object> getBusinessHealth() {
+        DashboardResponse today = getTodaySummary();
+        Map<String, Object> health = new java.util.HashMap<>();
+        health.put("netProfitMarginPct", today.getNetProfitMarginPct());
+        health.put("activeCustomersToday", today.getActiveCustomersToday());
+        health.put("avgBillValue", today.getAvgBillValue());
+        health.put("damageLossMTD", today.getDamageLossMTD());
+        health.put("npaCount", today.getNpaCustomersCount());
+        health.put("npaAmount", today.getNpaCustomersAmount());
+        health.put("oldestPendingDays", today.getOldestPendingDays());
+        health.put("codOverdueCount", today.getCodOverdueCount());
+        health.put("codSuccessRate", today.getCodSuccessRate());
+        health.put("avgCollectionDays", today.getAvgCollectionDays());
+        health.put("totalWaivedMTD", today.getTotalWaived());
+        return health;
+    }
+}

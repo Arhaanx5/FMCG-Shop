@@ -71,6 +71,18 @@ public class Bill {
     @Builder.Default
     private BillStatus status = BillStatus.CONFIRMED;
 
+    @Transient
+    private boolean forceStatusChange;
+
+    public void setStatus(BillStatus status) {
+        if (!this.forceStatusChange && (this.status == BillStatus.COD_COLLECTED || this.status == BillStatus.PAID)) {
+            if (status == BillStatus.COD_PENDING || status == BillStatus.COD_DELIVERED) {
+                throw new RuntimeException("Invalid status transition: Cannot revert a paid/collected bill back to pending");
+            }
+        }
+        this.status = status;
+    }
+
     private String notes;
 
     @ManyToOne
@@ -84,21 +96,59 @@ public class Bill {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    @Version
+    @Builder.Default
+    private Integer version = 0;
+
     @OneToMany(mappedBy = "bill",
             cascade = CascadeType.ALL,
+            orphanRemoval = true,
             fetch = FetchType.LAZY)
     @Builder.Default
     @JsonIgnore  // ← use DTO items list instead
     private List<BillItem> items = new ArrayList<>();
 
+    public void validateTotals() {
+        if (status == BillStatus.CANCELLED || status == BillStatus.DRAFT) {
+            return;
+        }
+
+        BigDecimal sub = subtotal != null ? subtotal : BigDecimal.ZERO;
+        BigDecimal gst = gstTotal != null ? gstTotal : BigDecimal.ZERO;
+        BigDecimal cess = cessTotal != null ? cessTotal : BigDecimal.ZERO;
+        BigDecimal disc = discount != null ? discount : BigDecimal.ZERO;
+        BigDecimal grand = grandTotal != null ? grandTotal : BigDecimal.ZERO;
+
+        BigDecimal expectedGrand = sub.add(gst).add(cess).subtract(disc);
+        if (grand.subtract(expectedGrand).abs().compareTo(new BigDecimal("0.05")) > 0) {
+            throw new RuntimeException("Bill total mismatch: grandTotal=" + grand + " but expected=" + expectedGrand);
+        }
+
+        if (items != null && !items.isEmpty()) {
+            BigDecimal itemsSum = BigDecimal.ZERO;
+            for (BillItem item : items) {
+                if (item.getTotal() != null) {
+                    itemsSum = itemsSum.add(item.getTotal());
+                }
+            }
+            BigDecimal expectedItemsSum = grand.add(disc);
+            if (itemsSum.subtract(expectedItemsSum).abs().compareTo(new BigDecimal("0.05")) > 0) {
+                throw new RuntimeException("Bill item total mismatch: sum of items=" + itemsSum + " but expected (grandTotal + discount)=" + expectedItemsSum);
+            }
+        }
+    }
+
     @PrePersist
     public void prePersist() {
+        validateTotals();
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
+        version = 0;
     }
 
     @PreUpdate
     public void preUpdate() {
+        validateTotals();
         updatedAt = LocalDateTime.now();
     }
 }

@@ -114,6 +114,24 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
+
+  /* Dashboard Module Colors */
+  --color-revenue: #10b981;
+  --color-collection: #3b82f6;
+  --color-pending: #ef4444;
+  --color-bills: #3b82f6;
+  --color-cash: #10b981;
+  --color-upi: #3b82f6;
+  --color-udhar: #8b5cf6;
+  --color-new-credit: #f97316;
+  --color-inventory: #7c3aed;
+  --color-cod: #06b6d4;
+  --color-expenses: #dc2626;
+  --color-lowstock: #f59e0b;
+  --color-profit: #059669;
+  --color-damage: #991b1b;
+  --color-waived: #6b7280;
+  --color-health: #0ea5e9;
 }
 
 .dark {
@@ -1510,59 +1528,111 @@ img {
 
 .ai-insight-card {
   position: relative;
-  background: linear-gradient(135deg, rgba(20, 16, 44, 0.95) 0%, rgba(10, 17, 40, 0.98) 100%) !important;
-  border: 1px solid rgba(139, 92, 246, 0.3) !important;
-  box-shadow: 0 8px 32px rgba(139, 92, 246, 0.12), var(--shadow-card);
+  background: linear-gradient(135deg, #faf9fe 0%, #f1edfd 100%) !important;
+  border: 1px solid rgba(139, 92, 246, 0.25) !important;
+  box-shadow: 0 8px 32px rgba(139, 92, 246, 0.06), var(--shadow-card);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   overflow: hidden;
-  color: #f8fafc !important;
+  color: #3b0764 !important;
 }
 
 .ai-insight-card .card-title {
-  color: #ffffff !important;
+  color: #2e0854 !important;
 }
 
 .ai-insight-card .card-header {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-bottom: 1px solid rgba(139, 92, 246, 0.15) !important;
 }
 
 .ai-insight-card .btn-ghost {
-  color: rgba(248, 250, 252, 0.7) !important;
+  color: #5b21b6 !important;
   background: transparent !important;
 }
 
 .ai-insight-card .btn-ghost:hover {
-  color: #ffffff !important;
-  background: rgba(255, 255, 255, 0.08) !important;
+  color: #4c1d95 !important;
+  background: rgba(139, 92, 246, 0.1) !important;
 }
 
 .ai-insight-card .btn-secondary {
-  background: rgba(255, 255, 255, 0.06) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  color: rgba(248, 250, 252, 0.8) !important;
+  background: rgba(255, 255, 255, 0.75) !important;
+  border: 1px solid rgba(139, 92, 246, 0.2) !important;
+  color: #5b21b6 !important;
 }
 
 .ai-insight-card .btn-secondary:hover {
-  background: rgba(139, 92, 246, 0.2) !important;
-  border-color: rgba(139, 92, 246, 0.4) !important;
-  color: #ffffff !important;
+  background: rgba(139, 92, 246, 0.15) !important;
+  border-color: rgba(139, 92, 246, 0.3) !important;
+  color: #4c1d95 !important;
 }
 
 .ai-insight-card .form-input {
-  background: rgba(255, 255, 255, 0.06) !important;
-  border: 1px solid rgba(139, 92, 246, 0.35) !important;
-  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.9) !important;
+  border: 1px solid rgba(139, 92, 246, 0.3) !important;
+  color: #1e1b4b !important;
 }
 
 .ai-insight-card .form-input::placeholder {
-  color: rgba(248, 250, 252, 0.4) !important;
+  color: rgba(147, 51, 234, 0.5) !important;
 }
 
 .ai-insight-card .form-input:focus {
   border-color: rgba(139, 92, 246, 0.6) !important;
   outline: none !important;
   box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2) !important;
+}
+
+/* Dark mode overrides */
+.dark .ai-insight-card {
+  background: linear-gradient(135deg, rgba(20, 16, 44, 0.95) 0%, rgba(10, 17, 40, 0.98) 100%) !important;
+  border: 1px solid rgba(139, 92, 246, 0.35) !important;
+  box-shadow: 0 8px 32px rgba(139, 92, 246, 0.15), var(--shadow-card);
+  color: #f8fafc !important;
+}
+
+.dark .ai-insight-card .card-title {
+  color: #ffffff !important;
+}
+
+.dark .ai-insight-card .card-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.dark .ai-insight-card .btn-ghost {
+  color: rgba(248, 250, 252, 0.7) !important;
+  background: transparent !important;
+}
+
+.dark .ai-insight-card .btn-ghost:hover {
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.dark .ai-insight-card .btn-secondary {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: rgba(248, 250, 252, 0.8) !important;
+}
+
+.dark .ai-insight-card .btn-secondary:hover {
+  background: rgba(139, 92, 246, 0.2) !important;
+  border-color: rgba(139, 92, 246, 0.4) !important;
+  color: #ffffff !important;
+}
+
+.dark .ai-insight-card .form-input {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(139, 92, 246, 0.35) !important;
+  color: #ffffff !important;
+}
+
+.dark .ai-insight-card .form-input::placeholder {
+  color: rgba(248, 250, 252, 0.4) !important;
+}
+
+.dark .ai-insight-card .form-input:focus {
+  border-color: rgba(139, 92, 246, 0.6) !important;
 }
 
 .ai-insight-card::before {

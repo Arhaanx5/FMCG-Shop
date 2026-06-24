@@ -47,6 +47,9 @@ public class BillItem {
 
     private BigDecimal rate;
 
+    @Column(name = "original_rate")
+    private BigDecimal originalRate;
+
     @Column(name = "gst_percent")
     @Builder.Default
     private BigDecimal gstPercent = BigDecimal.ZERO;
@@ -68,4 +71,8 @@ public class BillItem {
     @Column(name = "is_offer")
     @Builder.Default
     private Boolean offer = false;
+
+    @OneToMany(mappedBy = "billItem", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private java.util.List<BillItemBatchDeduction> batchDeductions = new java.util.ArrayList<>();
 }

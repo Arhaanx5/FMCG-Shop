@@ -80,6 +80,11 @@ public class StockService {
 
     @Transactional
     public void deductOfferUnits(UUID batchId, int quantity) {
+        deductOfferUnits(batchId, quantity, "System", null, BigDecimal.ZERO, "Deducted offer units");
+    }
+
+    @Transactional
+    public void deductOfferUnits(UUID batchId, int quantity, String username, String referenceNumber, BigDecimal unitPrice, String remarks) {
         // Pessimistic lock batch
         StockBatch batch = batchRepository.findByIdForUpdate(batchId)
                 .orElseThrow(() -> new RuntimeException("Batch not found: " + batchId));
@@ -101,22 +106,27 @@ public class StockService {
         inventoryService.normalizeStock(stock, batch.getProduct());
         stockRepository.save(stock);
 
-        movementService.logMovementAsync(
+        movementService.logMovement(
                 batch.getProduct(),
                 batch,
                 "SALE",
                 -quantity,
                 qtyBefore,
                 qtyAfter,
-                BigDecimal.ZERO,
-                "System",
-                batch.getInvoiceNumber(),
-                "Deducted offer units"
+                unitPrice != null ? unitPrice : BigDecimal.ZERO,
+                username,
+                referenceNumber != null ? referenceNumber : batch.getInvoiceNumber(),
+                remarks != null ? remarks : "Deducted offer units"
         );
     }
 
     @Transactional
     public void addBackOfferStock(UUID productId, UUID batchId, int quantity) {
+        addBackOfferStock(productId, batchId, quantity, "System", null, BigDecimal.ZERO, "Restored offer units");
+    }
+
+    @Transactional
+    public void addBackOfferStock(UUID productId, UUID batchId, int quantity, String username, String referenceNumber, BigDecimal unitPrice, String remarks) {
         StockBatch batch = batchRepository.findByIdForUpdate(batchId)
                 .orElseThrow(() -> new RuntimeException("Batch not found: " + batchId));
 
@@ -132,17 +142,17 @@ public class StockService {
         inventoryService.normalizeStock(stock, batch.getProduct());
         stockRepository.save(stock);
 
-        movementService.logMovementAsync(
+        movementService.logMovement(
                 batch.getProduct(),
                 batch,
                 "RETURN_IN",
                 quantity,
                 qtyBefore,
                 qtyAfter,
-                BigDecimal.ZERO,
-                "System",
-                batch.getInvoiceNumber(),
-                "Restored offer units"
+                unitPrice != null ? unitPrice : BigDecimal.ZERO,
+                username,
+                referenceNumber != null ? referenceNumber : batch.getInvoiceNumber(),
+                remarks != null ? remarks : "Restored offer units"
         );
     }
 
@@ -153,6 +163,13 @@ public class StockService {
 
     @Transactional(rollbackFor = RuntimeException.class)
     public void deductByPrimary(UUID productId, int quantity, UUID batchId) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Product not found"));
+        deductByPrimary(productId, quantity, batchId, "System", null, product.getBuyPricePerSecondary(), "Deducted primary units");
+    }
+
+    @Transactional(rollbackFor = RuntimeException.class)
+    public List<com.shop.modules.stock.dto.BatchDeductionRecord> deductByPrimary(UUID productId, int quantity, UUID batchId, String username, String referenceNumber, BigDecimal unitPrice, String remarks) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new RuntimeException("Product not found"));
 
@@ -176,10 +193,10 @@ public class StockService {
             System.out.println("[LOW STOCK ALERT] Product '" + product.getName() + "' is running low.");
         }
 
-        deductFromBatches(productId, secondaryToDeduct, batchId);
+        List<com.shop.modules.stock.dto.BatchDeductionRecord> deductions = deductFromBatches(productId, secondaryToDeduct, batchId);
 
-        BigDecimal price = product.getBuyPricePerSecondary();
-        movementService.logMovementAsync(
+        BigDecimal price = unitPrice != null ? unitPrice : product.getBuyPricePerSecondary();
+        movementService.logMovement(
                 product,
                 batchId != null ? getBatchById(batchId) : null,
                 "SALE",
@@ -187,19 +204,36 @@ public class StockService {
                 qtyBefore,
                 qtyAfter,
                 price,
-                "System",
-                null,
-                "Deducted primary units"
+                username,
+                referenceNumber,
+                remarks
         );
+        return deductions;
     }
 
     @Transactional(rollbackFor = RuntimeException.class)
-    public void deductBySecondary(UUID productId, int quantity) {
-        deductBySecondary(productId, quantity, null);
+    public List<com.shop.modules.stock.dto.BatchDeductionRecord> deductBySecondary(UUID productId, int quantity) {
+        return deductBySecondary(productId, quantity, null);
     }
 
     @Transactional(rollbackFor = RuntimeException.class)
-    public void deductBySecondary(UUID productId, int quantity, UUID batchId) {
+    public List<com.shop.modules.stock.dto.BatchDeductionRecord> deductBySecondary(UUID productId, int quantity, UUID batchId) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Product not found"));
+        return deductBySecondary(productId, quantity, batchId, "System", null, product.getBuyPricePerSecondary(), "Deducted secondary units");
+    }
+
+    @Transactional(rollbackFor = RuntimeException.class)
+    public List<com.shop.modules.stock.dto.BatchDeductionRecord> deductBySecondary(UUID productId, int quantity, UUID batchId, String username, String referenceNumber, BigDecimal unitPrice, String remarks) {
+        return deductBySecondary(productId, quantity, batchId, username, referenceNumber, unitPrice, remarks, "SALE");
+    }
+
+    @Transactional(rollbackFor = RuntimeException.class)
+    public List<com.shop.modules.stock.dto.BatchDeductionRecord> deductBySecondary(UUID productId, int quantity, UUID batchId, String username, String referenceNumber, BigDecimal unitPrice, String remarks, String movementType) {
+        if ("RETURN_OUT".equals(movementType) && batchId == null) {
+            throw new IllegalArgumentException("Batch selection is required for RETURN_OUT movement type");
+        }
+
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new RuntimeException("Product not found"));
 
@@ -220,25 +254,38 @@ public class StockService {
             System.out.println("[LOW STOCK ALERT] Product '" + product.getName() + "' is running low.");
         }
 
-        deductFromBatches(productId, quantity, batchId);
+        List<com.shop.modules.stock.dto.BatchDeductionRecord> deductions = deductFromBatches(productId, quantity, batchId);
 
-        BigDecimal price = product.getBuyPricePerSecondary();
-        movementService.logMovementAsync(
+        BigDecimal price = unitPrice != null ? unitPrice : product.getBuyPricePerSecondary();
+        movementService.logMovement(
                 product,
                 batchId != null ? getBatchById(batchId) : null,
-                "SALE",
+                movementType != null ? movementType : "SALE",
                 -quantity,
                 qtyBefore,
                 qtyAfter,
                 price,
-                "System",
-                null,
-                "Deducted secondary units"
+                username,
+                referenceNumber,
+                remarks
         );
+        return deductions;
     }
 
     @Transactional
     public void addBackStock(UUID productId, int primaryQty, int secondaryQty) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Product not found"));
+        addBackStock(productId, primaryQty, secondaryQty, "System", null, product.getBuyPricePerSecondary(), "Restored general inventory stock");
+    }
+
+    @Transactional
+    public void addBackStock(UUID productId, int primaryQty, int secondaryQty, String username, String referenceNumber, BigDecimal unitPrice, String remarks) {
+        addBackStock(productId, primaryQty, secondaryQty, username, referenceNumber, unitPrice, remarks, "RETURN_IN");
+    }
+
+    @Transactional
+    public void addBackStock(UUID productId, int primaryQty, int secondaryQty, String username, String referenceNumber, BigDecimal unitPrice, String remarks, String movementType) {
         Stock stock = inventoryService.getOrCreateStock(productId);
         int qtyBefore = stock.getTotalSecondaryUnits();
         int qtyAfter = qtyBefore + secondaryQty;
@@ -247,23 +294,116 @@ public class StockService {
         inventoryService.normalizeStock(stock, stock.getProduct());
         stockRepository.save(stock);
 
-        BigDecimal price = stock.getProduct().getBuyPricePerSecondary();
-        movementService.logMovementAsync(
+        BigDecimal price = unitPrice != null ? unitPrice : stock.getProduct().getBuyPricePerSecondary();
+        movementService.logMovement(
                 stock.getProduct(),
                 null,
-                "RETURN_IN",
+                movementType != null ? movementType : "RETURN_IN",
                 secondaryQty,
                 qtyBefore,
                 qtyAfter,
                 price,
-                "System",
-                null,
-                "Restored general inventory stock"
+                username,
+                referenceNumber,
+                remarks
         );
     }
 
     @Transactional
+    public void addBackStockToBatch(UUID productId, UUID batchId, int primaryQty, int secondaryQty, String username, String referenceNumber, BigDecimal unitPrice, String remarks) {
+        addBackStockToBatch(productId, batchId, primaryQty, secondaryQty, username, referenceNumber, unitPrice, remarks, "RETURN_IN");
+    }
+
+    @Transactional
+    public void addBackStockToBatch(UUID productId, UUID batchId, int primaryQty, int secondaryQty, String username, String referenceNumber, BigDecimal unitPrice, String remarks, String movementType) {
+        Stock stock = inventoryService.getOrCreateStock(productId);
+        int qtyBefore = stock.getTotalSecondaryUnits();
+        int qtyAfter = qtyBefore + secondaryQty;
+
+        stock.setTotalSecondaryUnits(qtyAfter);
+        inventoryService.normalizeStock(stock, stock.getProduct());
+        stockRepository.save(stock);
+
+        BigDecimal price = unitPrice != null ? unitPrice : stock.getProduct().getBuyPricePerSecondary();
+
+        if (batchId != null) {
+            StockBatch batch = batchRepository.findByIdForUpdate(batchId)
+                    .orElseThrow(() -> new RuntimeException("Batch not found: " + batchId));
+
+            int oldRemaining = batch.getSecondaryRemaining();
+            batch.setSecondaryRemaining(oldRemaining + secondaryQty);
+            if (batch.getSecondaryRemaining() > 0) {
+                batch.setExhausted(false);
+                if (batch.getBatchStatus() == BatchStatus.WRITTEN_OFF) {
+                    batch.setBatchStatus(BatchStatus.ACTIVE);
+                }
+            }
+            batchRepository.save(batch);
+
+            movementService.logMovement(
+                    stock.getProduct(),
+                    batch,
+                    movementType != null ? movementType : "RETURN_IN",
+                    secondaryQty,
+                    qtyBefore,
+                    qtyAfter,
+                    price,
+                    username,
+                    referenceNumber,
+                    remarks
+            );
+        } else {
+            // LIFO batch restoration fallback
+            List<StockBatch> batches = batchRepository.findByProductIdOrderByReceivedAtDesc(productId);
+            int remainingToRestore = secondaryQty;
+            for (StockBatch batch : batches) {
+                if (remainingToRestore <= 0) break;
+
+                StockBatch lockedBatch = batchRepository.findByIdForUpdate(batch.getId()).orElse(batch);
+                int capacity = lockedBatch.getSecondaryReceived() - lockedBatch.getSecondaryRemaining();
+                if (capacity > 0) {
+                    int restoreAmt = Math.min(remainingToRestore, capacity);
+                    lockedBatch.setSecondaryRemaining(lockedBatch.getSecondaryRemaining() + restoreAmt);
+                    if (lockedBatch.getSecondaryRemaining() > 0) {
+                        lockedBatch.setExhausted(false);
+                        if (lockedBatch.getBatchStatus() == BatchStatus.WRITTEN_OFF) {
+                            lockedBatch.setBatchStatus(BatchStatus.ACTIVE);
+                        }
+                    }
+                    batchRepository.save(lockedBatch);
+                    remainingToRestore -= restoreAmt;
+                }
+            }
+
+            movementService.logMovement(
+                    stock.getProduct(),
+                    null,
+                    movementType != null ? movementType : "RETURN_IN",
+                    secondaryQty,
+                    qtyBefore,
+                    qtyAfter,
+                    price,
+                    username,
+                    referenceNumber,
+                    remarks
+            );
+        }
+    }
+
+    @Transactional
     public void addBackStockToSpecificBatch(UUID batchId, int secondaryQty) {
+        StockBatch batch = batchRepository.findById(batchId)
+                .orElseThrow(() -> new RuntimeException("Batch not found: " + batchId));
+        addBackStockToSpecificBatch(batchId, secondaryQty, "System", null, batch.getBuyPricePerSecondary(batch.getProduct().getSecondaryPerPrimary()), "Restored specific batch stock");
+    }
+
+    @Transactional
+    public void addBackStockToSpecificBatch(UUID batchId, int secondaryQty, String username, String referenceNumber, BigDecimal unitPrice, String remarks) {
+        addBackStockToSpecificBatch(batchId, secondaryQty, username, referenceNumber, unitPrice, remarks, "RETURN_IN");
+    }
+
+    @Transactional
+    public void addBackStockToSpecificBatch(UUID batchId, int secondaryQty, String username, String referenceNumber, BigDecimal unitPrice, String remarks, String movementType) {
         StockBatch batch = batchRepository.findByIdForUpdate(batchId)
                 .orElseThrow(() -> new RuntimeException("Batch not found: " + batchId));
 
@@ -277,22 +417,34 @@ public class StockService {
         }
         batchRepository.save(batch);
 
-        movementService.logMovementAsync(
+        movementService.logMovement(
                 batch.getProduct(),
                 batch,
-                "RETURN_IN",
+                movementType != null ? movementType : "RETURN_IN",
                 secondaryQty,
                 null,
                 null,
-                batch.getBuyPricePerSecondary(batch.getProduct().getSecondaryPerPrimary()),
-                "System",
-                batch.getInvoiceNumber(),
-                "Restored specific batch stock"
+                unitPrice != null ? unitPrice : batch.getBuyPricePerSecondary(batch.getProduct().getSecondaryPerPrimary()),
+                username,
+                referenceNumber != null ? referenceNumber : batch.getInvoiceNumber(),
+                remarks != null ? remarks : "Restored specific batch stock"
         );
     }
 
     @Transactional
     public void restoreStockToBatches(UUID productId, int secondaryQty) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Product not found"));
+        restoreStockToBatches(productId, secondaryQty, "System", null, product.getBuyPricePerSecondary(), "LIFO batch restoration");
+    }
+
+    @Transactional
+    public void restoreStockToBatches(UUID productId, int secondaryQty, String username, String referenceNumber, BigDecimal unitPrice, String remarks) {
+        restoreStockToBatches(productId, secondaryQty, username, referenceNumber, unitPrice, remarks, "RETURN_IN");
+    }
+
+    @Transactional
+    public void restoreStockToBatches(UUID productId, int secondaryQty, String username, String referenceNumber, BigDecimal unitPrice, String remarks, String movementType) {
         List<StockBatch> batches = batchRepository.findByProductIdOrderByReceivedAtDesc(productId);
 
         int remainingToRestore = secondaryQty;
@@ -315,23 +467,24 @@ public class StockService {
                 batchRepository.save(lockedBatch);
                 remainingToRestore -= restoreAmt;
 
-                movementService.logMovementAsync(
+                movementService.logMovement(
                         lockedBatch.getProduct(),
                         lockedBatch,
-                        "RETURN_IN",
+                        movementType != null ? movementType : "RETURN_IN",
                         restoreAmt,
                         null,
                         null,
-                        lockedBatch.getBuyPricePerSecondary(lockedBatch.getProduct().getSecondaryPerPrimary()),
-                        "System",
-                        lockedBatch.getInvoiceNumber(),
-                        "LIFO batch restoration"
+                        unitPrice != null ? unitPrice : lockedBatch.getBuyPricePerSecondary(lockedBatch.getProduct().getSecondaryPerPrimary()),
+                        username,
+                        referenceNumber != null ? referenceNumber : lockedBatch.getInvoiceNumber(),
+                        remarks != null ? remarks : "LIFO batch restoration"
                 );
             }
         }
     }
 
-    private void deductFromBatches(UUID productId, int secondaryQty, UUID batchId) {
+    private List<com.shop.modules.stock.dto.BatchDeductionRecord> deductFromBatches(UUID productId, int secondaryQty, UUID batchId) {
+        List<com.shop.modules.stock.dto.BatchDeductionRecord> deductions = new java.util.ArrayList<>();
         if (batchId != null) {
             StockBatch batch = batchRepository.findByIdForUpdate(batchId)
                     .orElseThrow(() -> new RuntimeException("Batch not found: " + batchId));
@@ -343,7 +496,8 @@ public class StockService {
                 batch.setExhausted(true);
             }
             batchRepository.save(batch);
-            return;
+            deductions.add(new com.shop.modules.stock.dto.BatchDeductionRecord(batchId, secondaryQty));
+            return deductions;
         }
 
         List<StockBatch> batches = batchRepository.findActiveBatchesFIFO(productId);
@@ -354,15 +508,22 @@ public class StockService {
 
             StockBatch lockedBatch = batchRepository.findByIdForUpdate(batch.getId()).orElse(batch);
             int deduct = Math.min(lockedBatch.getSecondaryRemaining(), remaining);
-            lockedBatch.setSecondaryRemaining(lockedBatch.getSecondaryRemaining() - deduct);
+            if (deduct > 0) {
+                lockedBatch.setSecondaryRemaining(lockedBatch.getSecondaryRemaining() - deduct);
 
-            if (lockedBatch.getSecondaryRemaining() == 0) {
-                lockedBatch.setExhausted(true);
+                if (lockedBatch.getSecondaryRemaining() == 0) {
+                    lockedBatch.setExhausted(true);
+                }
+
+                batchRepository.save(lockedBatch);
+                deductions.add(new com.shop.modules.stock.dto.BatchDeductionRecord(lockedBatch.getId(), deduct));
+                remaining -= deduct;
             }
-
-            batchRepository.save(lockedBatch);
-            remaining -= deduct;
         }
+        if (remaining > 0) {
+            throw new RuntimeException("Insufficient stock to complete deduction: " + remaining + " units missing");
+        }
+        return deductions;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -452,7 +613,7 @@ public class StockService {
                 .build();
         stockAdjustmentLogRepository.save(log);
 
-        movementService.logMovementAsync(
+        movementService.logMovement(
                 product,
                 batch,
                 "EXPIRY",
@@ -511,5 +672,105 @@ public class StockService {
         private BigDecimal sellPricePrimary;
         private BigDecimal sellPriceSecondary;
         private boolean logAsExpense;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void markBatchDamage(UUID batchId, int quantity, String damageType, String reason, String username) {
+        if (quantity <= 0) {
+            throw new RuntimeException("Quantity must be greater than 0");
+        }
+
+        StockBatch batch = batchRepository.findByIdForUpdate(batchId)
+                .orElseThrow(() -> new RuntimeException("Batch not found: " + batchId));
+
+        int available = batch.getSecondaryRemaining() != null ? batch.getSecondaryRemaining() : 0;
+        if (available < quantity) {
+            throw new RuntimeException("Insufficient stock in batch " + batch.getBatchNumber()
+                    + " | Available: " + available + " | Requested: " + quantity);
+        }
+
+        Product product = batch.getProduct();
+        
+        // Compute value loss
+        BigDecimal buyPricePerSecondary = product.getBuyPricePerSecondary();
+        if (buyPricePerSecondary == null || buyPricePerSecondary.compareTo(BigDecimal.ZERO) == 0) {
+            buyPricePerSecondary = batch.getBuyPricePerSecondary(product.getSecondaryPerPrimary());
+        }
+        BigDecimal valueLoss = buyPricePerSecondary.multiply(BigDecimal.valueOf(quantity));
+
+        // Resolve user
+        com.shop.modules.user.User user = null;
+        if (username != null && !username.equals("System")) {
+            user = userRepository.findByPhone(username).orElse(null);
+        }
+
+        // Map damageType to ClaimStatus
+        ClaimStatus claimStatus = ClaimStatus.NON_CLAIMABLE;
+        if ("PERMANENT".equalsIgnoreCase(damageType)) {
+            claimStatus = ClaimStatus.PERMANENT_LOSS;
+        } else if ("RECLAIMABLE".equalsIgnoreCase(damageType)) {
+            claimStatus = ClaimStatus.CLAIMABLE;
+        }
+
+        // Map reason string to DamageReason enum
+        DamageReason damageReason = DamageReason.OTHER;
+        String notes = reason;
+        try {
+            damageReason = DamageReason.valueOf(reason.toUpperCase().trim());
+            notes = "Marked as damage from batch action.";
+        } catch (IllegalArgumentException e) {
+            // Keep DamageReason.OTHER and use the original reason as notes
+        }
+
+        // Create DamageLog
+        com.shop.modules.product.UnitType unitType = com.shop.modules.product.UnitType.SINGLE;
+        if (product.getSecondaryUnit() != null) {
+            try {
+                unitType = com.shop.modules.product.UnitType.valueOf(product.getSecondaryUnit().toUpperCase().trim());
+            } catch (Exception ignored) {}
+        }
+
+        DamageLog damage = DamageLog.builder()
+                .product(product)
+                .batch(batch)
+                .unitType(unitType)
+                .unitLevel(UnitLevel.SECONDARY)
+                .claimStatus(claimStatus)
+                .quantity(quantity)
+                .reason(damageReason)
+                .valueLoss(valueLoss)
+                .notes(notes)
+                .loggedBy(user)
+                .build();
+        damageLogRepository.save(damage);
+
+        // Deduct from batch
+        int qtyBefore = batch.getSecondaryRemaining();
+        int qtyAfter = qtyBefore - quantity;
+        batch.setSecondaryRemaining(qtyAfter);
+        batch.setExhausted(qtyAfter == 0);
+        batchRepository.save(batch);
+
+        // Deduct from total stock
+        Stock stock = inventoryService.getOrCreateStock(product.getId());
+        int totalQtyBefore = stock.getTotalSecondaryUnits();
+        int totalQtyAfter = Math.max(0, totalQtyBefore - quantity);
+        stock.setTotalSecondaryUnits(totalQtyAfter);
+        inventoryService.normalizeStock(stock, product);
+        stockRepository.save(stock);
+
+        // Log movement as DAMAGE
+        movementService.logMovement(
+                product,
+                batch,
+                "DAMAGE",
+                -quantity,
+                totalQtyBefore,
+                totalQtyAfter,
+                buyPricePerSecondary,
+                username,
+                batch.getInvoiceNumber(),
+                reason
+        );
     }
 }

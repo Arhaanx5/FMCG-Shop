@@ -11,6 +11,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
+import com.shop.modules.dashboard.dto.DailyTrendPoint;
+
 @RestController
 @RequestMapping("/api/dashboard")
 @RequiredArgsConstructor
@@ -64,5 +67,21 @@ public class DashboardController {
          return ResponseEntity.ok(
                  ApiResponse.success(
                          dashboardService.getYearlyReport(year)));
+     }
+
+     @GetMapping("/trend")
+     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+     public ResponseEntity<ApiResponse<List<DailyTrendPoint>>> getTrend(@RequestParam(defaultValue = "7") int days) {
+         return ResponseEntity.ok(
+                 ApiResponse.success(
+                         dashboardService.getTrendData(days)));
+     }
+
+     @GetMapping("/health")
+     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+     public ResponseEntity<ApiResponse<Map<String, Object>>> getHealth() {
+         return ResponseEntity.ok(
+                 ApiResponse.success(
+                         dashboardService.getBusinessHealth()));
      }
 }

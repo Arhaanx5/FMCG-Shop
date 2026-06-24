@@ -26,4 +26,5 @@ public class DamageResponse {
     private String notes;
     private String loggedBy;
     private LocalDateTime loggedAt;
+    private String supplierName;
 }

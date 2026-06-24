@@ -6,6 +6,8 @@ import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import com.shop.modules.user.User;
+import com.shop.modules.user.UserRepository;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -24,6 +26,7 @@ public class DeliveryController {
     private final DeliveryService deliveryService;
     private final RouteOptimizationService routeOptimizationService;
     private final DeliveryRepository deliveryRepository;
+    private final UserRepository userRepository;
 
     /**
      * GET /api/deliveries — list all deliveries (Admin/Manager sees all, Delivery
@@ -82,9 +85,24 @@ public class DeliveryController {
     @PostMapping("/assign")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<ApiResponse<DeliveryResponse>> assign(
-            @RequestBody DeliveryService.AssignDeliveryRequest req) {
-        Delivery d = deliveryService.assignDelivery(req);
+            @RequestBody DeliveryService.AssignDeliveryRequest req,
+            Authentication auth) {
+        User loggedInUser = userRepository.findByPhone(auth.getName()).orElse(null);
+        Delivery d = deliveryService.assignDelivery(req, loggedInUser);
         return ResponseEntity.ok(ApiResponse.success("Delivery assigned", toResponse(d)));
+    }
+
+    @PostMapping("/assign/bulk")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<List<DeliveryResponse>>> assignBulk(
+            @RequestBody DeliveryService.BulkAssignRequest req,
+            Authentication auth) {
+        User loggedInUser = userRepository.findByPhone(auth.getName()).orElse(null);
+        List<Delivery> deliveries = deliveryService.assignDeliveriesBulk(req, loggedInUser);
+        List<DeliveryResponse> responses = deliveries.stream()
+                .map(this::toResponse)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(ApiResponse.success("Deliveries assigned successfully", responses));
     }
 
     /**
@@ -108,8 +126,22 @@ public class DeliveryController {
                 return ResponseEntity.status(403).body(ApiResponse.error("Access denied: You are not assigned to this delivery"));
             }
         }
-        Delivery d = deliveryService.updateStatus(id, req.getStatus());
+        Delivery d = deliveryService.updateStatus(id, req.getStatus(), req.getNotes());
         return ResponseEntity.ok(ApiResponse.success("Status updated", toResponse(d)));
+    }
+
+    /**
+     * PUT /api/deliveries/{id}/complete — complete delivery (with payments)
+     */
+    @PutMapping("/{id}/complete")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','DELIVERY_BOY','SALESMAN')")
+    public ResponseEntity<ApiResponse<DeliveryResponse>> complete(
+            @PathVariable UUID id,
+            @RequestBody com.shop.modules.delivery.dto.CompleteDeliveryRequest req,
+            Authentication auth) {
+        String userPhone = auth.getName();
+        Delivery d = deliveryService.completeDelivery(id, req, userPhone);
+        return ResponseEntity.ok(ApiResponse.success("Delivery completed successfully", toResponse(d)));
     }
 
     /**
@@ -154,12 +186,14 @@ public class DeliveryController {
                         : null);
         r.setDeliveryBoyName(d.getDeliveryBoy() != null ? d.getDeliveryBoy().getName() : null);
         r.setDeliveryBoyId(d.getDeliveryBoy() != null ? d.getDeliveryBoy().getId() : null);
+        r.setCompletedByName(d.getCompletedBy() != null ? d.getCompletedBy().getName() : null);
         r.setType(d.getType() != null ? d.getType().name() : null);
         r.setStatus(d.getStatus() != null ? d.getStatus().name() : null);
         r.setScheduledDate(d.getScheduledDate());
         r.setAmount(d.getBill() != null ? d.getBill().getGrandTotal() : null);
         r.setPendingAmount(d.getBill() != null ? d.getBill().getPendingAmount() : null);
         r.setCashCollected(d.getCashCollected());
+        r.setPaymentMode(d.getBill() != null && d.getBill().getPaymentMode() != null ? d.getBill().getPaymentMode().name() : null);
         r.setDispatchedAt(d.getDispatchedAt());
         r.setDeliveredAt(d.getDeliveredAt());
         r.setCreatedAt(d.getCreatedAt());
@@ -175,12 +209,14 @@ public class DeliveryController {
         private String areaName;
         private String deliveryBoyName;
         private UUID deliveryBoyId;
+        private String completedByName;
         private String type;
         private String status;
         private LocalDate scheduledDate;
         private java.math.BigDecimal amount;
         private java.math.BigDecimal pendingAmount;
         private java.math.BigDecimal cashCollected;
+        private String paymentMode;
         private java.time.LocalDateTime dispatchedAt;
         private java.time.LocalDateTime deliveredAt;
         private java.time.LocalDateTime createdAt;
@@ -189,5 +225,6 @@ public class DeliveryController {
     @Data
     public static class StatusUpdateRequest {
         private DeliveryStatus status;
+        private String notes;
     }
 }

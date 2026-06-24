@@ -22,6 +22,7 @@ const navItems = [
   { path: '/stock', label: 'Stock', icon: Warehouse, roles: ['ADMIN', 'MANAGER'] },
   { path: '/khata', label: 'Khata', icon: BookOpen, roles: ['ADMIN', 'MANAGER', 'DELIVERY_BOY', 'SALESMAN'] },
   { path: '/receivables', label: 'Udhar Collection', icon: DollarSign, roles: ['ADMIN', 'MANAGER'] },
+  { path: '/cod-dashboard', label: 'COD Reconciliations', icon: LayoutDashboard, roles: ['ADMIN', 'MANAGER'] },
   { path: '/expenses', label: 'Expenses', icon: Receipt, roles: ['ADMIN'] },
   { path: '/damage', label: 'Damage', icon: AlertTriangle, roles: ['ADMIN', 'MANAGER'] },
   { path: '/areas', label: 'Areas', icon: MapPin, roles: ['ADMIN', 'MANAGER'] },
@@ -42,6 +43,7 @@ const pageNames = {
   '/stock': 'Stock',
   '/khata': 'Khata / Payments',
   '/receivables': 'Udhar Collection Dashboard',
+  '/cod-dashboard': 'COD Collection Reconciliations',
   '/expenses': 'Expenses',
   '/damage': 'Damage Log',
   '/areas': 'Areas',
@@ -397,44 +399,116 @@ export default function Layout() {
           })}
         </nav>
 
-        {/* User + collapse */}
+        {/* User + theme toggles + collapse */}
         <div className="p-4 border-t border-slate-200 dark:border-slate-700 flex flex-col gap-3">
-          {!collapsed && (
-            <div className="flex items-center gap-3">
-              <div className={`w-9 h-9 rounded-theme-md flex items-center justify-center text-sm font-bold flex-shrink-0 ${
-                uiTheme === 'modern' ? 'bg-violet-100 dark:bg-violet-950/40 text-violet-500' :
-                uiTheme === 'cyber' ? 'bg-blue-100 dark:bg-cyan-950/40 text-blue-500 dark:text-cyan-400' :
-                uiTheme === 'neon' ? 'bg-teal-100 dark:bg-emerald-950/40 text-teal-600 dark:text-emerald-400' :
-                'bg-slate-100 dark:bg-slate-700/50 text-amber-500'
-              }`}>
-                {(user?.name || 'U')[0].toUpperCase()}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="truncate text-xs font-semibold text-slate-800 dark:text-slate-200">
-                  {user?.name || 'User'}
+          {!collapsed ? (
+            <>
+              <div className="flex items-center gap-3">
+                <div className={`w-9 h-9 rounded-theme-md flex items-center justify-center text-sm font-bold flex-shrink-0 ${
+                  uiTheme === 'modern' ? 'bg-violet-100 dark:bg-violet-950/40 text-violet-500' :
+                  uiTheme === 'cyber' ? 'bg-blue-100 dark:bg-cyan-950/40 text-blue-500 dark:text-cyan-400' :
+                  uiTheme === 'neon' ? 'bg-teal-100 dark:bg-emerald-950/40 text-teal-600 dark:text-emerald-400' :
+                  'bg-slate-100 dark:bg-slate-700/50 text-amber-500'
+                }`}>
+                  {(user?.name || 'U')[0].toUpperCase()}
                 </div>
-                <div className="truncate text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  {role}
+                <div className="flex-1 min-w-0">
+                  <div className="truncate text-xs font-semibold text-slate-800 dark:text-slate-200">
+                    {user?.name || 'User'}
+                  </div>
+                  <div className="truncate text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    {role}
+                  </div>
                 </div>
               </div>
+
+              {/* Theme Settings (Expanded) */}
+              <div className="flex flex-col gap-2 py-1.5 border-t border-slate-200 dark:border-slate-700/60 mt-1">
+                <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400 font-medium px-1">
+                  <span className="flex items-center gap-2">
+                    <Palette size={15} />
+                    <span>UI Theme</span>
+                  </span>
+                  <button
+                    onClick={() => {
+                      const themes = ['classic', 'modern', 'cyber', 'neon']
+                      const nextTheme = themes[(themes.indexOf(uiTheme) + 1) % themes.length]
+                      setUiTheme(nextTheme)
+                    }}
+                    className="px-1.5 py-0.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-theme-sm border border-slate-300 dark:border-slate-600 capitalize text-[10px] font-semibold tracking-wider text-slate-700 dark:text-slate-300"
+                    title="Switch Theme"
+                  >
+                    {uiTheme}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400 font-medium px-1">
+                  <span className="flex items-center gap-2">
+                    {isDarkMode ? <Moon size={15} className="text-amber-500" /> : <Sun size={15} className="text-amber-500" />}
+                    <span>Dark Mode [ {isDarkMode ? '●' : '○'} ]</span>
+                  </span>
+                  <button
+                    onClick={() => setIsDarkMode(!isDarkMode)}
+                    className="w-8 h-4 bg-slate-200 dark:bg-slate-700 rounded-full transition-colors relative flex items-center border border-slate-300 dark:border-slate-600"
+                  >
+                    <span className={`w-3.5 h-3.5 bg-white dark:bg-amber-400 rounded-full transition-transform ${isDarkMode ? 'translate-x-4' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex gap-1.5 justify-start border-t border-slate-200 dark:border-slate-700/60 pt-2">
+                <button
+                  className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-850 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-theme-sm transition-colors"
+                  onClick={() => setCollapsed(!collapsed)}
+                  title="Collapse"
+                >
+                  <ChevronLeft size={18} className="transition-transform duration-300" />
+                </button>
+                <button
+                  className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-red-500 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-theme-sm transition-colors"
+                  onClick={logout}
+                  title="Logout"
+                >
+                  <LogOut size={18} />
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center gap-2.5">
+              <button
+                onClick={() => {
+                  const themes = ['classic', 'modern', 'cyber', 'neon']
+                  const nextTheme = themes[(themes.indexOf(uiTheme) + 1) % themes.length]
+                  setUiTheme(nextTheme)
+                }}
+                className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-theme-sm transition-colors"
+                title={`UI Theme: ${uiTheme.toUpperCase()}`}
+              >
+                <Palette size={18} />
+              </button>
+              <button
+                onClick={() => setIsDarkMode(!isDarkMode)}
+                className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-theme-sm transition-colors"
+                title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              >
+                {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+              </button>
+              <div className="w-8 border-t border-slate-200 dark:border-slate-700" />
+              <button
+                className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-850 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-theme-sm transition-colors"
+                onClick={() => setCollapsed(!collapsed)}
+                title="Expand"
+              >
+                <ChevronLeft size={18} className="rotate-180" />
+              </button>
+              <button
+                className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-red-500 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-theme-sm transition-colors"
+                onClick={logout}
+                title="Logout"
+              >
+                <LogOut size={18} />
+              </button>
             </div>
           )}
-          <div className={`flex gap-1.5 ${collapsed ? 'justify-center' : 'justify-start'}`}>
-            <button
-              className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-850 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-theme-sm transition-colors"
-              onClick={() => setCollapsed(!collapsed)}
-              title={collapsed ? 'Expand' : 'Collapse'}
-            >
-              <ChevronLeft size={18} className={`transition-transform duration-300 ${collapsed ? 'rotate-180' : ''}`} />
-            </button>
-            <button
-              className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-red-500 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-theme-sm transition-colors"
-              onClick={logout}
-              title="Logout"
-            >
-              <LogOut size={18} />
-            </button>
-          </div>
         </div>
       </motion.aside>
 
@@ -460,28 +534,6 @@ export default function Layout() {
           <h1 className="text-sm md:text-lg font-bold text-slate-800 dark:text-slate-100 truncate flex-1 min-w-0">
             {currentPage}
           </h1>
-
-          {/* Theme Switcher */}
-          <button
-            className="ml-auto p-1.5 text-slate-500 dark:text-slate-400 hover:text-amber-500 dark:hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-theme-sm transition-colors mr-1"
-            onClick={() => {
-              const themes = ['classic', 'modern', 'cyber', 'neon']
-              const nextTheme = themes[(themes.indexOf(uiTheme) + 1) % themes.length]
-              setUiTheme(nextTheme)
-            }}
-            title={`Current Theme: ${uiTheme.toUpperCase()}. Click to switch theme.`}
-          >
-            <Palette size={20} />
-          </button>
-
-          {/* Dark Mode Toggle */}
-          <button
-            className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-amber-500 dark:hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-theme-sm transition-colors"
-            onClick={() => setIsDarkMode(!isDarkMode)}
-            title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-          >
-            {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
-          </button>
         </header>
 
         {/* Page content with animation */}

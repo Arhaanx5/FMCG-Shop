@@ -67,6 +67,9 @@ public class Payment {
     @Column(name = "payment_mode")
     private String paymentMode;
 
+    @Column(name = "payment_source")
+    private String paymentSource;
+
     private String notes;
 
     @Column(name = "paid_at")

@@ -6,6 +6,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -33,4 +34,11 @@ public interface DeliveryRepository extends JpaRepository<Delivery, UUID> {
        long countByStatus(DeliveryStatus status);
 
        long countByDeliveryBoyIdAndStatus(UUID boyId, DeliveryStatus status);
+
+       boolean existsByBillIdAndStatusIn(UUID billId, List<DeliveryStatus> statuses);
+
+       @Query("SELECT d FROM Delivery d WHERE d.status = 'OUT' AND d.dispatchedAt < :threshold")
+       List<Delivery> findOutstandingDeliveries(@Param("threshold") java.time.LocalDateTime threshold);
+
+       List<Delivery> findByBillId(UUID billId);
 }

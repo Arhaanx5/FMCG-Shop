@@ -32,4 +32,6 @@ public class LogDamageRequest {
     private DamageReason reason;
 
     private String notes;
+
+    private String supplierName;
 }

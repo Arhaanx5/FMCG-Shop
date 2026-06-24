@@ -35,6 +35,10 @@ public class Delivery {
     @JoinColumn(name = "delivery_boy_id")
     private User deliveryBoy;
 
+    @ManyToOne
+    @JoinColumn(name = "completed_by_id")
+    private User completedBy;
+
     @Enumerated(EnumType.STRING)
     private DeliveryType type;
 
@@ -52,6 +56,31 @@ public class Delivery {
 
     @Column(name = "cash_collected")
     private BigDecimal cashCollected = BigDecimal.ZERO;
+
+    @Column(name = "first_reminder_sent")
+    @Builder.Default
+    private Boolean firstReminderSent = false;
+
+    @Column(name = "manager_alerted")
+    @Builder.Default
+    private Boolean managerAlerted = false;
+
+    @Column(name = "reconciliation_status")
+    @Builder.Default
+    private String reconciliationStatus = "PENDING";
+
+    @Column(name = "customer_confirmed")
+    @Builder.Default
+    private Boolean customerConfirmed = false;
+
+    @Column(name = "customer_confirmed_at")
+    private LocalDateTime customerConfirmedAt;
+
+    @Column(name = "otp_code")
+    private String otpCode;
+
+    @Column(name = "otp_generated_at")
+    private LocalDateTime otpGeneratedAt;
 
     private String notes;
 

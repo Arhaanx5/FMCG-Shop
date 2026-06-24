@@ -24,11 +24,38 @@ public interface BillRepository extends JpaRepository<Bill, UUID> {
            "b.pendingAmount > 0 AND (b.status = 'CONFIRMED' OR b.status = 'PARTIAL') " +
            "ORDER BY b.createdAt DESC")
     List<Bill> findPendingBills();
-
     @Query("SELECT COALESCE(MAX(" +
            "CAST(SUBSTRING(b.billNumber, 6) AS int)" +
            "), 0) FROM Bill b WHERE b.billNumber LIKE 'BILL-%'")
     Integer findMaxBillSequence();
+
+    @Query(value = "SELECT nextval('bill_number_seq')", nativeQuery = true)
+    Long getNextBillSequence();
+
+    @EntityGraph(attributePaths = {"customer", "createdBy", "items.product"})
+    @Query("SELECT b FROM Bill b WHERE " +
+           "(:status IS NULL OR b.status = :status) AND " +
+           "(:excludeDrafts = false OR b.status <> 'DRAFT') AND " +
+           "(:salesmanId IS NULL OR b.createdBy.id = :salesmanId) AND " +
+           "(:search IS NULL OR LOWER(b.billNumber) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+           "                  LOWER(b.customer.name) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+           "                  LOWER(b.customer.shopName) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+           "                  LOWER(b.customer.phone) LIKE LOWER(CONCAT('%', :search, '%')))")
+    org.springframework.data.domain.Page<Bill> findBillsPaged(
+            @Param("status") BillStatus status,
+            @Param("excludeDrafts") boolean excludeDrafts,
+            @Param("salesmanId") UUID salesmanId,
+            @Param("search") String search,
+            org.springframework.data.domain.Pageable pageable);
+
+    @EntityGraph(attributePaths = {"customer", "createdBy", "items.product"})
+    @Query("SELECT b FROM Bill b WHERE " +
+           "b.customer.id = :customerId AND " +
+           "(:salesmanId IS NULL OR b.createdBy.id = :salesmanId)")
+    org.springframework.data.domain.Page<Bill> findCustomerHistoryPaged(
+            @Param("customerId") UUID customerId,
+            @Param("salesmanId") UUID salesmanId,
+            org.springframework.data.domain.Pageable pageable);
 
     @EntityGraph(attributePaths = {"customer", "createdBy", "items.product"})
     @Query("SELECT b FROM Bill b WHERE " +
@@ -40,6 +67,8 @@ public interface BillRepository extends JpaRepository<Bill, UUID> {
     List<Bill> findByCreatedByIdAndStatus(UUID salesmanId, BillStatus status);
 
     List<Bill> findByCreatedByIdAndStatusIn(UUID salesmanId, List<BillStatus> statuses);
+
+    List<Bill> findByStatusIn(List<BillStatus> statuses);
 
     @EntityGraph(attributePaths = {"customer", "createdBy", "items.product"})
     List<Bill> findTop5ByOrderByCreatedAtDesc();

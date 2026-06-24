@@ -32,6 +32,8 @@ import com.shop.modules.area.Area;
 import com.shop.modules.area.AreaRepository;
 import com.shop.modules.khata.Payment;
 import com.shop.modules.khata.PaymentRepository;
+import com.shop.modules.khata.KhataService;
+import com.shop.modules.khata.dto.RecordPaymentRequest;
 import com.shop.modules.receivables.*;
 import com.shop.modules.receivables.dto.*;
 import org.junit.jupiter.api.Test;
@@ -69,6 +71,7 @@ public class FmcgShopBusinessTests {
     @Mock private WhatsAppService whatsAppService;
     @Mock private ReceivablesAgingService receivablesAgingService;
     @Mock private StockMovementRepository movementRepository;
+    @Mock private BillEditHistoryRepository billEditHistoryRepository;
 
     // Mocks injected into BillService and DamageService
     @Mock private CustomerService customerServiceMock;
@@ -88,6 +91,30 @@ public class FmcgShopBusinessTests {
 
     @org.junit.jupiter.api.BeforeEach
     public void setUp() {
+        lenient().when(batchRepository.findById(any(UUID.class)))
+                .thenAnswer(invocation -> {
+                    UUID id = invocation.getArgument(0);
+                    return Optional.of(StockBatch.builder()
+                            .id(id)
+                            .batchNumber("B-MOCK")
+                            .secondaryRemaining(1000)
+                            .secondaryReceived(1000)
+                            .build());
+                });
+
+        lenient().when(batchRepository.findActiveBatchesFIFO(any(UUID.class)))
+                .thenAnswer(invocation -> {
+                    UUID prodId = invocation.getArgument(0);
+                    StockBatch batch = StockBatch.builder()
+                            .id(UUID.randomUUID())
+                            .product(Product.builder().id(prodId).build())
+                            .secondaryRemaining(10000)
+                            .secondaryReceived(10000)
+                            .batchNumber("B-DUMMY")
+                            .build();
+                    return Collections.singletonList(batch);
+                });
+
         lenient().when(batchRepository.findByIdForUpdate(any(UUID.class)))
                 .thenAnswer(invocation -> {
                     UUID id = invocation.getArgument(0);
@@ -130,7 +157,8 @@ public class FmcgShopBusinessTests {
                 customerServiceMock,
                 productServiceMock,
                 batchRepository,
-                paymentRepository
+                paymentRepository,
+                billEditHistoryRepository
         );
 
         this.customerService = new CustomerService(
@@ -283,7 +311,9 @@ public class FmcgShopBusinessTests {
         request.setItems(Collections.singletonList(itemReq));
         request.setDiscount(BigDecimal.ZERO);
 
+        UUID batchId = UUID.randomUUID();
         StockBatch batch = StockBatch.builder()
+                .id(batchId)
                 .product(product)
                 .batchNumber("B-901")
                 .secondaryReceived(120)
@@ -297,9 +327,10 @@ public class FmcgShopBusinessTests {
         when(productServiceMock.findProductByIdentifier(productId.toString())).thenReturn(product);
         when(productRepository.findById(productId)).thenReturn(Optional.of(product));
         when(stockRepository.findByProductIdWithLock(productId)).thenReturn(Optional.of(stock));
+        when(batchRepository.findById(batchId)).thenReturn(Optional.of(batch));
         when(batchRepository.findActiveBatchesFIFO(productId)).thenReturn(Collections.singletonList(batch));
         when(batchRepository.findByProductId(productId)).thenReturn(Collections.singletonList(batch));
-        when(billRepository.findMaxBillSequence()).thenReturn(0);
+        lenient().when(billRepository.findMaxBillSequence()).thenReturn(0);
         when(billRepository.save(any(Bill.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         // Create the bill
@@ -336,6 +367,7 @@ public class FmcgShopBusinessTests {
 
         when(batchRepository.findByProductIdOrderByReceivedAtDesc(productId))
                 .thenReturn(Arrays.asList(batch2, batch1));
+        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
 
         // Restore 10 secondary units
         stockService.restoreStockToBatches(productId, 10);
@@ -475,7 +507,7 @@ public class FmcgShopBusinessTests {
         when(stockRepository.save(any(Stock.class))).thenReturn(stock);
         when(batchRepository.findById(batchId)).thenReturn(Optional.of(batch));
         when(batchRepository.findByProductId(productId)).thenReturn(Collections.singletonList(batch));
-        when(billRepository.findMaxBillSequence()).thenReturn(0);
+        lenient().when(billRepository.findMaxBillSequence()).thenReturn(0);
         when(billRepository.save(any(Bill.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         billService.createBill(request, "9450821033");
@@ -749,7 +781,9 @@ public class FmcgShopBusinessTests {
                 .totalSecondaryUnits(120)
                 .build();
 
+        UUID batchId = UUID.randomUUID();
         StockBatch batch = StockBatch.builder()
+                .id(batchId)
                 .product(product)
                 .batchNumber("B-901")
                 .secondaryReceived(120)
@@ -762,6 +796,7 @@ public class FmcgShopBusinessTests {
         when(productServiceMock.findProductByIdentifier(productId.toString())).thenReturn(product);
         when(productRepository.findById(productId)).thenReturn(Optional.of(product));
         when(stockRepository.findByProductIdWithLock(productId)).thenReturn(Optional.of(stock));
+        when(batchRepository.findById(batchId)).thenReturn(Optional.of(batch));
         when(batchRepository.findActiveBatchesFIFO(productId)).thenReturn(Collections.singletonList(batch));
         when(batchRepository.findByProductId(productId)).thenReturn(Collections.singletonList(batch));
         
@@ -1126,6 +1161,172 @@ public class FmcgShopBusinessTests {
         assertTrue(responseBypassed.isSent());
         verify(whatsAppService, times(1)).sendText(anyString(), anyString());
         verify(udharReminderLogRepository, times(1)).save(any(UdharReminderLog.class));
+    }
+
+    @Test
+    public void testStockAdjustmentService_AdjustPhysicalStock() {
+        UUID batchId = UUID.randomUUID();
+        Product product = createDummyProduct(UUID.randomUUID(), 12);
+        StockBatch batch = StockBatch.builder()
+                .id(batchId)
+                .product(product)
+                .secondaryRemaining(10)
+                .offerSecondaryRemaining(0)
+                .buyPriceWithoutTax(BigDecimal.valueOf(90))
+                .build();
+
+        when(batchRepository.findById(batchId)).thenReturn(Optional.of(batch));
+
+        StockAdjustmentService service = new StockAdjustmentService(batchRepository, stockService);
+        
+        // 1. Adjusting with the same stock should throw exception
+        assertThrows(RuntimeException.class, () -> {
+            service.adjustPhysicalStock(batchId, 10, "Mismatched Count", "9450821033");
+        });
+
+        // 2. Adjusting with different stock should invoke stockService.adjustStock
+        when(batchRepository.findByIdForUpdate(batchId)).thenReturn(Optional.of(batch));
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        
+        Stock stock = Stock.builder()
+                .product(product)
+                .totalSecondaryUnits(10)
+                .build();
+        when(stockRepository.findByProductIdWithLock(product.getId())).thenReturn(Optional.of(stock));
+        when(userRepository.findByPhone("9450821033")).thenReturn(Optional.of(createDummyUser()));
+
+        service.adjustPhysicalStock(batchId, 15, "Mismatched Count", "9450821033");
+
+        // Verify batch remaining is updated
+        assertEquals(15, batch.getSecondaryRemaining());
+    }
+
+    @Test
+    public void testStockService_MarkBatchDamage() {
+        UUID batchId = UUID.randomUUID();
+        Product product = createDummyProduct(UUID.randomUUID(), 12);
+        StockBatch batch = StockBatch.builder()
+                .id(batchId)
+                .product(product)
+                .secondaryRemaining(10)
+                .buyPriceWithoutTax(BigDecimal.valueOf(90))
+                .build();
+
+        Stock stock = Stock.builder()
+                .product(product)
+                .totalSecondaryUnits(10)
+                .build();
+
+        User user = createDummyUser();
+
+        when(batchRepository.findByIdForUpdate(batchId)).thenReturn(Optional.of(batch));
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(stockRepository.findByProductIdWithLock(product.getId())).thenReturn(Optional.of(stock));
+        when(userRepository.findByPhone("9450821033")).thenReturn(Optional.of(user));
+
+        stockService.markBatchDamage(batchId, 3, "PERMANENT", "RATS", "9450821033");
+
+        // Verify quantities deducted
+        assertEquals(7, batch.getSecondaryRemaining());
+        assertEquals(7, stock.getTotalSecondaryUnits());
+
+        // Verify damage log repository is called
+        verify(damageLogRepository, times(1)).save(any(DamageLog.class));
+        verify(movementRepository, times(1)).save(any(StockMovement.class));
+    }
+
+    // ── 15. Waive-off & Bill Validation Feature Tests ──
+    @Test
+    public void testBillValidation_ValidBill_Success() {
+        Bill bill = Bill.builder()
+                .status(BillStatus.CONFIRMED)
+                .subtotal(new BigDecimal("100.00"))
+                .gstTotal(new BigDecimal("18.00"))
+                .cessTotal(BigDecimal.ZERO)
+                .discount(new BigDecimal("10.00"))
+                .grandTotal(new BigDecimal("108.00"))
+                .build();
+        
+        // Items match grandTotal + discount = 108.00 + 10.00 = 118.00
+        BillItem item = BillItem.builder()
+                .total(new BigDecimal("118.00"))
+                .build();
+        bill.setItems(Collections.singletonList(item));
+
+        assertDoesNotThrow(bill::validateTotals);
+    }
+
+    @Test
+    public void testBillValidation_InvalidGrandTotal_ThrowsException() {
+        Bill bill = Bill.builder()
+                .status(BillStatus.CONFIRMED)
+                .subtotal(new BigDecimal("100.00"))
+                .gstTotal(new BigDecimal("18.00"))
+                .cessTotal(BigDecimal.ZERO)
+                .discount(new BigDecimal("10.00"))
+                .grandTotal(new BigDecimal("110.00")) // Should be 108.00
+                .build();
+
+        RuntimeException ex = assertThrows(RuntimeException.class, bill::validateTotals);
+        assertTrue(ex.getMessage().contains("Bill total mismatch"));
+    }
+
+    @Test
+    public void testBillValidation_InvalidItemsSum_ThrowsException() {
+        Bill bill = Bill.builder()
+                .status(BillStatus.CONFIRMED)
+                .subtotal(new BigDecimal("100.00"))
+                .gstTotal(new BigDecimal("18.00"))
+                .cessTotal(BigDecimal.ZERO)
+                .discount(new BigDecimal("10.00"))
+                .grandTotal(new BigDecimal("108.00"))
+                .build();
+        
+        // Items sum is 115.00, but expected 108.00 + 10.00 = 118.00
+        BillItem item = BillItem.builder()
+                .total(new BigDecimal("115.00"))
+                .build();
+        bill.setItems(Collections.singletonList(item));
+
+        RuntimeException ex = assertThrows(RuntimeException.class, bill::validateTotals);
+        assertTrue(ex.getMessage().contains("Bill item total mismatch"));
+    }
+
+    @Test
+    public void testKhataService_WaiveOffLimits() {
+        org.springframework.messaging.simp.SimpMessagingTemplate simpMock = mock(org.springframework.messaging.simp.SimpMessagingTemplate.class);
+        com.shop.modules.khata.KhataService khataServiceInstance = new com.shop.modules.khata.KhataService(
+                paymentRepository, customerRepository, billRepository, userRepository, simpMock
+        );
+
+        UUID custId = UUID.randomUUID();
+        Customer customer = Customer.builder().id(custId).name("Test Shop").active(true).build();
+        User collector = User.builder().id(UUID.randomUUID()).phone("9450821033").active(true).build();
+
+        when(customerRepository.findById(custId)).thenReturn(Optional.of(customer));
+        when(userRepository.findByPhone("9450821033")).thenReturn(Optional.of(collector));
+
+        // Case 1: Zero amount
+        RecordPaymentRequest zeroReq = new RecordPaymentRequest();
+        zeroReq.setCustomerId(custId);
+        zeroReq.setAmount(BigDecimal.ZERO);
+        zeroReq.setPaymentMode("WAIVE_OFF");
+
+        RuntimeException exZero = assertThrows(RuntimeException.class, () -> {
+            khataServiceInstance.recordPayment(zeroReq, "9450821033");
+        });
+        assertTrue(exZero.getMessage().contains("Waive-off amount zero ya negative nahi ho sakta."));
+
+        // Case 2: Greater than 200
+        RecordPaymentRequest largeReq = new RecordPaymentRequest();
+        largeReq.setCustomerId(custId);
+        largeReq.setAmount(new BigDecimal("200.05"));
+        largeReq.setPaymentMode("WAIVE_OFF");
+
+        RuntimeException exLarge = assertThrows(RuntimeException.class, () -> {
+            khataServiceInstance.recordPayment(largeReq, "9450821033");
+        });
+        assertTrue(exLarge.getMessage().contains("Waive-off ₹200 se zyada nahi ho sakta."));
     }
 }
 

@@ -20,11 +20,15 @@ echo   Lari Traders (UAT) - Backend Rebuild & Restart Script
 echo ========================================================
 echo.
 
-echo [1/3] Stopping fmcg-backend-uat service...
+echo [1/4] Stopping fmcg-backend-uat service...
 net stop fmcg-backend-uat
 echo.
 
-echo [2/3] Building new JAR package (skipping tests)...
+echo [2/4] Stopping fmcg-whatsapp service...
+net stop fmcg-whatsapp
+echo.
+
+echo [3/4] Building new JAR package (skipping tests)...
 
 :: Try maven wrapper first (CMD syntax)
 call mvnw.cmd clean package -DskipTests
@@ -43,12 +47,15 @@ if %ERRORLEVEL% neq 0 (
 )
 
 echo.
-echo [3/3] Starting fmcg-backend-uat service...
+echo [4/4] Starting services...
+echo Starting fmcg-backend-uat service...
 net start fmcg-backend-uat
+echo Starting fmcg-whatsapp service...
+net start fmcg-whatsapp
 
 echo.
 echo ========================================================
-echo   [SUCCESS] Backend JAR built and service restarted!
+echo   [SUCCESS] Backend JAR built and services restarted!
 echo ========================================================
 echo.
 pause

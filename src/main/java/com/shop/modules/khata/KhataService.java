@@ -60,6 +60,7 @@ public class KhataService {
                 .adjustedBillId(payment.getAdjustedBillId())
                 .adjustedBillNumber(adjustedBillNumber)
                 .paymentMode(payment.getPaymentMode())
+                .paymentSource(payment.getPaymentSource())
                 .notes(payment.getNotes())
                 .paidAt(payment.getPaidAt())
                 .collectedBy(payment.getCollectedBy() != null
@@ -86,12 +87,22 @@ public class KhataService {
     }
 
     private BillStatus deriveBillStatus(Bill bill) {
-        if (bill.getPaidAmount().compareTo(BigDecimal.ZERO) == 0) {
-            return BillStatus.CONFIRMED;
-        } else if (bill.getPendingAmount().compareTo(BigDecimal.ZERO) <= 0) {
-            return BillStatus.PAID;
+        if (bill.getPaymentMode() == com.shop.modules.billing.PaymentMode.COD) {
+            if (bill.getPaidAmount().compareTo(BigDecimal.ZERO) == 0) {
+                return BillStatus.COD_PENDING;
+            } else if (bill.getPendingAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                return BillStatus.COD_COLLECTED;
+            } else {
+                return BillStatus.PARTIAL;
+            }
         } else {
-            return BillStatus.PARTIAL;
+            if (bill.getPaidAmount().compareTo(BigDecimal.ZERO) == 0) {
+                return BillStatus.CONFIRMED;
+            } else if (bill.getPendingAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                return BillStatus.PAID;
+            } else {
+                return BillStatus.PARTIAL;
+            }
         }
     }
 
@@ -233,6 +244,78 @@ public class KhataService {
         User collector = userRepository.findByPhone(collectedByPhone)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
+        // --- STANDALONE WAIVE-OFF DETECTION ---
+        if (!"WAIVE_OFF".equalsIgnoreCase(req.getPaymentMode()) && (req.getAmount() == null || req.getAmount().compareTo(BigDecimal.ZERO) <= 0)) {
+            BigDecimal waivedAmount = req.getWaivedAmount();
+            if (waivedAmount == null || waivedAmount.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new RuntimeException("Payment amount ya waive-off amount positive hona chahiye.");
+            }
+            if (waivedAmount.compareTo(new BigDecimal("200")) > 0) {
+                throw new RuntimeException("Waive-off ₹200 se zyada nahi ho sakta. Entered: ₹" + String.format("%.2f", waivedAmount));
+            }
+
+            PaymentResponse response;
+            if (req.getBillId() != null) {
+                Bill targetBill = billRepository.findById(req.getBillId())
+                        .orElseThrow(() -> new RuntimeException("Bill not found"));
+                if (targetBill.getPendingAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                    throw new RuntimeException("Bill already paid.");
+                }
+                
+                BigDecimal waiveToApply = waivedAmount.min(targetBill.getPendingAmount());
+                applyPaymentToBill(targetBill, waiveToApply);
+                
+                Payment waiveSaved = paymentRepository.save(Payment.builder()
+                        .customer(customer)
+                        .bill(targetBill)
+                        .amount(waiveToApply)
+                        .appliedAmount(waiveToApply)
+                        .excessAmount(BigDecimal.ZERO)
+                        .adjustmentType(AdjustmentType.NORMAL)
+                        .paymentMode("WAIVE_OFF")
+                        .paymentSource(req.getPaymentSource())
+                        .notes(req.getNotes() != null && !req.getNotes().trim().isEmpty() 
+                                ? "Waive-off: " + req.getNotes() 
+                                : "Waive-off Adjustment")
+                        .collectedBy(collector)
+                        .paidAt(LocalDateTime.now())
+                        .build());
+                        
+                response = toResponse(waiveSaved);
+            } else {
+                RecordPaymentRequest waiveReq = new RecordPaymentRequest();
+                waiveReq.setCustomerId(req.getCustomerId());
+                waiveReq.setAmount(waivedAmount);
+                waiveReq.setPaymentMode("WAIVE_OFF");
+                waiveReq.setNotes(req.getNotes() != null && !req.getNotes().trim().isEmpty() 
+                        ? "Waive-off: " + req.getNotes() 
+                        : "Waive-off Adjustment");
+                waiveReq.setPaymentSource(req.getPaymentSource());
+                
+                response = recordGeneralPayment(waiveReq, customer, collector);
+            }
+
+            recalculateCustomerPending(customer);
+
+            // Broadcast live payment activity over WebSocket
+            try {
+                messagingTemplate.convertAndSend("/topic/payments", response);
+            } catch (Exception e) {
+                System.err.println("Failed to broadcast live payment: " + e.getMessage());
+            }
+
+            return response;
+        }
+
+        if ("WAIVE_OFF".equalsIgnoreCase(req.getPaymentMode())) {
+            if (req.getAmount() == null || req.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                throw new RuntimeException("Waive-off amount zero ya negative nahi ho sakta.");
+            }
+            if (req.getAmount().compareTo(new BigDecimal("200")) > 0) {
+                throw new RuntimeException("Waive-off ₹200 se zyada nahi ho sakta. Entered: ₹" + String.format("%.2f", req.getAmount()));
+            }
+        }
+
         // Prevent duplicate payment recording (within last 5 seconds)
         LocalDateTime fiveSecondsAgo = LocalDateTime.now().minusSeconds(5);
         List<Payment> recentPayments = paymentRepository.findByCustomerIdOrderByPaidAtDesc(customer.getId());
@@ -281,6 +364,61 @@ public class KhataService {
             }
         }
 
+        // --- WAIVE-OFF RECORDING FOR COMBINED PAYMENT (OPTION 1) ---
+        BigDecimal waivedAmount = req.getWaivedAmount();
+        if (waivedAmount != null && waivedAmount.compareTo(BigDecimal.ZERO) > 0) {
+            if (waivedAmount.compareTo(new BigDecimal("200")) > 0) {
+                throw new RuntimeException("Waive-off ₹200 se zyada nahi ho sakta. Entered: ₹" + String.format("%.2f", waivedAmount));
+            }
+
+            if (req.getBillId() != null) {
+                Bill updatedBill = billRepository.findById(req.getBillId()).orElse(null);
+                if (updatedBill != null && updatedBill.getPendingAmount().compareTo(BigDecimal.ZERO) > 0) {
+                    BigDecimal waiveToApply = waivedAmount.min(updatedBill.getPendingAmount());
+                    applyPaymentToBill(updatedBill, waiveToApply);
+                    
+                    Payment waiveSaved = paymentRepository.save(Payment.builder()
+                            .customer(customer)
+                            .bill(updatedBill)
+                            .amount(waiveToApply)
+                            .appliedAmount(waiveToApply)
+                            .excessAmount(BigDecimal.ZERO)
+                            .adjustmentType(AdjustmentType.NORMAL)
+                            .paymentMode("WAIVE_OFF")
+                            .paymentSource(req.getPaymentSource())
+                            .notes(req.getNotes() != null && !req.getNotes().trim().isEmpty() 
+                                    ? "Waive-off Auto-recorded · " + req.getNotes() 
+                                    : "Waive-off Auto-recorded")
+                            .collectedBy(collector)
+                            .paidAt(LocalDateTime.now())
+                            .build());
+
+                    try {
+                        messagingTemplate.convertAndSend("/topic/payments", toResponse(waiveSaved));
+                    } catch (Exception e) {
+                        System.err.println("Failed to broadcast waive-off payment: " + e.getMessage());
+                    }
+                }
+            } else {
+                RecordPaymentRequest waiveReq = new RecordPaymentRequest();
+                waiveReq.setCustomerId(req.getCustomerId());
+                waiveReq.setAmount(waivedAmount);
+                waiveReq.setPaymentMode("WAIVE_OFF");
+                waiveReq.setNotes(req.getNotes() != null && !req.getNotes().trim().isEmpty() 
+                        ? "Waive-off Auto-recorded · " + req.getNotes() 
+                        : "Waive-off Auto-recorded");
+                waiveReq.setPaymentSource(req.getPaymentSource());
+                
+                PaymentResponse waiveResponse = recordGeneralPayment(waiveReq, customer, collector);
+                try {
+                    messagingTemplate.convertAndSend("/topic/payments", waiveResponse);
+                } catch (Exception e) {
+                    System.err.println("Failed to broadcast waive-off payment: " + e.getMessage());
+                }
+            }
+            recalculateCustomerPending(customer);
+        }
+
         // Broadcast live payment activity over WebSocket
         try {
             messagingTemplate.convertAndSend("/topic/payments", response);
@@ -307,6 +445,7 @@ public class KhataService {
                 .excessAmount(BigDecimal.ZERO)
                 .adjustmentType(AdjustmentType.NORMAL)
                 .paymentMode(req.getPaymentMode())
+                .paymentSource(req.getPaymentSource())
                 .notes(req.getNotes())
                 .collectedBy(collector)
                 .paidAt(LocalDateTime.now())
@@ -358,6 +497,7 @@ public class KhataService {
                 .adjustmentType(AdjustmentType.MANUAL_ADJUST)
                 .adjustmentNote(groupNote)
                 .paymentMode(req.getPaymentMode())
+                .paymentSource(req.getPaymentSource())
                 .notes(req.getNotes())
                 .collectedBy(collector)
                 .paidAt(now)
@@ -373,6 +513,7 @@ public class KhataService {
                 .adjustmentType(AdjustmentType.MANUAL_ADJUST)
                 .adjustmentNote(groupNote)
                 .paymentMode(req.getPaymentMode())
+                .paymentSource(req.getPaymentSource())
                 .notes(req.getNotes())
                 .collectedBy(collector)
                 .paidAt(now)
@@ -441,6 +582,7 @@ public class KhataService {
                 .adjustmentType(AdjustmentType.AUTO_ADJUST)
                 .adjustmentNote(groupNote)
                 .paymentMode(req.getPaymentMode())
+                .paymentSource(req.getPaymentSource())
                 .notes(req.getNotes())
                 .collectedBy(collector)
                 .paidAt(now)
@@ -457,6 +599,7 @@ public class KhataService {
                     .adjustmentType(AdjustmentType.AUTO_ADJUST)
                     .adjustmentNote(groupNote)
                     .paymentMode(req.getPaymentMode())
+                    .paymentSource(req.getPaymentSource())
                     .notes(req.getNotes())
                     .collectedBy(collector)
                     .paidAt(now)
@@ -491,6 +634,7 @@ public class KhataService {
                     .excessAmount(BigDecimal.ZERO)
                     .adjustmentType(AdjustmentType.NORMAL)
                     .paymentMode(req.getPaymentMode())
+                    .paymentSource(req.getPaymentSource())
                     .notes(req.getNotes()).collectedBy(collector)
                     .paidAt(LocalDateTime.now()).build());
         } else {
@@ -504,6 +648,7 @@ public class KhataService {
                         .excessAmount(BigDecimal.ZERO)
                         .adjustmentType(AdjustmentType.NORMAL)
                         .paymentMode(req.getPaymentMode())
+                        .paymentSource(req.getPaymentSource())
                         .notes(req.getNotes()).collectedBy(collector)
                         .paidAt(LocalDateTime.now()).build());
                 remaining = remaining.subtract(alloc);
@@ -516,6 +661,7 @@ public class KhataService {
                         .excessAmount(BigDecimal.ZERO)
                         .adjustmentType(AdjustmentType.NORMAL)
                         .paymentMode(req.getPaymentMode())
+                        .paymentSource(req.getPaymentSource())
                         .notes(req.getNotes()).collectedBy(collector)
                         .paidAt(LocalDateTime.now()).build());
             }
@@ -580,7 +726,17 @@ public class KhataService {
     public PaymentResponse updatePayment(UUID id, String paymentMode, String notes) {
         Payment payment = paymentRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Payment not found: " + id));
-        if (paymentMode != null) payment.setPaymentMode(paymentMode);
+        if (paymentMode != null) {
+            if ("WAIVE_OFF".equalsIgnoreCase(paymentMode)) {
+                if (payment.getAmount() == null || payment.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                    throw new RuntimeException("Waive-off amount zero ya negative nahi ho sakta.");
+                }
+                if (payment.getAmount().compareTo(new BigDecimal("200")) > 0) {
+                    throw new RuntimeException("Waive-off ₹200 se zyada nahi ho sakta. Entered: ₹" + String.format("%.2f", payment.getAmount()));
+                }
+            }
+            payment.setPaymentMode(paymentMode);
+        }
         if (notes != null) payment.setNotes(notes);
         return toResponse(paymentRepository.save(payment));
     }

@@ -53,6 +53,9 @@ public class DamageLog {
 
     private String notes;
 
+    @Column(name = "supplier_name")
+    private String supplierName;
+
     @ManyToOne
     @JoinColumn(name = "logged_by")
     private User loggedBy;

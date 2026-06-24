@@ -80,7 +80,7 @@ export default function Stock() {
   const [bulkReceivedDate, setBulkReceivedDate] = useState(new Date().toISOString().split('T')[0])
   const [bulkRemarks, setBulkRemarks] = useState('')
   const [bulkRows, setBulkRows] = useState([
-    { productId: '', batchNumber: '', manufacturingDate: '', expiryDate: '', primaryReceived: '', extraSecondaryReceived: '', offerSecondaryReceived: '', buyPriceWithoutTax: '', gstPercent: '5' }
+    { productId: '', batchNumber: '', expiryDate: '', primaryReceived: '', extraSecondaryReceived: '', offerSecondaryReceived: '', buyPriceWithoutTax: '', gstPercent: '5' }
   ])
 
   // AI Invoice Scanner OCR States
@@ -92,9 +92,10 @@ export default function Stock() {
   const [scannerInvoiceNumber, setScannerInvoiceNumber] = useState('')
   const [invoiceAlreadyScanned, setInvoiceAlreadyScanned] = useState(false)
 
-  // Quick Add Product States (for new products parsed via OCR)
+  // Quick Add Product States (for new products parsed via OCR or Bulk Entry)
   const [showQuickProductModal, setShowQuickProductModal] = useState(false)
   const [quickProductIndex, setQuickProductIndex] = useState(null)
+  const [bulkQuickProductIndex, setBulkQuickProductIndex] = useState(null)
   const [quickProductForm, setQuickProductForm] = useState({
     name: '', brand: '', category: 'SNACKS', otherCategoryDetail: '', gstPercent: '5', cessPercent: '0', isCessApplicable: false,
     primaryUnit: 'BOX', secondaryUnit: 'LADI', customSecondaryUnit: '', secondaryPerPrimary: '20',
@@ -130,6 +131,25 @@ export default function Stock() {
   const [movementPage, setMovementPage] = useState(0)
   const [movementTotalPages, setMovementTotalPages] = useState(0)
   const [selectedMovementType, setSelectedMovementType] = useState('')
+  const [movementStartDate, setMovementStartDate] = useState('')
+  const [movementEndDate, setMovementEndDate] = useState('')
+  const [movementSearchTerm, setMovementSearchTerm] = useState('')
+  const [debouncedMovementSearchTerm, setDebouncedMovementSearchTerm] = useState('')
+
+  // Physical adjustment modal state variables
+  const [isAdjustmentModalOpen, setIsAdjustmentModalOpen] = useState(false)
+  const [selectedAdjustmentBatch, setSelectedAdjustmentBatch] = useState(null)
+  const [enteredPhysicalCount, setEnteredPhysicalCount] = useState('')
+  const [adjustmentReason, setAdjustmentReason] = useState('')
+  const [customAdjustmentReason, setCustomAdjustmentReason] = useState('')
+  const [adjustingPhysical, setAdjustingPhysical] = useState(false)
+
+  // Mark damage from batch modal state variables
+  const [damageTargetBatch, setDamageTargetBatch] = useState(null)
+  const [damageQty, setDamageQty] = useState('')
+  const [damageType, setDamageType] = useState('PERMANENT')
+  const [damageReason, setDamageReason] = useState('')
+  const [markingDamage, setMarkingDamage] = useState(false)
 
   // 6. Audit Logs Adjustments
   const [auditLogs, setAuditLogs] = useState([])
@@ -238,7 +258,7 @@ export default function Stock() {
   // Fetch Movements
   const loadMovements = async (page = 0) => {
     try {
-      const res = await api.get(`/stock/movements?page=${page}&size=15&movementType=${selectedMovementType}`)
+      const res = await api.get(`/stock/movements?page=${page}&size=15&movementType=${selectedMovementType}&startDate=${movementStartDate}&endDate=${movementEndDate}&search=${debouncedMovementSearchTerm}`)
       setMovementList(res.data.data?.content || [])
       setMovementTotalPages(res.data.data?.totalPages || 0)
     } catch {
@@ -312,6 +332,15 @@ export default function Stock() {
     return () => clearTimeout(timer)
   }, [batchSearchTerm])
 
+  // Debounce movement search term and reset page
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedMovementSearchTerm(movementSearchTerm)
+      setMovementPage(0)
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [movementSearchTerm])
+
   // Trigger loads based on active tab
   useEffect(() => {
     if (activeTab === 'dashboard') loadDashboard()
@@ -321,7 +350,42 @@ export default function Stock() {
     else if (activeTab === 'audit' && isAdmin) loadAuditLogs(auditPage)
     else if (activeTab === 'bi') loadBI()
     else if (activeTab === 'reports') loadReports(reportPage)
-  }, [activeTab, invPage, batchPage, movementPage, auditPage, reportPage, selectedReport, selectedMovementType, searchTerm, selectedCategory, selectedStatus, debouncedBatchSearchTerm])
+    // Always refresh products list when receive tab is opened
+    if (activeTab === 'receive') loadProducts()
+  }, [activeTab, invPage, batchPage, movementPage, auditPage, reportPage, selectedReport, selectedMovementType, searchTerm, selectedCategory, selectedStatus, debouncedBatchSearchTerm, movementStartDate, movementEndDate, debouncedMovementSearchTerm])
+
+  // Helper to handle product change in single receive form (pre-fill fields)
+  const handleSingleProductChange = (productId) => {
+    const prod = products.find(p => p.id === productId)
+    if (prod) {
+      setManualForm(f => ({
+        ...f,
+        productId,
+        buyPriceWithoutTax: prod.buyPriceWithoutTax ?? '',
+        gstPercent: prod.gstPercent !== undefined && prod.gstPercent !== null ? String(Math.round(prod.gstPercent)) : '5',
+        sellPricePrimary: prod.sellPricePrimary ?? '',
+        sellPriceSecondary: prod.sellPriceSecondary ?? ''
+      }))
+    } else {
+      setManualForm(f => ({ ...f, productId }))
+    }
+  }
+
+  // Calculate summary values for Single Entry receive
+  const getSingleEntrySummary = () => {
+    const selectedProd = products.find(p => p.id === manualForm.productId)
+    const ratio = selectedProd?.secondaryPerPrimary || 12
+    const pAdded = manualForm.primaryReceived === '' ? 0 : (Number(manualForm.primaryReceived) || 0)
+    const sAdded = manualForm.extraSecondaryReceived === '' ? 0 : (Number(manualForm.extraSecondaryReceived) || 0)
+    const buyPrice = Number(manualForm.buyPriceWithoutTax || 0)
+    const gst = Number(manualForm.gstPercent || 0)
+
+    const totalTaxable = (pAdded * buyPrice) + (sAdded * (buyPrice / ratio))
+    const totalGst = totalTaxable * (gst / 100)
+    const totalNet = totalTaxable + totalGst
+
+    return { totalTaxable, totalGst, totalNet }
+  }
 
   // Single Manual Receive Form Submit
   const handleReceiveSubmit = async (e) => {
@@ -338,7 +402,8 @@ export default function Stock() {
         primaryReceived: manualForm.primaryReceived === '' ? 0 : Number(manualForm.primaryReceived),
         extraSecondaryReceived: manualForm.extraSecondaryReceived === '' ? 0 : Number(manualForm.extraSecondaryReceived),
         offerSecondaryReceived: manualForm.offerSecondaryReceived === '' ? 0 : Number(manualForm.offerSecondaryReceived),
-        buyPriceWithoutTax: Number(manualForm.buyPriceWithoutTax)
+        buyPriceWithoutTax: Number(manualForm.buyPriceWithoutTax),
+        manufacturingDate: null
       }
 
       await api.post('/stock/receive', payload)
@@ -771,6 +836,25 @@ export default function Stock() {
         })
       }
 
+      // Auto-select newly created product in the bulk entry row
+      if (bulkQuickProductIndex !== null) {
+        setBulkRows(prev => {
+          const updated = [...prev]
+          const row = updated[bulkQuickProductIndex]
+          if (!row) return prev
+          updated[bulkQuickProductIndex] = {
+            ...row,
+            productId: newProduct.id,
+            gstPercent: (newProduct.gstPercent || 5).toString(),
+            buyPriceWithoutTax: newProduct.buyPriceWithoutTax && Number(newProduct.buyPriceWithoutTax) > 0
+              ? Number(newProduct.buyPriceWithoutTax).toString()
+              : row.buyPriceWithoutTax,
+          }
+          return updated
+        })
+        setBulkQuickProductIndex(null)
+      }
+
       toast.success('Product created and mapped successfully!')
       setShowQuickProductModal(false)
     } catch (err) {
@@ -830,6 +914,28 @@ export default function Stock() {
             setShowQuickProductModal(false)
             return
           }
+
+          // Handle "already exists" for bulk entry row
+          if (matchedProduct && bulkQuickProductIndex !== null) {
+            setBulkRows(prev => {
+              const updated = [...prev]
+              const row = updated[bulkQuickProductIndex]
+              if (!row) return prev
+              updated[bulkQuickProductIndex] = {
+                ...row,
+                productId: matchedProduct.id,
+                gstPercent: (matchedProduct.gstPercent || 5).toString(),
+                buyPriceWithoutTax: matchedProduct.buyPriceWithoutTax && Number(matchedProduct.buyPriceWithoutTax) > 0
+                  ? Number(matchedProduct.buyPriceWithoutTax).toString()
+                  : row.buyPriceWithoutTax,
+              }
+              return updated
+            })
+            setBulkQuickProductIndex(null)
+            toast.success('Product already exists! Row successfully mapped.')
+            setShowQuickProductModal(false)
+            return
+          }
         } catch (fetchErr) {
           console.error("Failed to recover and map existing product", fetchErr)
         }
@@ -849,13 +955,47 @@ export default function Stock() {
       const p = products.find(prod => prod.id === value)
       if (p) {
         updated[index].gstPercent = (p.gstPercent || 5).toString()
+        // Auto-fill buy price from product master
+        if (p.buyPriceWithoutTax && Number(p.buyPriceWithoutTax) > 0) {
+          updated[index].buyPriceWithoutTax = Number(p.buyPriceWithoutTax).toString()
+        }
       }
     }
     setBulkRows(updated)
   }
 
+  // Open Quick Product modal for a specific bulk entry row
+  const openBulkQuickProductModal = (index, searchQuery = '') => {
+    setBulkQuickProductIndex(index)
+    setQuickProductForm({
+      name: searchQuery,
+      brand: '',
+      category: 'SNACKS',
+      otherCategoryDetail: '',
+      gstPercent: '5',
+      cessPercent: '0',
+      isCessApplicable: false,
+      primaryUnit: 'BOX',
+      secondaryUnit: 'LADI',
+      customSecondaryUnit: '',
+      secondaryPerPrimary: '20',
+      canSellPrimary: true,
+      canSellSecondary: true,
+      buyPriceWithoutTax: '',
+      buyPriceWithTax: '',
+      sellPricePrimaryExcl: '',
+      sellPricePrimaryIncl: '',
+      sellPriceSecondaryExcl: '',
+      sellPriceSecondaryIncl: '',
+      lowStockAlert: '10',
+      lowStockUnit: 'SECONDARY',
+    })
+    setQuickProductIndex(null) // ensure scanner index is cleared
+    setShowQuickProductModal(true)
+  }
+
   const addBulkRow = () => {
-    setBulkRows(prev => [...prev, { productId: '', batchNumber: '', manufacturingDate: '', expiryDate: '', primaryReceived: '', extraSecondaryReceived: '', offerSecondaryReceived: '', buyPriceWithoutTax: '', gstPercent: '5' }])
+    setBulkRows(prev => [{ productId: '', batchNumber: '', expiryDate: '', primaryReceived: '', extraSecondaryReceived: '', offerSecondaryReceived: '', buyPriceWithoutTax: '', gstPercent: '5' }, ...prev])
   }
 
   const removeBulkRow = (index) => {
@@ -887,7 +1027,6 @@ export default function Stock() {
         supplierInvoiceNumber: bulkInvoiceNumber,
         supplierInvoiceDate: bulkInvoiceDate,
         stockReceivedDate: bulkReceivedDate,
-        manufacturingDate: row.manufacturingDate || null,
         primaryReceived: row.primaryReceived === '' ? 0 : Number(row.primaryReceived),
         extraSecondaryReceived: row.extraSecondaryReceived === '' ? 0 : Number(row.extraSecondaryReceived),
         offerSecondaryReceived: row.offerSecondaryReceived === '' ? 0 : Number(row.offerSecondaryReceived),
@@ -901,7 +1040,7 @@ export default function Stock() {
 
       await api.post('/stock/receive-bulk', payload)
       toast.success('Manual bulk stock batches registered successfully!')
-      setBulkRows([{ productId: '', batchNumber: '', manufacturingDate: '', expiryDate: '', primaryReceived: '', extraSecondaryReceived: '', offerSecondaryReceived: '', buyPriceWithoutTax: '', gstPercent: '5' }])
+      setBulkRows([{ productId: '', batchNumber: '', expiryDate: '', primaryReceived: '', extraSecondaryReceived: '', offerSecondaryReceived: '', buyPriceWithoutTax: '', gstPercent: '5' }])
       setBulkRemarks('')
       setBulkInvoiceNumber('')
       loadInventory(0)
@@ -1017,6 +1156,136 @@ export default function Stock() {
       console.error(err)
     } finally {
       setExporting(false)
+    }
+  }
+
+  // Handle preset date ranges
+  const handlePresetDate = (preset) => {
+    const today = new Date()
+    const formatDate = (date) => {
+      const yyyy = date.getFullYear()
+      const mm = String(date.getMonth() + 1).padStart(2, '0')
+      const dd = String(date.getDate()).padStart(2, '0')
+      return `${yyyy}-${mm}-${dd}`
+    }
+    
+    if (preset === 'today') {
+      setMovementStartDate(formatDate(today))
+      setMovementEndDate(formatDate(today))
+    } else if (preset === 'week') {
+      const day = today.getDay()
+      const diff = today.getDate() - day + (day === 0 ? -6 : 1)
+      const monday = new Date(today.setDate(diff))
+      setMovementStartDate(formatDate(monday))
+      setMovementEndDate(formatDate(new Date()))
+    } else if (preset === 'month') {
+      const firstDay = new Date(today.getFullYear(), today.getMonth(), 1)
+      setMovementStartDate(formatDate(firstDay))
+      setMovementEndDate(formatDate(new Date()))
+    } else if (preset === '30days') {
+      const thirtyDaysAgo = new Date()
+      thirtyDaysAgo.setDate(today.getDate() - 30)
+      setMovementStartDate(formatDate(thirtyDaysAgo))
+      setMovementEndDate(formatDate(new Date()))
+    }
+  }
+
+  // Export movements ledger CSV
+  const exportMovementsToCSV = async () => {
+    if (exporting) return
+    setExporting(true)
+    try {
+      toast.info('Generating movements CSV...')
+      const res = await api.get(`/stock/movements/export?startDate=${movementStartDate}&endDate=${movementEndDate}&movementType=${selectedMovementType}&search=${debouncedMovementSearchTerm}`, { responseType: 'blob' })
+      const blob = new Blob([res.data], { type: 'text/csv' })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `Stock_Movements_${new Date().toISOString().split('T')[0]}.csv`)
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+      toast.success('Movements CSV exported successfully!')
+    } catch (err) {
+      toast.error('Failed to export movements CSV')
+      console.error(err)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  // Physical adjustment submit handler
+  const handlePhysicalAdjustmentSubmit = async (e) => {
+    e.preventDefault()
+    if (!selectedAdjustmentBatch || enteredPhysicalCount === '') {
+      toast.warning('Please select a batch and enter a physical count')
+      return
+    }
+
+    setAdjustingPhysical(true)
+    try {
+      let finalReason = adjustmentReason
+      if (adjustmentReason === 'Other') {
+        if (!customAdjustmentReason.trim()) {
+          toast.warning('Please specify custom reason')
+          setAdjustingPhysical(false)
+          return
+        }
+        finalReason = customAdjustmentReason.trim()
+      }
+
+      await api.post('/stock/adjustment', {
+        batchId: selectedAdjustmentBatch.id,
+        physicalCount: parseInt(enteredPhysicalCount),
+        reason: finalReason
+      })
+
+      toast.success('Stock adjusted successfully!')
+      setIsAdjustmentModalOpen(false)
+      loadMovements(movementPage)
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to adjust stock')
+    } finally {
+      setAdjustingPhysical(false)
+    }
+  }
+
+  // Mark damage submit handler
+  const handleMarkDamageSubmit = async (e) => {
+    e.preventDefault()
+    if (!damageTargetBatch || damageQty === '' || !damageReason.trim()) {
+      toast.warning('Please fill in all fields')
+      return
+    }
+
+    const qty = parseInt(damageQty)
+    if (qty <= 0) {
+      toast.warning('Quantity must be greater than 0')
+      return
+    }
+
+    const available = damageTargetBatch.secondaryRemaining || 0
+    if (qty > available) {
+      toast.warning(`Insufficient stock in batch. Available: ${available}`)
+      return
+    }
+
+    setMarkingDamage(true)
+    try {
+      await api.post(`/stock/batches/${damageTargetBatch.id}/mark-damage`, {
+        quantity: qty,
+        damageType: damageType,
+        reason: damageReason.trim()
+      })
+
+      toast.success('Batch damage marked successfully!')
+      setDamageTargetBatch(null)
+      loadBatches(batchPage, debouncedBatchSearchTerm)
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to mark damage')
+    } finally {
+      setMarkingDamage(false)
     }
   }
 
@@ -1374,6 +1643,8 @@ export default function Stock() {
                         <td className="p-3">
                           <SearchSelect
                             options={products.filter(p => p.active !== false).map(p => ({ value: p.id, label: `${p.name} (${p.brand})` }))}
+                            labelKey="label"
+                            valueKey="value"
                             value={item.productId || ''}
                             onChange={(val) => handleScannerRowProductChange(index, val)}
                             placeholder="Map product manually..."
@@ -1788,7 +2059,7 @@ export default function Stock() {
                       <SearchSelect
                         options={products}
                         value={manualForm.productId}
-                        onChange={(val) => setManualForm(f => ({ ...f, productId: val }))}
+                        onChange={handleSingleProductChange}
                         placeholder="Search and select product..."
                         labelKey="name"
                         valueKey="id"
@@ -1860,17 +2131,6 @@ export default function Stock() {
                         type="date"
                         value={manualForm.expiryDate}
                         onChange={(e) => setManualForm(f => ({ ...f, expiryDate: e.target.value }))}
-                        required
-                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-slate-500 dark:text-slate-400 text-sm font-semibold mb-1 block">Manufacturing Date *</label>
-                      <input
-                        type="date"
-                        value={manualForm.manufacturingDate}
-                        onChange={(e) => setManualForm(f => ({ ...f, manufacturingDate: e.target.value }))}
                         required
                         className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500"
                       />
@@ -1948,6 +2208,41 @@ export default function Stock() {
                     </div>
                   </div>
 
+                  {/* Single Entry Summary Cards */}
+                  {manualForm.productId && (
+                    (() => {
+                      const { totalTaxable, totalGst, totalNet } = getSingleEntrySummary();
+                      return (
+                        <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl flex flex-wrap justify-between items-center gap-4 mt-4">
+                          <div>
+                            <h4 className="font-bold text-sm md:text-base">Inward Entry Summary</h4>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Estimated calculation including taxes.</p>
+                          </div>
+                          <div className="flex gap-6 flex-wrap">
+                            <div className="flex flex-col items-end">
+                              <span className="text-xxs font-bold text-slate-400 uppercase tracking-wider">Taxable Value</span>
+                              <span className="text-sm md:text-base font-bold text-slate-700 dark:text-slate-200">
+                                ₹{totalTaxable.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                            <div className="flex flex-col items-end">
+                              <span className="text-xxs font-bold text-slate-400 uppercase tracking-wider">GST Tax ({manualForm.gstPercent}%)</span>
+                              <span className="text-sm md:text-base font-bold text-slate-700 dark:text-slate-200">
+                                ₹{totalGst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                            <div className="flex flex-col items-end border-l border-slate-200 dark:border-slate-800 pl-6">
+                              <span className="text-xxs font-extrabold text-slate-400 uppercase tracking-wider">Grand Total (Incl. Tax)</span>
+                              <span className="text-xl md:text-2xl font-black text-emerald-500">
+                                ₹{totalNet.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()
+                  )}
+
                   <button
                     type="submit"
                     disabled={savingStock}
@@ -2023,7 +2318,6 @@ export default function Stock() {
                           <th className="p-3 min-w-[200px]">Product *</th>
                           <th className="p-3 min-w-[100px]">Batch No *</th>
                           <th className="p-3 min-w-[120px]">Expiry *</th>
-                          <th className="p-3 min-w-[120px]">Mfg Date</th>
                           <th className="p-3 min-w-[90px]">Qty (BOX)</th>
                           <th className="p-3 min-w-[90px]">Loose (LADI)</th>
                           <th className="p-3 min-w-[90px]">Offer (Free)</th>
@@ -2039,9 +2333,13 @@ export default function Stock() {
                             <td className="p-2">
                               <SearchSelect
                                 options={products.map(p => ({ value: p.id, label: `${p.name} (${p.brand})` }))}
+                                labelKey="label"
+                                valueKey="value"
                                 value={row.productId}
                                 onChange={(val) => handleBulkRowChange(index, 'productId', val)}
                                 placeholder="Search DB product..."
+                                onNoResultsAction={(query) => openBulkQuickProductModal(index, query)}
+                                noResultsActionLabel="+ Create New Product"
                               />
                             </td>
                             <td className="p-2">
@@ -2060,14 +2358,6 @@ export default function Stock() {
                                 value={row.expiryDate}
                                 onChange={e => handleBulkRowChange(index, 'expiryDate', e.target.value)}
                                 required
-                                className="w-28 px-2 py-1 bg-white dark:bg-slate-900 border border-slate-350 dark:border-slate-700 rounded text-xs text-slate-900 dark:text-slate-100"
-                              />
-                            </td>
-                            <td className="p-2">
-                              <input
-                                type="date"
-                                value={row.manufacturingDate}
-                                onChange={e => handleBulkRowChange(index, 'manufacturingDate', e.target.value)}
                                 className="w-28 px-2 py-1 bg-white dark:bg-slate-900 border border-slate-350 dark:border-slate-700 rounded text-xs text-slate-900 dark:text-slate-100"
                               />
                             </td>
@@ -2437,6 +2727,20 @@ export default function Stock() {
                               >
                                 <Edit2 className="w-4 h-4" />
                               </button>
+                              {(isAdmin || isManager) && batch.batchStatus !== 'WRITTEN_OFF' && (
+                                <button
+                                  onClick={() => {
+                                    setDamageTargetBatch(batch)
+                                    setDamageQty('')
+                                    setDamageType('PERMANENT')
+                                    setDamageReason('')
+                                  }}
+                                  className="p-2 rounded-lg bg-slate-100 hover:bg-amber-600/10 dark:bg-slate-850 dark:hover:bg-amber-600/30 text-slate-500 hover:text-amber-600 dark:text-slate-400 dark:hover:text-amber-450 transition"
+                                  title="Mark Damage"
+                                >
+                                  <ShieldAlert className="w-4 h-4" />
+                                </button>
+                              )}
                               {batch.batchStatus !== 'WRITTEN_OFF' && (
                                 <button
                                   onClick={() => setWriteOffTarget(batch.id)}
@@ -2588,22 +2892,129 @@ export default function Stock() {
             className="space-y-6"
           >
             {/* Filter ledger */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-2xl flex flex-wrap gap-4 items-center shadow-sm">
-              <select
-                value={selectedMovementType}
-                onChange={(e) => setSelectedMovementType(e.target.value)}
-                className="px-4 py-2.5 bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-800 dark:text-slate-300 focus:ring-2 focus:ring-indigo-500 text-sm"
-              >
-                <option value="">All Transactions</option>
-                <option value="PURCHASE">Purchase</option>
-                <option value="SALE">Sale</option>
-                <option value="RETURN_IN">Return In</option>
-                <option value="RETURN_OUT">Return Out</option>
-                <option value="DAMAGE">Damage</option>
-                <option value="EXPIRY">Expiry</option>
-                <option value="ADJUSTMENT">Adjustment</option>
-                <option value="OPENING_STOCK">Opening Stock</option>
-              </select>
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-2xl flex flex-wrap gap-4 items-center justify-between shadow-sm">
+              <div className="flex flex-wrap gap-4 items-center flex-1">
+                {/* Search Box */}
+                <div className="relative min-w-[240px] flex-1 max-w-xs">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 w-4 h-4" />
+                  <input
+                    type="text"
+                    placeholder="Search product, brand, batch..."
+                    value={movementSearchTerm}
+                    onChange={(e) => setMovementSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-800 dark:text-slate-300 focus:ring-2 focus:ring-indigo-500 text-sm"
+                  />
+                </div>
+
+                {/* Movement Type Dropdown */}
+                <select
+                  value={selectedMovementType}
+                  onChange={(e) => setSelectedMovementType(e.target.value)}
+                  className="px-4 py-2.5 bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-800 dark:text-slate-300 focus:ring-2 focus:ring-indigo-500 text-sm"
+                >
+                  <option value="">All Transactions</option>
+                  <option value="PURCHASE">Purchase</option>
+                  <option value="SALE">Sale</option>
+                  <option value="RETURN_IN">Return In</option>
+                  <option value="RETURN_OUT">Return Out</option>
+                  <option value="DAMAGE">Damage</option>
+                  <option value="EXPIRY">Expiry</option>
+                  <option value="ADJUSTMENT">Adjustment</option>
+                  <option value="OPENING_STOCK">Opening Stock</option>
+                </select>
+
+                {/* Date Inputs */}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={movementStartDate}
+                    onChange={(e) => setMovementStartDate(e.target.value)}
+                    className="px-3 py-2 bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-800 dark:text-slate-300 focus:ring-2 focus:ring-indigo-500 text-xs"
+                  />
+                  <span className="text-slate-400 dark:text-slate-500 text-xs">to</span>
+                  <input
+                    type="date"
+                    value={movementEndDate}
+                    onChange={(e) => setMovementEndDate(e.target.value)}
+                    className="px-3 py-2 bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-800 dark:text-slate-300 focus:ring-2 focus:ring-indigo-500 text-xs"
+                  />
+                  {(movementStartDate || movementEndDate) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMovementStartDate('')
+                        setMovementEndDate('')
+                      }}
+                      className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg bg-slate-100 dark:bg-slate-850"
+                      title="Clear date range"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Preset Buttons */}
+                <div className="flex gap-1.5 bg-slate-100 dark:bg-slate-950 p-1 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => handlePresetDate('today')}
+                    className="px-2.5 py-1 text-xs font-medium rounded-lg hover:bg-white dark:hover:bg-slate-900 transition-colors text-slate-600 dark:text-slate-400"
+                  >
+                    Today
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePresetDate('week')}
+                    className="px-2.5 py-1 text-xs font-medium rounded-lg hover:bg-white dark:hover:bg-slate-900 transition-colors text-slate-600 dark:text-slate-400"
+                  >
+                    This Week
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePresetDate('month')}
+                    className="px-2.5 py-1 text-xs font-medium rounded-lg hover:bg-white dark:hover:bg-slate-900 transition-colors text-slate-600 dark:text-slate-400"
+                  >
+                    This Month
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePresetDate('30days')}
+                    className="px-2.5 py-1 text-xs font-medium rounded-lg hover:bg-white dark:hover:bg-slate-900 transition-colors text-slate-600 dark:text-slate-400"
+                  >
+                    Last 30 Days
+                  </button>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2">
+                {(isAdmin || isManager) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      loadAllBatches()
+                      setSelectedAdjustmentBatch(null)
+                      setEnteredPhysicalCount('')
+                      setAdjustmentReason('Mismatched Count')
+                      setCustomAdjustmentReason('')
+                      setIsAdjustmentModalOpen(true)
+                    }}
+                    className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold flex items-center gap-2 shadow-sm transition-all"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Physical Adjustment
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={exportMovementsToCSV}
+                  disabled={exporting}
+                  className="px-4 py-2.5 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850 rounded-xl text-slate-700 dark:text-slate-300 text-sm font-semibold flex items-center gap-2 transition-all disabled:opacity-50"
+                >
+                  <Download className="w-4 h-4" />
+                  {exporting ? 'Exporting...' : 'Export CSV'}
+                </button>
+              </div>
             </div>
 
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
@@ -2740,6 +3151,7 @@ export default function Stock() {
                 <select
                   value={selectedReport}
                   onChange={(e) => {
+                    setReportData([])
                     setSelectedReport(e.target.value)
                     setReportPage(0)
                   }}
@@ -3106,6 +3518,229 @@ export default function Stock() {
           onConfirm={() => handleWriteOff(writeOffTarget)}
           onCancel={() => setWriteOffTarget(null)}
         />
+      )}
+
+      {/* Physical Stock Adjustment Modal */}
+      {isAdjustmentModalOpen && (
+        <Modal
+          isOpen={isAdjustmentModalOpen}
+          title="Physical Stock Adjustment"
+          onClose={() => setIsAdjustmentModalOpen(false)}
+        >
+          <form onSubmit={handlePhysicalAdjustmentSubmit} className="space-y-6">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Select a batch and specify the actual physical count. This will log an ADJUSTMENT movement with the calculated difference.
+            </p>
+
+            {/* Batch Selector */}
+            <div>
+              <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1 font-semibold">Select Stock Batch <span className="text-red-500">*</span></label>
+              <SearchSelect
+                options={allBatchList.map(b => ({
+                  value: b.id,
+                  label: `${b.productName} (${b.brand || 'N/A'}) - Batch: ${b.batchNumber} [Available: ${b.secondaryRemaining} LADI]`
+                }))}
+                value={selectedAdjustmentBatch?.id || ''}
+                onChange={(val) => {
+                  const selected = allBatchList.find(b => b.id === val)
+                  setSelectedAdjustmentBatch(selected || null)
+                }}
+                placeholder="Search and select batch..."
+                labelKey="label"
+                valueKey="value"
+              />
+            </div>
+
+            {selectedAdjustmentBatch && (
+              <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-xl space-y-3 border border-slate-200 dark:border-slate-800">
+                <div className="flex justify-between text-xs text-slate-600 dark:text-slate-400">
+                  <span>Product:</span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">{selectedAdjustmentBatch.productName}</span>
+                </div>
+                <div className="flex justify-between text-xs text-slate-600 dark:text-slate-400">
+                  <span>Current Available Units:</span>
+                  <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">{selectedAdjustmentBatch.secondaryRemaining} LADI</span>
+                </div>
+              </div>
+            )}
+
+            {/* Entered Physical Count */}
+            <div>
+              <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1 font-semibold">Physical Count (LADI) <span className="text-red-500">*</span></label>
+              <input
+                type="number"
+                min="0"
+                required
+                value={enteredPhysicalCount}
+                onChange={(e) => setEnteredPhysicalCount(e.target.value)}
+                placeholder="Enter physical count counted on shelf"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100"
+              />
+            </div>
+
+            {/* Discrepancy Live Math */}
+            {selectedAdjustmentBatch && enteredPhysicalCount !== '' && (
+              (() => {
+                const diff = parseInt(enteredPhysicalCount) - (selectedAdjustmentBatch.secondaryRemaining || 0)
+                return (
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                    <span className="text-xs font-medium text-slate-700 dark:text-slate-300">Discrepancy:</span>
+                    {diff === 0 ? (
+                      <span className="text-xs bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-1 rounded font-semibold">
+                        No Change
+                      </span>
+                    ) : diff > 0 ? (
+                      <span className="text-xs bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 px-2.5 py-1 rounded-full font-bold">
+                        +{diff} LADI
+                      </span>
+                    ) : (
+                      <span className="text-xs bg-rose-100 dark:bg-rose-950 text-rose-850 dark:text-rose-350 px-2.5 py-1 rounded-full font-bold">
+                        {diff} LADI
+                      </span>
+                    )}
+                  </div>
+                )
+              })()
+            )}
+
+            {/* Reason Code Dropdown */}
+            <div>
+              <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1 font-semibold">Adjustment Reason <span className="text-red-500">*</span></label>
+              <select
+                required
+                value={adjustmentReason}
+                onChange={(e) => setAdjustmentReason(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm"
+              >
+                <option value="Mismatched Count">Mismatched Count</option>
+                <option value="Damaged Stock">Damaged Stock</option>
+                <option value="Expiry Cleanup">Expiry Cleanup</option>
+                <option value="Stock Audit Correction">Stock Audit Correction</option>
+                <option value="Other">Other (Specify below)</option>
+              </select>
+            </div>
+
+            {adjustmentReason === 'Other' && (
+              <div>
+                <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1 font-semibold">Specify Custom Reason <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  required
+                  value={customAdjustmentReason}
+                  onChange={(e) => setCustomAdjustmentReason(e.target.value)}
+                  placeholder="Enter details..."
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100"
+                />
+              </div>
+            )}
+
+            <div className="flex gap-3 justify-end pt-4 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsAdjustmentModalOpen(false)}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-lg font-medium text-slate-700 dark:text-slate-300"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={adjustingPhysical || (selectedAdjustmentBatch && parseInt(enteredPhysicalCount) - (selectedAdjustmentBatch.secondaryRemaining || 0) === 0)}
+                className="px-5 py-2 bg-indigo-650 hover:bg-indigo-600 text-white font-semibold rounded-lg shadow disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {adjustingPhysical ? 'Adjusting...' : 'Apply Adjustment'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Mark Damage Modal */}
+      {damageTargetBatch && (
+        <Modal
+          isOpen={!!damageTargetBatch}
+          title="Mark Batch Stock as Damage"
+          onClose={() => setDamageTargetBatch(null)}
+        >
+          <form onSubmit={handleMarkDamageSubmit} className="space-y-6">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Log damaged units for this batch. This will deduct quantity from the batch and log a DAMAGE stock movement.
+            </p>
+
+            <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-xl space-y-3 border border-slate-200 dark:border-slate-800">
+              <div className="flex justify-between text-xs text-slate-600 dark:text-slate-400">
+                <span>Product:</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-200">{damageTargetBatch.productName}</span>
+              </div>
+              <div className="flex justify-between text-xs text-slate-600 dark:text-slate-400">
+                <span>Batch Number:</span>
+                <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">{damageTargetBatch.batchNumber}</span>
+              </div>
+              <div className="flex justify-between text-xs text-slate-600 dark:text-slate-400">
+                <span>Available Units:</span>
+                <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">{damageTargetBatch.secondaryRemaining || 0} LADI</span>
+              </div>
+            </div>
+
+            {/* Damage Quantity */}
+            <div>
+              <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1 font-semibold">Damage Quantity (LADI) <span className="text-red-500">*</span></label>
+              <input
+                type="number"
+                min="1"
+                max={damageTargetBatch.secondaryRemaining || 0}
+                required
+                value={damageQty}
+                onChange={(e) => setDamageQty(e.target.value)}
+                placeholder={`Enter quantity (max ${damageTargetBatch.secondaryRemaining || 0})`}
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100"
+              />
+            </div>
+
+            {/* Damage Type */}
+            <div>
+              <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1 font-semibold">Damage Type / Claim status <span className="text-red-500">*</span></label>
+              <select
+                required
+                value={damageType}
+                onChange={(e) => setDamageType(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm"
+              >
+                <option value="PERMANENT">Permanent Loss (No claim/refund)</option>
+                <option value="RECLAIMABLE">Reclaimable (Claim status from distributor)</option>
+              </select>
+            </div>
+
+            {/* Reason */}
+            <div>
+              <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1 font-semibold">Damage Reason Notes <span className="text-red-500">*</span></label>
+              <textarea
+                required
+                value={damageReason}
+                onChange={(e) => setDamageReason(e.target.value)}
+                placeholder="e.g. Rats nibbled packet, transport leakage, package crushed..."
+                rows={3}
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm"
+              />
+            </div>
+
+            <div className="flex gap-3 justify-end pt-4 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setDamageTargetBatch(null)}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-lg font-medium text-slate-700 dark:text-slate-300"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={markingDamage || !damageQty || parseInt(damageQty) > (damageTargetBatch.secondaryRemaining || 0)}
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg shadow disabled:opacity-50"
+              >
+                {markingDamage ? 'Logging damage...' : 'Log Damage'}
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
 
       {/* Quick Add Product Modal */}

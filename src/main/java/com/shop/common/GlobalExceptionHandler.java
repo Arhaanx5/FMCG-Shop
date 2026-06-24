@@ -31,11 +31,22 @@ public class GlobalExceptionHandler {
                     errors.put(field, message);
                 });
 
+        String detailedMessage = ex.getBindingResult()
+                .getAllErrors()
+                .stream()
+                .map(error -> {
+                    String field = error instanceof FieldError 
+                            ? ((FieldError) error).getField() 
+                            : error.getObjectName();
+                    return field + ": " + error.getDefaultMessage();
+                })
+                .collect(java.util.stream.Collectors.joining("; "));
+
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.<Map<String, String>>builder()
                         .success(false)
-                        .message("Validation failed")
+                        .message(detailedMessage)
                         .data(errors)
                         .timestamp(java.time.LocalDateTime.now())
                         .build());
@@ -67,6 +78,16 @@ public class GlobalExceptionHandler {
                         .data(null)
                         .timestamp(java.time.LocalDateTime.now())
                         .build());
+    }
+
+    @ExceptionHandler(BelowCostWarningException.class)
+    public ResponseEntity<Map<String, Object>> handleBelowCostWarning(BelowCostWarningException ex) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("warning", true);
+        response.put("message", ex.getMessage());
+        response.put("timestamp", java.time.LocalDateTime.now());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
     // All other errors

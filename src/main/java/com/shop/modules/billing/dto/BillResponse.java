@@ -19,6 +19,7 @@ public class BillResponse {
     private BillStatus status;
     private LocalDateTime createdAt;
     private String createdBy;
+    private Integer version;
 
     // Customer info — flat, no nested object
     private UUID customerId;

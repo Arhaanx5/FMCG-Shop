@@ -18,6 +18,11 @@ public class DashboardResponse {
     private BigDecimal todayCollectedUdhar;
     private BigDecimal todayPending;
     private Long todayBills;
+    private BigDecimal totalInventoryValue;
+    private BigDecimal todayNewUdhar;
+    private BigDecimal codPendingAmount;
+    private Long codPendingBillsCount;
+    private BigDecimal todayExpenses;
     private BigDecimal monthRevenue;
     private BigDecimal monthExpenses;
     private BigDecimal monthNetProfit;
@@ -35,6 +40,42 @@ public class DashboardResponse {
     private List<PendingDeliveryAlert> pendingDeliveries;
     private List<OverdueUdharAlert> overdueUdharAlerts;
     private List<CreditLimitAlert> creditLimitExceededAlerts;
+
+    // Yesterday comparison
+    private BigDecimal yesterdayRevenue;
+    private BigDecimal yesterdayCollection;
+    private Long yesterdayBills;
+    private BigDecimal yesterdayCash;
+    private BigDecimal yesterdayUPI;
+    private BigDecimal yesterdayUdharRecovery;
+    private BigDecimal yesterdayNewUdhar;
+
+    // Always current
+    private Integer codOverdueCount;
+    private Long npaCustomersCount;
+    private BigDecimal npaCustomersAmount;
+    private Long oldestPendingDays;
+    private BigDecimal totalOutstandingUdhar;
+
+    // Period / Health
+    private BigDecimal totalNewUdhar;
+    private BigDecimal totalExpenses;
+    private BigDecimal todayCashCollection;
+    private BigDecimal todayUPICollection;
+    private BigDecimal todayUdharRecovery;
+    private BigDecimal totalWaived;
+    private BigDecimal netProfitMarginPct;
+    private BigDecimal avgBillValue;
+    private BigDecimal damageLossMTD;
+    private Long newCustomersThisMonth;
+    private BigDecimal codSuccessRate;
+    private BigDecimal avgCollectionDays;
+    private Long activeCustomersToday;
+    private Long activeCustomersMonth;
+    private Long activeCustomersYear;
+
+    // Sparkline/trend
+    private List<DailyTrendPoint> sevenDayTrend;
 
     @Data
     @Builder

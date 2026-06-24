@@ -24,6 +24,7 @@ public class PaymentResponse {
     private UUID adjustedBillId;
     private String adjustedBillNumber;
     private String paymentMode;
+    private String paymentSource;
     private String notes;
     private LocalDateTime paidAt;
     private String collectedBy;

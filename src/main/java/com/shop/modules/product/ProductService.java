@@ -184,14 +184,10 @@ public class ProductService {
 
         String brand = req.getBrand() != null ? req.getBrand().trim() : null;
 
-        // Check duplicate name + brand combination
-        boolean exists = (brand == null)
-                ? productRepository.existsByNameIgnoreCaseAndBrandIsNullAndActiveTrue(name)
-                : productRepository.existsByNameIgnoreCaseAndBrandIgnoreCaseAndActiveTrue(name, brand);
-
+        // Check duplicate product name
+        boolean exists = productRepository.existsByNameIgnoreCase(name);
         if (exists) {
-            throw new RuntimeException(
-                    "Product '" + name + "' with brand '" + (brand != null ? brand : "No Brand") + "' already exists");
+            throw new RuntimeException("Product already exists: " + name);
         }
 
         // Validate sell price > buy price
@@ -251,19 +247,10 @@ public class ProductService {
 
         String brand = req.getBrand() != null ? req.getBrand().trim() : null;
 
-        // Check duplicate name + brand — excluding current product
-        boolean exists = productRepository
-                .findByActiveTrue()
-                .stream()
-                .anyMatch(p -> p.getName().equalsIgnoreCase(name)
-                        && ((brand == null && p.getBrand() == null) || (brand != null && brand.equalsIgnoreCase(p.getBrand())))
-                        && !p.getId().equals(product.getId()));
-
+        // Check duplicate product name excluding current product
+        boolean exists = productRepository.existsByNameIgnoreCaseAndIdNot(name, product.getId());
         if (exists) {
-            throw new RuntimeException(
-                    "Product with name '"
-                            + name
-                            + "' already exists");
+            throw new RuntimeException("Product with similar name already exists: " + name);
         }
 
         // Validate sell price

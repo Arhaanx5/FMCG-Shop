@@ -104,7 +104,7 @@ const generateInvoiceHtml = (bill) => {
 
   const hasCess = Number(bill.cessTotal || 0) > 0;
 
-  const itemsHtml = (bill.items || []).map((item, idx) => {
+  const itemsHtml = (bill.items || []).filter(item => Number(item.quantity || 0) > 0).map((item, idx) => {
     const rate = Number(item.rate || 0)
     const qty = Number(item.quantity || 0)
     const gstAmt = Number(item.gstAmount || 0)
@@ -151,7 +151,7 @@ const generateInvoiceHtml = (bill) => {
 
   // Group by GST rates for Tax Summary
   const gstGroups = {}
-  ;(bill.items || []).forEach(item => {
+  ;(bill.items || []).filter(item => Number(item.quantity || 0) > 0).forEach(item => {
     const rate = Number(item.gstPercent || 0)
     const qty = Number(item.quantity || 0)
     const baseVal = Number(item.rate || 0) * qty
@@ -416,6 +416,13 @@ export default function Billing() {
   const [products, setProducts] = useState([])
   const [customers, setCustomers] = useState([])
   const [bills, setBills] = useState([])
+  const [billsTotalPages, setBillsTotalPages] = useState(0)
+  const [billsTotalElements, setBillsTotalElements] = useState(0)
+  const [billsPage, setBillsPage] = useState(0)
+  const [billsSize] = useState(20)
+  const [billsStatusFilter, setBillsStatusFilter] = useState(null) // null = all
+  const [billsSearchQuery, setBillsSearchQuery] = useState('')
+  const [billsDraftTotalElements, setBillsDraftTotalElements] = useState(0)
   const [loading, setLoading] = useState(true)
   const toast = useToast()
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
@@ -441,6 +448,9 @@ export default function Billing() {
   const [viewBill, setViewBill] = useState(null)
   const [previewBill, setPreviewBill] = useState(null)
   const [activeTab, setActiveTab] = useState('create')
+  const [returningItemId, setReturningItemId] = useState(null)
+  const [returnQty, setReturnQty] = useState(1)
+  const [submittingReturn, setSubmittingReturn] = useState(false)
   const iframeRef = useRef(null)
 
   // Edit Bill state
@@ -449,8 +459,148 @@ export default function Billing() {
   const [editPaymentMode, setEditPaymentMode] = useState('CASH')
   const [editStatus, setEditStatus] = useState('CONFIRMED')
   const [editPaidAmount, setEditPaidAmount] = useState(0)
+  const [editDiscount, setEditDiscount] = useState(0)
+  const [editReason, setEditReason] = useState('')
+  const [editItems, setEditItems] = useState([])
+  const [editHasUnsavedChanges, setEditHasUnsavedChanges] = useState(false)
   const [editFormTarget, setEditFormTarget] = useState(null)
   const [updating, setUpdating] = useState(false)
+
+  const { editSubtotal, editGstTotal, editCessTotal } = useMemo(() => {
+    return editItems.reduce((acc, item) => {
+      const q = Number(item.quantity || 0)
+      const price = Number(item.sellPrice || 0)
+      const gstRate = Number(item.gstPercent || 0)
+      const cessRate = Number(item.cessPercent || 0)
+      
+      let itemTotal = 0
+      let itemSubtotal = 0
+      let gstAmount = 0
+      let cessAmount = 0
+
+      if (item.offer) {
+        // Offer is free
+      } else {
+        itemTotal = Math.round(price * q * 100) / 100
+        const taxDivisor = 1 + (gstRate + cessRate) / 100
+        itemSubtotal = Math.round((itemTotal / taxDivisor) * 100) / 100
+        gstAmount = Math.round(itemSubtotal * (gstRate / 100) * 100) / 100
+        cessAmount = Math.round(itemSubtotal * (cessRate / 100) * 100) / 100
+
+        const calculatedTotal = Math.round((itemSubtotal + gstAmount + cessAmount) * 100) / 100
+        if (Math.abs(calculatedTotal - itemTotal) > 0.001) {
+          const diff = Math.round((itemTotal - calculatedTotal) * 100) / 100
+          gstAmount = Math.round((gstAmount + diff) * 100) / 100
+        }
+      }
+
+      acc.editSubtotal = Math.round((acc.editSubtotal + itemSubtotal) * 100) / 100
+      acc.editGstTotal = Math.round((acc.editGstTotal + gstAmount) * 100) / 100
+      acc.editCessTotal = Math.round((acc.editCessTotal + cessAmount) * 100) / 100
+      return acc
+    }, { editSubtotal: 0, editGstTotal: 0, editCessTotal: 0 })
+  }, [editItems])
+
+  const editSubtotalWithTaxes = Math.round((editSubtotal + editGstTotal + editCessTotal) * 100) / 100
+  const editGrandTotal = Math.max(0, Math.round((editSubtotalWithTaxes - Number(editDiscount || 0)) * 100) / 100)
+
+  const addProductToEdit = (productId) => {
+    const product = products.find(p => p.id === productId)
+    if (!product) return
+    loadProductBatches(productId)
+    const defaultUnit = product.canSellSecondary !== false ? product.secondaryUnit : product.primaryUnit;
+    const defaultPrice = product.canSellSecondary !== false ? product.sellPriceSecondary : product.sellPricePrimary;
+    
+    const exists = editItems.find(item => item.productId === productId && item.unitType === defaultUnit && !item.offer)
+    if (exists) {
+      setEditItems(editItems.map(item => {
+        if (item.productId === productId && item.unitType === defaultUnit && !item.offer) {
+          return { ...item, quantity: item.quantity + 1 }
+        }
+        return item
+      }))
+    } else {
+      setEditItems([...editItems, {
+        productId: product.id,
+        name: product.name,
+        brand: product.brand,
+        unitType: defaultUnit,
+        quantity: 1,
+        freeQuantity: 0,
+        sellPrice: defaultPrice,
+        gstPercent: product.gstPercent || 0,
+        cessPercent: product.cessPercent || 0,
+        offer: false,
+        primaryUnit: product.primaryUnit,
+        secondaryUnit: product.secondaryUnit,
+        canSellPrimary: product.canSellPrimary,
+        canSellSecondary: product.canSellSecondary,
+      }])
+    }
+    setEditHasUnsavedChanges(true)
+  }
+
+  const addOfferProductToEdit = (productId) => {
+    const product = products.find(p => p.id === productId)
+    if (!product) return
+    loadProductBatches(productId)
+    const defaultUnit = product.secondaryUnit || 'PACK';
+    const exists = editItems.find(item => item.productId === productId && item.unitType === defaultUnit && item.offer)
+    if (exists) {
+      setEditItems(editItems.map(item => {
+        if (item.productId === productId && item.unitType === defaultUnit && item.offer) {
+          return { ...item, quantity: item.quantity + 1 }
+        }
+        return item
+      }))
+    } else {
+      setEditItems([...editItems, {
+        productId: product.id,
+        name: product.name + " (Offer)",
+        brand: product.brand,
+        unitType: defaultUnit,
+        quantity: 1,
+        freeQuantity: 0,
+        sellPrice: 0,
+        gstPercent: 0,
+        cessPercent: 0,
+        offer: true,
+        primaryUnit: product.primaryUnit,
+        secondaryUnit: product.secondaryUnit,
+        canSellPrimary: false,
+        canSellSecondary: true,
+      }])
+    }
+    setEditHasUnsavedChanges(true)
+  }
+
+  const updateEditItem = (productId, unitType, offer, field, value) => {
+    setEditItems(editItems.map(item => {
+      if (item.productId === productId && item.unitType === unitType && item.offer === offer) {
+        return { ...item, [field]: value }
+      }
+      return item
+    }))
+    setEditHasUnsavedChanges(true)
+  }
+
+  const removeEditItem = (productId, unitType, offer) => {
+    setEditItems(editItems.filter(item => !(item.productId === productId && item.unitType === unitType && item.offer === offer)))
+    setEditHasUnsavedChanges(true)
+  }
+
+  const closeEditBillWithWarning = () => {
+    if (editHasUnsavedChanges) {
+      if (window.confirm("You have unsaved changes. Are you sure you want to discard them?")) {
+        setEditingBill(null)
+        setEditHasUnsavedChanges(false)
+        setEditReason('')
+      }
+    } else {
+      setEditingBill(null)
+      setEditReason('')
+    }
+  }
 
   // Soft reservation & Bulk Confirm states
   const [selectedDrafts, setSelectedDrafts] = useState([])
@@ -706,7 +856,6 @@ export default function Billing() {
   const [showCreateConfirm, setShowCreateConfirm] = useState(false)
   const [showBulkConfirmDialog, setShowBulkConfirmDialog] = useState(false)
 
-  useEffect(() => { loadAll(true) }, [])
 
   const loadProductBatches = async (productId) => {
     try {
@@ -776,25 +925,54 @@ export default function Billing() {
     }
   }
 
+  const loadBillsPage = async (page = 0, statusFilter = null, search = '', size = 20) => {
+    try {
+      const params = new URLSearchParams()
+      params.set('page', page)
+      params.set('size', size)
+      params.set('sort', 'createdAt,desc')
+      if (statusFilter) params.set('status', statusFilter)
+      if (search) params.set('search', search)
+      const res = await api.get(`/bills?${params.toString()}`)
+      const paged = res.data.data
+      setBills(paged?.content || [])
+      setBillsTotalPages(paged?.totalPages || 0)
+      setBillsTotalElements(paged?.totalElements || 0)
+      setBillsPage(paged?.currentPage ?? page)
+    } catch { toast.error('Failed to load bills') }
+  }
+
+  const loadDraftCount = async () => {
+    try {
+      const res = await api.get('/bills?status=DRAFT&page=0&size=1')
+      setBillsDraftTotalElements(res.data.data?.totalElements || 0)
+    } catch { /* silent */ }
+  }
+
   const loadAll = async (showSpinner = false) => {
     if (showSpinner) setLoading(true)
     try {
-      const [pRes, cRes, bRes, aRes] = await Promise.all([
+      const [pRes, cRes, aRes] = await Promise.all([
         api.get('/products?size=500'),
         api.get('/customers?size=500'),
-        api.get('/bills'),
         api.get('/areas'),
       ])
       const loadedProducts = pRes.data.data?.content || pRes.data.data || []
       setProducts(loadedProducts)
       setCustomers(cRes.data.data?.content || cRes.data.data || [])
-      setBills(bRes.data.data || [])
       setAreas(aRes.data.data || [])
       // Background prefetch stock cache
       prefetchStock(loadedProducts)
     } catch { toast.error('Failed to load data') }
     finally { if (showSpinner) setLoading(false) }
   }
+
+  // ── Load all data on mount ──
+  useEffect(() => {
+    loadAll(true)
+    loadBillsPage(0)
+    loadDraftCount()
+  }, [])
 
   const addToCart = (productId) => {
     const product = products.find(p => p.id === productId)
@@ -937,6 +1115,155 @@ export default function Billing() {
 
   const grandTotal = Math.max(0, Math.round((subtotal - Number(discount || 0)) * 100) / 100)
 
+  const handlePreviewCartBill = () => {
+    if (!customerId) { toast.error('Please select a customer'); return }
+    if (cart.length === 0) { toast.error('Cart is empty'); return }
+    const hasItems = cart.some(item => Number(item.quantityPrimary || 0) > 0 || Number(item.quantitySecondary || 0) > 0)
+    if (!hasItems) { toast.error('Please specify quantity for at least one item'); return }
+
+    const activeCustomer = customers.find(c => c.id === customerId)
+    if (activeCustomer) {
+      if (activeCustomer.isNpa) {
+        if (paymentMode === 'UDHAR' || paymentMode === 'PARTIAL') {
+          toast.error(`Credit sales are blocked for NPA Defaulter: ${activeCustomer.name}. CASH mode only.`)
+          return
+        }
+      }
+      
+      if (paymentMode === 'UDHAR' || paymentMode === 'PARTIAL') {
+        const currentPending = Number(activeCustomer.totalPending || 0)
+        const creditLimit = Number(activeCustomer.creditLimit || 0)
+        const requestedCredit = paymentMode === 'UDHAR' ? grandTotal : Math.max(0, grandTotal - Number(paidAmount || 0))
+        const projectedPending = currentPending + requestedCredit
+        
+        if (projectedPending > creditLimit) {
+          toast.error(
+            `Credit limit exceeded! Customer: ${activeCustomer.name} | Limit: ₹${creditLimit.toLocaleString('en-IN')} | Current Pending: ₹${currentPending.toLocaleString('en-IN')} | Requested Credit: ₹${requestedCredit.toLocaleString('en-IN')} | Projected Pending: ₹${projectedPending.toLocaleString('en-IN')}`
+          )
+          return
+        }
+      }
+    }
+
+    const activeUser = localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')) : null
+    
+    // Generate mock bill items
+    const mockItems = []
+    let mockGstTotal = 0
+    let mockCessTotal = 0
+    let mockSubtotal = 0
+
+    cart.forEach(item => {
+      const qPri = Number(item.quantityPrimary || 0)
+      const qSec = Number(item.quantitySecondary || 0)
+      const gstPercent = Number(item.gstPercent || 0)
+      const cessPercent = Number(item.cessPercent || 0)
+      const taxDivisor = 1 + (gstPercent + cessPercent) / 100
+
+      if (qPri > 0) {
+        const inclusivePrice = Number(item.sellPricePrimary || 0)
+        const itemTotal = Math.round(inclusivePrice * qPri * 100) / 100
+        const itemSubtotal = Math.round((itemTotal / taxDivisor) * 100) / 100
+        
+        let gstAmt = Math.round(itemSubtotal * (gstPercent / 100) * 100) / 100
+        const cessAmt = Math.round(itemSubtotal * (cessPercent / 100) * 100) / 100
+        
+        const calculatedTotal = Math.round((itemSubtotal + gstAmt + cessAmt) * 100) / 100
+        if (Math.abs(calculatedTotal - itemTotal) > 0.001) {
+          const diff = Math.round((itemTotal - calculatedTotal) * 100) / 100
+          gstAmt = Math.round((gstAmt + diff) * 100) / 100
+        }
+
+        const rate = Math.round((itemSubtotal / qPri) * 10000) / 10000
+
+        mockGstTotal += gstAmt
+        mockCessTotal += cessAmt
+        mockSubtotal += itemSubtotal
+
+        mockItems.push({
+          productId: item.productId,
+          productName: item.name,
+          brand: item.brand,
+          unitType: mapToBackendUnitType(item.primaryUnit),
+          quantity: qPri,
+          freeQuantity: 0,
+          rate: rate,
+          gstAmount: gstAmt,
+          cessAmount: cessAmt,
+          gstPercent: gstPercent,
+          cessPercent: cessPercent,
+          total: itemTotal,
+          offer: false
+        })
+      }
+
+      if (qSec > 0) {
+        const inclusivePrice = item.isOffer ? 0 : Number(item.sellPriceSecondary || 0)
+        const itemTotal = Math.round(inclusivePrice * qSec * 100) / 100
+        const itemSubtotal = Math.round((itemTotal / taxDivisor) * 100) / 100
+        
+        let gstAmt = item.isOffer ? 0 : (Math.round(itemSubtotal * (gstPercent / 100) * 100) / 100)
+        const cessAmt = item.isOffer ? 0 : (Math.round(itemSubtotal * (cessPercent / 100) * 100) / 100)
+        
+        if (!item.isOffer) {
+          const calculatedTotal = Math.round((itemSubtotal + gstAmt + cessAmt) * 100) / 100
+          if (Math.abs(calculatedTotal - itemTotal) > 0.001) {
+            const diff = Math.round((itemTotal - calculatedTotal) * 100) / 100
+            gstAmt = Math.round((gstAmt + diff) * 100) / 100
+          }
+        }
+
+        const rate = item.isOffer ? 0 : (Math.round((itemSubtotal / qSec) * 10000) / 10000)
+
+        mockGstTotal += gstAmt
+        mockCessTotal += cessAmt
+        mockSubtotal += itemSubtotal
+
+        mockItems.push({
+          productId: item.isOffer ? (item.realProductId || item.productId) : item.productId,
+          productName: item.name,
+          brand: item.brand,
+          unitType: mapToBackendUnitType(item.secondaryUnit),
+          quantity: qSec,
+          freeQuantity: 0,
+          rate: rate,
+          gstAmount: gstAmt,
+          cessAmount: cessAmt,
+          gstPercent: item.isOffer ? 0 : gstPercent,
+          cessPercent: item.isOffer ? 0 : cessPercent,
+          total: itemTotal,
+          offer: !!item.isOffer
+        })
+      }
+    })
+
+    const finalGrandTotal = Math.max(0, Math.round((mockSubtotal + mockGstTotal + mockCessTotal - Number(discount || 0)) * 100) / 100)
+    const paidAmt = (paymentMode === 'CASH' || paymentMode === 'UPI') ? finalGrandTotal : (paymentMode === 'COD' ? 0 : Number(paidAmount || 0))
+    const pendingAmt = Math.max(0, finalGrandTotal - paidAmt)
+
+    const mockBillObj = {
+      id: 'mock-id',
+      billNumber: 'DRAFT INVOICE PREVIEW',
+      createdAt: new Date().toISOString(),
+      customerName: activeCustomer ? activeCustomer.name : 'Unknown Customer',
+      customerShopName: activeCustomer ? activeCustomer.shopName : '',
+      customerPhone: activeCustomer ? activeCustomer.phone : '',
+      customerArea: activeCustomer ? activeCustomer.areaName : '',
+      createdBy: activeUser ? (activeUser.username || activeUser.name) : 'Salesperson',
+      paymentMode: paymentMode,
+      discount: Number(discount || 0),
+      grandTotal: finalGrandTotal,
+      paidAmount: paidAmt,
+      pendingAmount: pendingAmt,
+      gstTotal: mockGstTotal,
+      cessTotal: mockCessTotal,
+      items: mockItems,
+      isDraftPreview: true
+    }
+
+    setPreviewBill(mockBillObj)
+  }
+
   const handleCreateBill = async () => {
     if (!customerId) { toast.error('Please select a customer'); return }
     if (cart.length === 0) { toast.error('Cart is empty'); return }
@@ -980,6 +1307,7 @@ export default function Billing() {
             freeQuantity: 0,
             gstPercent: Number(item.gstPercent || 0),
             cessPercent: Number(item.cessPercent || 0),
+            customRate: Number(item.sellPricePrimary || 0)
           })
         }
         if (qSec > 0) {
@@ -991,6 +1319,7 @@ export default function Billing() {
             gstPercent: item.isOffer ? 0 : Number(item.gstPercent || 0),
             cessPercent: item.isOffer ? 0 : Number(item.cessPercent || 0),
             offer: !!item.isOffer,
+            customRate: item.isOffer ? 0 : Number(item.sellPriceSecondary || 0)
           })
         }
       })
@@ -998,15 +1327,21 @@ export default function Billing() {
         customerId: customerId,
         paymentMode,
         discount: Number(discount || 0),
-        paidAmount: paymentMode === 'CASH' || paymentMode === 'UPI' ? grandTotal : Number(paidAmount || 0),
+        paidAmount: (paymentMode === 'CASH' || paymentMode === 'UPI') ? grandTotal : (paymentMode === 'COD' ? 0 : Number(paidAmount || 0)),
         notes,
         items: itemsPayload,
         status: isOrderBooker ? 'DRAFT' : 'CONFIRMED'
       }
-      await api.post('/bills', payload)
+      const res = await api.post('/bills', payload)
       toast.success('Bill created successfully!')
+      const createdBill = res.data.data
       setCart([]); setCustomerId(''); setDiscount(0); setPaidAmount(0); setNotes('')
       loadAll()
+      loadBillsPage(0, billsStatusFilter, billsSearchQuery)
+      loadDraftCount()
+      if (createdBill) {
+        setPreviewBill(createdBill)
+      }
     } catch (err) {
       toast.error(err.response?.data?.message || 'Bill creation failed')
     } finally { setCreating(false) }
@@ -1039,6 +1374,8 @@ export default function Billing() {
       
       setSelectedDrafts([])
       loadAll()
+      loadBillsPage(billsPage, billsStatusFilter, billsSearchQuery)
+      loadDraftCount()
     } catch (err) {
       toast.error('Bulk confirmation failed')
     } finally {
@@ -1051,6 +1388,8 @@ export default function Billing() {
       await api.put(`/bills/${billId}/confirm`)
       toast.success('Order confirmed and dispatched successfully!')
       loadAll()
+      loadBillsPage(billsPage, billsStatusFilter, billsSearchQuery)
+      loadDraftCount()
     } catch (err) {
       toast.error(err.response?.data?.message || 'Confirmation failed')
     } finally {
@@ -1063,6 +1402,8 @@ export default function Billing() {
       await api.put(`/bills/${billId}/cancel`)
       toast.success('Bill cancelled successfully')
       loadAll()
+      loadBillsPage(billsPage, billsStatusFilter, billsSearchQuery)
+      loadDraftCount()
     } catch {
       toast.error('Cancel failed')
     } finally {
@@ -1075,6 +1416,8 @@ export default function Billing() {
       await api.delete(`/bills/${billId}`)
       toast.success('Bill deleted successfully')
       loadAll()
+      loadBillsPage(billsPage, billsStatusFilter, billsSearchQuery)
+      loadDraftCount()
     } catch (err) {
       toast.error(err.response?.data?.message || 'Delete failed')
     } finally {
@@ -1087,10 +1430,21 @@ export default function Billing() {
       await api.put(`/bills/${billId}/restore`)
       toast.success('Bill restored successfully')
       loadAll()
+      loadBillsPage(billsPage, billsStatusFilter, billsSearchQuery)
+      loadDraftCount()
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to restore bill')
     } finally {
       setRestoreTarget(null)
+    }
+  }
+
+  const handleSearchSelectChangeInEdit = (value) => {
+    if (typeof value === 'string' && value.endsWith('-offer-search')) {
+      const realId = value.replace('-offer-search', '')
+      addOfferProductToEdit(realId)
+    } else {
+      addProductToEdit(value)
     }
   }
 
@@ -1100,16 +1454,79 @@ export default function Billing() {
     setEditPaymentMode(bill.paymentMode || 'CASH')
     setEditStatus(bill.status || 'CONFIRMED')
     setEditPaidAmount(bill.paidAmount || 0)
+    setEditDiscount(bill.discount || 0)
+    setEditReason('')
+    setEditHasUnsavedChanges(false)
+    
+    const mappedItems = (bill.items || []).map(item => {
+      const q = Number(item.quantity || 0)
+      const tot = Number(item.total || 0)
+      const incPrice = q > 0 ? Math.round((tot / q) * 100) / 100 : 0
+      
+      if (item.productId) {
+        loadProductBatches(item.productId)
+      }
+
+      const product = products.find(p => p.id === item.productId)
+
+      return {
+        productId: item.productId,
+        name: item.productName,
+        brand: item.brand,
+        unitType: item.unitType,
+        quantity: q,
+        freeQuantity: item.freeQuantity || 0,
+        sellPrice: incPrice,
+        gstPercent: item.gstPercent || 0,
+        cessPercent: item.cessPercent || 0,
+        offer: item.offer || false,
+        primaryUnit: product?.primaryUnit || 'BOX',
+        secondaryUnit: product?.secondaryUnit || 'PACK',
+        canSellPrimary: product?.canSellPrimary || true,
+        canSellSecondary: product?.canSellSecondary || true,
+      }
+    })
+    setEditItems(mappedItems)
   }
 
   const handleUpdateBillSubmit = (e) => {
     e.preventDefault()
+    
+    if (Number(editDiscount || 0) < 0) {
+      toast.error('Discount cannot be negative')
+      return
+    }
+    if (Number(editDiscount || 0) > editSubtotalWithTaxes) {
+      toast.error('Discount cannot exceed subtotal with taxes')
+      return
+    }
+
+    if (editingBill.status !== 'DRAFT' && (!editReason || !editReason.trim())) {
+      toast.error('Edit reason is required for modifying confirmed bills')
+      return
+    }
+
+    const itemsPayload = editItems.map(item => ({
+      productId: item.productId,
+      unitType: item.unitType,
+      quantity: Number(item.quantity || 0),
+      freeQuantity: Number(item.freeQuantity || 0),
+      gstPercent: Number(item.gstPercent || 0),
+      cessPercent: Number(item.cessPercent || 0),
+      offer: !!item.offer,
+      customRate: Number(item.sellPrice || 0)
+    }))
+
     setEditFormTarget({
       id: editingBill.id,
       paymentMode: editPaymentMode,
       notes: editNotes,
       status: editStatus,
-      paidAmount: Number(editPaidAmount || 0)
+      paidAmount: editPaymentMode === 'COD' ? 0 : Number(editPaidAmount || 0),
+      discount: Number(editDiscount || 0),
+      version: editingBill.version,
+      editReason: editReason,
+      items: itemsPayload
     })
   }
 
@@ -1120,11 +1537,18 @@ export default function Billing() {
         paymentMode: target.paymentMode,
         notes: target.notes,
         status: target.status,
-        paidAmount: target.paidAmount
+        paidAmount: target.paidAmount,
+        discount: target.discount,
+        version: target.version,
+        editReason: target.editReason,
+        items: target.items
       })
       toast.success('Bill updated successfully')
       setEditingBill(null)
+      setEditHasUnsavedChanges(false)
+      setEditReason('')
       loadAll()
+      loadBillsPage(billsPage, billsStatusFilter, billsSearchQuery)
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to update bill')
     } finally {
@@ -1135,6 +1559,31 @@ export default function Billing() {
 
   const printBill = (bill) => {
     setPreviewBill(bill)
+  }
+
+  const handleReturnSubmit = async (billItemId, qty) => {
+    if (!viewBill) return
+    setSubmittingReturn(true)
+    try {
+      const payload = {
+        returnedItems: [
+          {
+            billItemId: billItemId,
+            quantityToReturn: qty
+          }
+        ]
+      }
+      const res = await api.put(`/bills/${viewBill.id}/return`, payload)
+      toast.success('Product returned successfully!')
+      setReturningItemId(null)
+      setViewBill(res.data.data)
+      loadAll()
+      loadBillsPage(billsPage, billsStatusFilter, billsSearchQuery)
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to return product')
+    } finally {
+      setSubmittingReturn(false)
+    }
   }
 
   const handleWhatsAppShare = async (bill) => {
@@ -1261,10 +1710,10 @@ Thank you for doing business with Lari Traders!`
       header: (
         <input
           type="checkbox"
-          checked={selectedDrafts.length === bills.filter(b => b.status === 'DRAFT').length && selectedDrafts.length > 0}
+          checked={selectedDrafts.length === bills.length && selectedDrafts.length > 0}
           onChange={(e) => {
             if (e.target.checked) {
-              setSelectedDrafts(bills.filter(b => b.status === 'DRAFT').map(b => b.id))
+              setSelectedDrafts(bills.map(b => b.id))
             } else {
               setSelectedDrafts([])
             }
@@ -1322,12 +1771,21 @@ Thank you for doing business with Lari Traders!`
             <ShoppingCart size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} /> 📝 Book Draft Order
           </button>
         )}
-        <button className={`tab ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>
-          Bill History ({bills.filter(b => b.status !== 'DRAFT').length})
+        <button className={`tab ${activeTab === 'history' ? 'active' : ''}`} onClick={() => {
+            setActiveTab('history')
+            setBillsStatusFilter(null)
+            setBillsSearchQuery('')
+            loadBillsPage(0, null, '')
+          }}>
+          Bill History ({billsTotalElements})
         </button>
         {(isAdmin || isManager) && (
-          <button className={`tab ${activeTab === 'bookings' ? 'active' : ''}`} onClick={() => setActiveTab('bookings')}>
-            📥 Order Bookings ({bills.filter(b => b.status === 'DRAFT').length})
+          <button className={`tab ${activeTab === 'bookings' ? 'active' : ''}`} onClick={() => {
+            setActiveTab('bookings')
+            setBillsStatusFilter('DRAFT')
+            loadBillsPage(0, 'DRAFT', '')
+          }}>
+            📥 Order Bookings ({billsDraftTotalElements})
           </button>
         )}
       </div>
@@ -1642,6 +2100,20 @@ Thank you for doing business with Lari Traders!`
                                 <Plus size={14} />
                               </button>
                             </div>
+                            {!item.isOffer && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '6px' }}>
+                                <span className="text-xs text-muted">@ ₹</span>
+                                <input
+                                  className="form-input"
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={item.sellPricePrimary}
+                                  onChange={e => updateCartItem(item.productId, 'sellPricePrimary', Math.max(0, Number(e.target.value) || 0))}
+                                  style={{ width: 70, padding: '4px 8px', fontSize: 'var(--font-size-sm)', height: 32, textAlign: 'right' }}
+                                />
+                              </div>
+                            )}
                           </div>
                         )}
 
@@ -1665,6 +2137,20 @@ Thank you for doing business with Lari Traders!`
                                 <Plus size={14} />
                               </button>
                             </div>
+                            {!item.isOffer && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '6px' }}>
+                                <span className="text-xs text-muted">@ ₹</span>
+                                <input
+                                  className="form-input"
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={item.sellPriceSecondary}
+                                  onChange={e => updateCartItem(item.productId, 'sellPriceSecondary', Math.max(0, Number(e.target.value) || 0))}
+                                  style={{ width: 70, padding: '4px 8px', fontSize: 'var(--font-size-sm)', height: 32, textAlign: 'right' }}
+                                />
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1795,9 +2281,23 @@ Thank you for doing business with Lari Traders!`
                 <select className="form-select" value={paymentMode} onChange={e => setPaymentMode(e.target.value)}>
                   <option value="CASH">Cash</option>
                   <option value="UPI">UPI</option>
+                  <option value="COD">Cash On Delivery (COD)</option>
                   <option value="UDHAR">Udhar (Credit)</option>
                   <option value="PARTIAL">Partial</option>
                 </select>
+                {paymentMode === 'COD' && (
+                  <div style={{
+                    padding: 'var(--space-3)',
+                    background: 'rgba(59, 130, 246, 0.1)',
+                    border: '1px solid var(--color-info)',
+                    borderRadius: 'var(--radius-md)',
+                    color: 'var(--color-info)',
+                    fontSize: '12px',
+                    marginTop: 'var(--space-2)'
+                  }}>
+                    ℹ️ Payment delivery time pe collect hogi. Paid amount = ₹0 set hoga.
+                  </div>
+                )}
               </div>
               {paymentMode === 'PARTIAL' && (
                 <div className="form-group">
@@ -1853,12 +2353,12 @@ Thank you for doing business with Lari Traders!`
 
               <motion.button
                 className="btn btn-primary btn-lg w-full"
-                onClick={() => setShowCreateConfirm(true)}
+                onClick={handlePreviewCartBill}
                 disabled={creating || cart.length === 0 || !customerId}
                 whileTap={{ scale: 0.97 }}
                 style={{ marginTop: 'var(--space-2)' }}
               >
-                {creating ? 'Creating...' : `Create Bill — ₹${grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}
+                {creating ? 'Creating...' : `Preview & Create Bill — ₹${grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}
               </motion.button>
             </div>
           </div>
@@ -1867,40 +2367,78 @@ Thank you for doing business with Lari Traders!`
     )}
 
       {activeTab === 'history' && (
-        <DataTable
-          columns={billColumns}
-          data={bills.filter(b => b.status !== 'DRAFT')}
-          loading={loading}
-          searchPlaceholder="Search bills..."
-          emptyMessage="No bills found"
-          actions={(row) => (
-            <>
-              <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setViewBill(row)} title="View"><Eye size={15} /></button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          {/* Server-side search */}
+          <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' }}>
+            <input
+              className="form-input"
+              style={{ flex: 1, minWidth: 200, maxWidth: 360 }}
+              placeholder="Search by bill#, customer name..."
+              value={billsSearchQuery}
+              onChange={e => {
+                setBillsSearchQuery(e.target.value)
+                loadBillsPage(0, null, e.target.value)
+              }}
+            />
+            <span className="text-sm text-muted">
+              Showing {bills.length} of {billsTotalElements} bills
+            </span>
+          </div>
+          <DataTable
+            columns={billColumns}
+            data={bills}
+            loading={loading}
+            searchPlaceholder=""
+            emptyMessage="No bills found"
+            actions={(row) => (
+              <>
+                <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setViewBill(row)} title="View"><Eye size={15} /></button>
+                <button
+                  className="btn btn-ghost btn-icon btn-sm"
+                  onClick={() => handleWhatsAppShare(row)}
+                  title="Share on WhatsApp"
+                  style={{ color: '#25D366' }}
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style={{ verticalAlign: 'middle' }}>
+                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.457L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.42 9.864-9.858.002-2.634-1.013-5.11-2.861-6.961C16.63 1.936 14.156.92 11.53.921c-5.445 0-9.871 4.42-9.875 9.86-.001 1.716.452 3.39 1.312 4.869l-1.02 3.733 3.825-.996zM18.067 14.7c-.33-.165-1.956-.967-2.285-1.086-.329-.12-.57-.179-.81.18-.24.359-.93 1.168-1.138 1.407-.21.239-.419.27-.75.105-.329-.165-1.39-.512-2.648-1.633-.978-.872-1.637-1.95-1.83-2.28-.192-.33-.02-.509.145-.673.149-.148.33-.389.495-.584.165-.195.22-.329.33-.548.11-.219.055-.41-.027-.575-.083-.165-.81-1.952-1.11-2.674-.29-.701-.586-.607-.81-.617-.21-.01-.45-.011-.69-.011-.24 0-.63.09-.96.449-.33.359-1.258 1.229-1.258 2.996 0 1.767 1.287 3.473 1.467 3.712.18.24 2.534 3.869 6.138 5.426.857.371 1.526.593 2.05.759.86.273 1.643.235 2.261.143.689-.103 1.956-.8 2.235-1.573.279-.773.279-1.436.195-1.573-.083-.137-.31-.219-.64-.384z"/>
+                  </svg>
+                </button>
+                {(isAdmin || isManager) && (
+                  <button className="btn btn-ghost btn-icon btn-sm" onClick={() => openEditBill(row)} title="Edit Details"><Edit2 size={15} /></button>
+                )}
+                {(row.status === 'CONFIRMED' || row.status === 'ACTIVE') && (
+                  <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setCancelTarget(row.id)} title="Cancel Bill" style={{ color: 'var(--color-danger)' }}><XIcon size={15} /></button>
+                )}
+                {row.status === 'CANCELLED' && (isAdmin || isManager) && (
+                  <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setRestoreTarget(row.id)} title="Restore Bill" style={{ color: 'var(--color-success)' }}><RotateCcw size={15} /></button>
+                )}
+                {row.status === 'CANCELLED' && isAdmin && (
+                  <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setDeleteTarget(row.id)} title="Delete Bill Permanent" style={{ color: 'var(--color-danger)' }}><Trash2 size={15} /></button>
+                )}
+              </>
+            )}
+          />
+          {/* Pagination controls */}
+          {billsTotalPages > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
               <button
-                className="btn btn-ghost btn-icon btn-sm"
-                onClick={() => handleWhatsAppShare(row)}
-                title="Share on WhatsApp"
-                style={{ color: '#25D366' }}
+                className="btn btn-secondary btn-sm"
+                disabled={billsPage === 0}
+                onClick={() => loadBillsPage(billsPage - 1, null, billsSearchQuery)}
               >
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style={{ verticalAlign: 'middle' }}>
-                  <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.457L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.42 9.864-9.858.002-2.634-1.013-5.11-2.861-6.961C16.63 1.936 14.156.92 11.53.921c-5.445 0-9.871 4.42-9.875 9.86-.001 1.716.452 3.39 1.312 4.869l-1.02 3.733 3.825-.996zM18.067 14.7c-.33-.165-1.956-.967-2.285-1.086-.329-.12-.57-.179-.81.18-.24.359-.93 1.168-1.138 1.407-.21.239-.419.27-.75.105-.329-.165-1.39-.512-2.648-1.633-.978-.872-1.637-1.95-1.83-2.28-.192-.33-.02-.509.145-.673.149-.148.33-.389.495-.584.165-.195.22-.329.33-.548.11-.219.055-.41-.027-.575-.083-.165-.81-1.952-1.11-2.674-.29-.701-.586-.607-.81-.617-.21-.01-.45-.011-.69-.011-.24 0-.63.09-.96.449-.33.359-1.258 1.229-1.258 2.996 0 1.767 1.287 3.473 1.467 3.712.18.24 2.534 3.869 6.138 5.426.857.371 1.526.593 2.05.759.86.273 1.643.235 2.261.143.689-.103 1.956-.8 2.235-1.573.279-.773.279-1.436.195-1.573-.083-.137-.31-.219-.64-.384z"/>
-                </svg>
+                ← Prev
               </button>
-              {(isAdmin || isManager) && (
-                <button className="btn btn-ghost btn-icon btn-sm" onClick={() => openEditBill(row)} title="Edit Details"><Edit2 size={15} /></button>
-              )}
-              {(row.status === 'CONFIRMED' || row.status === 'ACTIVE') && (
-                <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setCancelTarget(row.id)} title="Cancel Bill" style={{ color: 'var(--color-danger)' }}><XIcon size={15} /></button>
-              )}
-              {row.status === 'CANCELLED' && (isAdmin || isManager) && (
-                <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setRestoreTarget(row.id)} title="Restore Bill" style={{ color: 'var(--color-success)' }}><RotateCcw size={15} /></button>
-              )}
-              {row.status === 'CANCELLED' && isAdmin && (
-                <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setDeleteTarget(row.id)} title="Delete Bill Permanent" style={{ color: 'var(--color-danger)' }}><Trash2 size={15} /></button>
-              )}
-            </>
+              <span className="text-sm text-muted">Page {billsPage + 1} of {billsTotalPages}</span>
+              <button
+                className="btn btn-secondary btn-sm"
+                disabled={billsPage >= billsTotalPages - 1}
+                onClick={() => loadBillsPage(billsPage + 1, null, billsSearchQuery)}
+              >
+                Next →
+              </button>
+            </div>
           )}
-        />
+        </div>
       )}
 
       {activeTab === 'bookings' && (isAdmin || isManager) && (
@@ -1944,10 +2482,10 @@ Thank you for doing business with Lari Traders!`
 
           <DataTable
             columns={bookingColumns}
-            data={bills.filter(b => b.status === 'DRAFT')}
+            data={bills}
             loading={loading}
             stickyColumnCount={3}
-            searchPlaceholder="Search draft bookings..."
+            searchPlaceholder=""
             emptyMessage="No draft bookings found"
             actions={(row) => (
               <>
@@ -1962,6 +2500,9 @@ Thank you for doing business with Lari Traders!`
                   <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.457L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.42 9.864-9.858.002-2.634-1.013-5.11-2.861-6.961C16.63 1.936 14.156.92 11.53.921c-5.445 0-9.871 4.42-9.875 9.86-.001 1.716.452 3.39 1.312 4.869l-1.02 3.733 3.825-.996zM18.067 14.7c-.33-.165-1.956-.967-2.285-1.086-.329-.12-.57-.179-.81.18-.24.359-.93 1.168-1.138 1.407-.21.239-.419.27-.75.105-.329-.165-1.39-.512-2.648-1.633-.978-.872-1.637-1.95-1.83-2.28-.192-.33-.02-.509.145-.673.149-.148.33-.389.495-.584.165-.195.22-.329.33-.548.11-.219.055-.41-.027-.575-.083-.165-.81-1.952-1.11-2.674-.29-.701-.586-.607-.81-.617-.21-.01-.45-.011-.69-.011-.24 0-.63.09-.96.449-.33.359-1.258 1.229-1.258 2.996 0 1.767 1.287 3.473 1.467 3.712.18.24 2.534 3.869 6.138 5.426.857.371 1.526.593 2.05.759.86.273 1.643.235 2.261.143.689-.103 1.956-.8 2.235-1.573.279-.773.279-1.436.195-1.573-.083-.137-.31-.219-.64-.384z"/>
                 </svg>
               </button>
+                {(isAdmin || isManager) && (
+                  <button className="btn btn-ghost btn-icon btn-sm" onClick={() => openEditBill(row)} title="Edit Details"><Edit2 size={15} /></button>
+                )}
                 <button
                   className="btn btn-ghost btn-icon btn-sm"
                   onClick={() => setConfirmTarget(row.id)}
@@ -1981,6 +2522,26 @@ Thank you for doing business with Lari Traders!`
               </>
             )}
           />
+          {/* Pagination controls for bookings */}
+          {billsTotalPages > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
+              <button
+                className="btn btn-secondary btn-sm"
+                disabled={billsPage === 0}
+                onClick={() => loadBillsPage(billsPage - 1, 'DRAFT', '')}
+              >
+                ← Prev
+              </button>
+              <span className="text-sm text-muted">Page {billsPage + 1} of {billsTotalPages}</span>
+              <button
+                className="btn btn-secondary btn-sm"
+                disabled={billsPage >= billsTotalPages - 1}
+                onClick={() => loadBillsPage(billsPage + 1, 'DRAFT', '')}
+              >
+                Next →
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -2009,6 +2570,7 @@ Thank you for doing business with Lari Traders!`
                 <thead>
                   <tr>
                     <th>Product</th><th>Qty</th><th>Rate</th><th>GST</th><th>Total</th>
+                    {(viewBill.status !== 'DRAFT' && viewBill.status !== 'CANCELLED') && <th>Action</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -2030,6 +2592,57 @@ Thank you for doing business with Lari Traders!`
                       <td>₹{Number(item.rate || 0).toLocaleString('en-IN')}</td>
                       <td>{item.gstPercent}%</td>
                       <td className="font-semibold">₹{Number(item.total || 0).toLocaleString('en-IN')}</td>
+                      {(viewBill.status !== 'DRAFT' && viewBill.status !== 'CANCELLED') && (
+                        <td>
+                          {returningItemId === item.id ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={e => e.stopPropagation()}>
+                              <input 
+                                type="number" 
+                                min="1" 
+                                max={item.quantity} 
+                                value={returnQty} 
+                                onChange={e => setReturnQty(Math.min(item.quantity, Math.max(1, parseInt(e.target.value) || 1)))} 
+                                className="form-input" 
+                                style={{ width: '60px', padding: '2px 4px', height: '28px', fontSize: '12px', textAlign: 'center' }} 
+                              />
+                              <button 
+                                className="btn btn-primary btn-sm" 
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleReturnSubmit(item.id, returnQty)
+                                }}
+                                disabled={submittingReturn}
+                                style={{ padding: '2px 8px', height: '28px', fontSize: '11px' }}
+                              >
+                                {submittingReturn ? '...' : 'OK'}
+                              </button>
+                              <button 
+                                className="btn btn-ghost btn-sm" 
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setReturningItemId(null)
+                                  setReturnQty(1)
+                                }}
+                                style={{ padding: '2px 4px', height: '28px', fontSize: '11px' }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button 
+                              className="btn btn-ghost btn-sm text-danger" 
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setReturningItemId(item.id)
+                                setReturnQty(1)
+                              }}
+                              style={{ padding: '2px 4px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            >
+                              <RotateCcw size={14} /> Return
+                            </button>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -2071,54 +2684,220 @@ Thank you for doing business with Lari Traders!`
       </Modal>
 
       {/* Edit Bill Modal */}
-      <Modal isOpen={!!editingBill} onClose={() => setEditingBill(null)} title={`Edit Bill Details — ${editingBill?.billNumber || ''}`}>
+      <Modal isOpen={!!editingBill} onClose={closeEditBillWithWarning} title={`Edit Bill Details — ${editingBill?.billNumber || ''}`} xl>
         {editingBill && (
-          <form onSubmit={handleUpdateBillSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-            <div className="form-group">
-              <label className="form-label">Customer</label>
-              <input className="form-input" value={editingBill.customerName} disabled style={{ opacity: 0.7 }} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Status</label>
-              <select className="form-select" value={editStatus} onChange={e => setEditStatus(e.target.value)}>
-                {editingBill?.status === 'DRAFT' && <option value="DRAFT">Draft Booking</option>}
-                <option value="CONFIRMED">Confirmed / Active</option>
-                <option value="CANCELLED">Cancelled</option>
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Payment Mode</label>
-              <select className="form-select" value={editPaymentMode} onChange={e => setEditPaymentMode(e.target.value)}>
-                <option value="CASH">Cash</option>
-                <option value="UPI">UPI</option>
-                <option value="UDHAR">Udhar (Credit)</option>
-                <option value="PARTIAL">Partial</option>
-              </select>
-            </div>
-            {editPaymentMode === 'PARTIAL' && (
-              <div className="form-group">
-                <label className="form-label">Paid Amount ₹ (Grand Total: ₹{editingBill.grandTotal})</label>
-                <input
-                  className="form-input"
-                  type="number"
-                  min="0"
-                  max={editingBill.grandTotal}
-                  step="0.01"
-                  value={editPaidAmount}
-                  onChange={e => setEditPaidAmount(e.target.value)}
-                  required
-                />
+          <form onSubmit={handleUpdateBillSubmit}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 350px', gap: 'var(--space-6)', minHeight: '400px' }}>
+              {/* Left: Product/Items Editor */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 'bold' }}>Items in Bill</h3>
+                
+                {/* SearchSelect for adding products to edit */}
+                <div style={{ marginBottom: 'var(--space-2)' }}>
+                  <SearchSelect
+                    options={getSearchOptions()}
+                    value=""
+                    onChange={handleSearchSelectChangeInEdit}
+                    placeholder="Search products to add to this bill..."
+                    labelKey="name"
+                    valueKey="uniqueSearchId"
+                    renderOption={(p) => (
+                      <div style={{ display: 'flex', justifycontent: 'space-between', width: '100%', alignitems: 'center', gap: 'var(--space-2)' }}>
+                        <span style={{ overflow: 'hidden', textoverflow: 'ellipsis', whitespace: 'nowrap', flex: 1 }}>
+                          {p.name} {p.brand && <span className="text-muted text-xs">({p.brand})</span>}
+                        </span>
+                        <span className={p.isSearchOfferOption ? "text-success text-sm" : "text-accent text-sm"} style={{ flexShrink: 0, fontWeight: '600' }}>
+                          {p.isSearchOfferOption ? "🎁 Free Offer" : `₹${p.sellPriceSecondary}`}
+                        </span>
+                      </div>
+                    )}
+                  />
+                </div>
+
+                {editItems.length === 0 ? (
+                  <div className="empty-state" style={{ padding: 'var(--space-6)' }}>
+                    <ShoppingCart size={32} className="text-muted" style={{ opacity: 0.3 }} />
+                    <p className="empty-state-title" style={{ fontSize: '14px' }}>No items in bill</p>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', maxHeight: '350px', overflowY: 'auto', paddingRight: '4px' }}>
+                    {editItems.map((item) => (
+                      <div key={`${item.productId}-${item.unitType}-${item.offer}`} style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: 'var(--space-2) var(--space-3)',
+                        background: 'var(--color-bg-secondary)',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--color-border)',
+                        gap: '12px'
+                      }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            <span className="font-medium truncate text-sm">{item.name}</span>
+                            {item.brand && <span className="text-xs text-muted">({item.brand})</span>}
+                            {item.offer && <span className="badge badge-success" style={{ fontSize: '9px', padding: '1px 4px' }}>🎁 Offer</span>}
+                          </div>
+                          {/* Real-time stock validator */}
+                          {!item.offer && (
+                            <span className="text-xs text-muted">
+                              {(() => {
+                                const cache = virtualStockCache[item.productId];
+                                const available = cache ? cache.virtual : 0;
+                                return `Stock Available: ${available} ${item.secondaryUnit || 'units'}`;
+                              })()}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Quantity Control & Unit Price Input */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                            <button type="button" className="btn btn-ghost btn-icon btn-sm" style={{ padding: 4, height: 26, width: 26 }} onClick={() => updateEditItem(item.productId, item.unitType, item.offer, 'quantity', Math.max(1, Number(item.quantity || 1) - 1))}>
+                              <Minus size={12} />
+                            </button>
+                            <input
+                              className="form-input"
+                              type="number"
+                              min="1"
+                              max="9999"
+                              value={item.quantity}
+                              onChange={e => updateEditItem(item.productId, item.unitType, item.offer, 'quantity', Math.min(9999, Math.max(1, Number(e.target.value) || 1)))}
+                              style={{ width: 40, textAlign: 'center', padding: '2px', fontSize: '12px', height: 26 }}
+                            />
+                            <button type="button" className="btn btn-ghost btn-icon btn-sm" style={{ padding: 4, height: 26, width: 26 }} onClick={() => updateEditItem(item.productId, item.unitType, item.offer, 'quantity', Number(item.quantity || 1) + 1)}>
+                              <Plus size={12} />
+                            </button>
+                          </div>
+
+                          {/* Price override (disabled for offers) */}
+                          {!item.offer && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                              <span className="text-xs text-muted">₹</span>
+                              <input
+                                className="form-input"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={item.sellPrice}
+                                onChange={e => updateEditItem(item.productId, item.unitType, item.offer, 'sellPrice', Math.max(0, Number(e.target.value) || 0))}
+                                style={{ width: 66, padding: '2px 4px', fontSize: '12px', height: 26, textAlign: 'right' }}
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span className="text-xs font-semibold" style={{ minWidth: '60px', textAlign: 'right' }}>
+                            ₹{((item.offer ? 0 : Number(item.sellPrice || 0)) * Number(item.quantity || 0)).toFixed(2)}
+                          </span>
+                          <button type="button" className="btn btn-ghost btn-icon btn-sm text-danger" style={{ padding: 4, height: 26, width: 26 }} onClick={() => {
+                            if (window.confirm(`Remove ${item.name} from bill?`)) {
+                              removeEditItem(item.productId, item.unitType, item.offer);
+                            }
+                          }}>
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-            <div className="form-group">
-              <label className="form-label">Notes</label>
-              <textarea className="form-textarea" value={editNotes} onChange={e => setEditNotes(e.target.value)} placeholder="Enter details..." rows={3} />
-            </div>
-            <div className="form-actions">
-              <button type="button" className="btn btn-secondary" onClick={() => setEditingBill(null)}>Cancel</button>
-              <button type="submit" className="btn btn-primary" disabled={updating}>
-                {updating ? 'Updating...' : 'Update Details'}
-              </button>
+
+              {/* Right: Bill details & metadata update */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', borderLeft: isMobile ? 'none' : '1px solid var(--color-border)', paddingLeft: isMobile ? '0' : 'var(--space-6)' }}>
+                <div className="form-group">
+                  <label className="form-label">Customer</label>
+                  <input className="form-input" value={editingBill.customerName} disabled style={{ opacity: 0.7 }} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Status</label>
+                  <select className="form-select" value={editStatus} onChange={e => { setEditStatus(e.target.value); setEditHasUnsavedChanges(true); }}>
+                    {editingBill?.status === 'DRAFT' && <option value="DRAFT">Draft Booking</option>}
+                    <option value="CONFIRMED">Confirmed / Active</option>
+                    <option value="CANCELLED">Cancelled</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Payment Mode</label>
+                  <select className="form-select" value={editPaymentMode} onChange={e => { setEditPaymentMode(e.target.value); setEditHasUnsavedChanges(true); }}>
+                    <option value="CASH">Cash</option>
+                    <option value="UPI">UPI</option>
+                    <option value="COD">Cash On Delivery (COD)</option>
+                    <option value="UDHAR">Udhar (Credit)</option>
+                    <option value="PARTIAL">Partial</option>
+                  </select>
+                  {editPaymentMode === 'COD' && (
+                    <div style={{ padding: 'var(--space-3)', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid var(--color-info)', borderRadius: 'var(--radius-md)', color: 'var(--color-info)', fontSize: '11px', marginTop: 'var(--space-2)' }}>
+                      ℹ️ Payment delivery time pe collect hogi. Paid amount = ₹0 set hoga.
+                    </div>
+                  )}
+                </div>
+                {editPaymentMode === 'PARTIAL' && (
+                  <div className="form-group">
+                    <label className="form-label">Paid Amount ₹ (Grand Total: ₹{editGrandTotal.toFixed(2)})</label>
+                    <input
+                      className="form-input"
+                      type="number"
+                      min="0"
+                      max={editGrandTotal}
+                      step="0.01"
+                      value={editPaidAmount}
+                      onChange={e => { setEditPaidAmount(e.target.value); setEditHasUnsavedChanges(true); }}
+                      required
+                    />
+                  </div>
+                )}
+                <div className="form-group">
+                  <label className="form-label">Discount ₹</label>
+                  <input
+                    className="form-input"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={editDiscount}
+                    onChange={e => { setEditDiscount(e.target.value); setEditHasUnsavedChanges(true); }}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Notes</label>
+                  <textarea className="form-textarea" value={editNotes} onChange={e => { setEditNotes(e.target.value); setEditHasUnsavedChanges(true); }} placeholder="Enter details..." rows={2} />
+                </div>
+                
+                {editingBill.status !== 'DRAFT' && (
+                  <div className="form-group">
+                    <label className="form-label">Edit Reason *</label>
+                    <input
+                      className="form-input"
+                      value={editReason}
+                      onChange={e => { setEditReason(e.target.value); setEditHasUnsavedChanges(true); }}
+                      placeholder="e.g. Correction of item quantities"
+                      required
+                    />
+                  </div>
+                )}
+
+                <div className="divider" style={{ margin: 'var(--space-1) 0' }} />
+
+                {/* Totals Summary */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '13px' }}>
+                  <div className="flex justify-between"><span className="text-secondary">Subtotal</span><span>₹{editSubtotal.toFixed(2)}</span></div>
+                  <div className="flex justify-between"><span className="text-secondary">GST Total</span><span>₹{editGstTotal.toFixed(2)}</span></div>
+                  {editCessTotal > 0 && <div className="flex justify-between"><span className="text-secondary">Cess Total</span><span>₹{editCessTotal.toFixed(2)}</span></div>}
+                  {Number(editDiscount) > 0 && <div className="flex justify-between"><span className="text-secondary">Discount</span><span className="text-danger">-₹{Number(editDiscount).toFixed(2)}</span></div>}
+                  <div className="flex justify-between font-bold" style={{ borderTop: '1px solid var(--color-border)', paddingTop: '4px', fontSize: '15px' }}>
+                    <span>Grand Total</span><span>₹{editGrandTotal.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                <div className="form-actions" style={{ marginTop: 'auto', display: 'flex', gap: 'var(--space-3)' }}>
+                  <button type="button" className="btn btn-secondary w-full" onClick={closeEditBillWithWarning}>Cancel</button>
+                  <button type="submit" className="btn btn-primary w-full" disabled={updating}>
+                    {updating ? 'Updating...' : 'Update Details'}
+                  </button>
+                </div>
+              </div>
             </div>
           </form>
         )}
@@ -2403,38 +3182,56 @@ Thank you for doing business with Lari Traders!`
       {/* Fullscreen Invoice Print Preview Overlay */}
       {previewBill && (
         <div 
-          className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex flex-col z-[400]"
-          onClick={() => setPreviewBill(null)}
+          className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex flex-col z-[250]"
+          onClick={() => {
+            if (!previewBill.isDraftPreview) {
+              setPreviewBill(null)
+            }
+          }}
         >
           {/* Top Bar Header */}
           <div 
-            className="bg-slate-900/90 text-white px-4 py-3 flex items-center justify-between border-b border-slate-800 shadow-md z-[410]"
+            className="bg-slate-900/90 text-white px-4 py-3 flex items-center justify-between border-b border-slate-800 shadow-md z-[260]"
             onClick={(e) => e.stopPropagation()}
           >
             <button 
               onClick={() => setPreviewBill(null)} 
               className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg text-sm font-semibold transition"
             >
-              <ArrowLeft size={16} /> Close Preview
+              <ArrowLeft size={16} /> {previewBill.isDraftPreview ? 'Edit Cart' : 'Close Preview'}
             </button>
             <span className="font-bold text-sm md:text-base hidden sm:inline-block">
-              Invoice Preview - {previewBill.billNumber}
+              {previewBill.isDraftPreview ? 'DRAFT INVOICE PREVIEW (VERIFICATION)' : `Invoice Preview - ${previewBill.billNumber}`}
             </span>
-            <button 
-              onClick={() => handlePrintOrShare(previewBill, iframeRef)} 
-              className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-950 px-4 py-1.5 rounded-lg text-sm font-bold transition shadow-md shadow-amber-500/20"
-            >
-              <Printer size={16} /> Print / Save PDF
-            </button>
-            <button 
-              onClick={() => handleWhatsAppShare(previewBill)} 
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-lg text-sm font-bold transition shadow-md shadow-emerald-600/20"
-            >
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style={{ verticalAlign: 'middle' }}>
-                <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.457L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.42 9.864-9.858.002-2.634-1.013-5.11-2.861-6.961C16.63 1.936 14.156.92 11.53.921c-5.445 0-9.871 4.42-9.875 9.86-.001 1.716.452 3.39 1.312 4.869l-1.02 3.733 3.825-.996zM18.067 14.7c-.33-.165-1.956-.967-2.285-1.086-.329-.12-.57-.179-.81.18-.24.359-.93 1.168-1.138 1.407-.21.239-.419.27-.75.105-.329-.165-1.39-.512-2.648-1.633-.978-.872-1.637-1.95-1.83-2.28-.192-.33-.02-.509.145-.673.149-.148.33-.389.495-.584.165-.195.22-.329.33-.548.11-.219.055-.41-.027-.575-.083-.165-.81-1.952-1.11-2.674-.29-.701-.586-.607-.81-.617-.21-.01-.45-.011-.69-.011-.24 0-.63.09-.96.449-.33.359-1.258 1.229-1.258 2.996 0 1.767 1.287 3.473 1.467 3.712.18.24 2.534 3.869 6.138 5.426.857.371 1.526.593 2.05.759.86.273 1.643.235 2.261.143.689-.103 1.956-.8 2.235-1.573.279-.773.279-1.436.195-1.573-.083-.137-.31-.219-.64-.384z"/>
-              </svg>
-              Share on WhatsApp
-            </button>
+            {previewBill.isDraftPreview ? (
+              <button
+                onClick={() => {
+                  setShowCreateConfirm(true)
+                }}
+                disabled={creating}
+                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-lg text-sm font-bold transition shadow-md shadow-emerald-600/20"
+              >
+                Confirm & Create Bill
+              </button>
+            ) : (
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button 
+                  onClick={() => handlePrintOrShare(previewBill, iframeRef)} 
+                  className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-950 px-4 py-1.5 rounded-lg text-sm font-bold transition shadow-md shadow-amber-500/20"
+                >
+                  <Printer size={16} /> Print / Save PDF
+                </button>
+                <button 
+                  onClick={() => handleWhatsAppShare(previewBill)} 
+                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-lg text-sm font-bold transition shadow-md shadow-emerald-600/20"
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style={{ verticalAlign: 'middle' }}>
+                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.457L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.42 9.864-9.858.002-2.634-1.013-5.11-2.861-6.961C16.63 1.936 14.156.92 11.53.921c-5.445 0-9.871 4.42-9.875 9.86-.001 1.716.452 3.39 1.312 4.869l-1.02 3.733 3.825-.996zM18.067 14.7c-.33-.165-1.956-.967-2.285-1.086-.329-.12-.57-.179-.81.18-.24.359-.93 1.168-1.138 1.407-.21.239-.419.27-.75.105-.329-.165-1.39-.512-2.648-1.633-.978-.872-1.637-1.95-1.83-2.28-.192-.33-.02-.509.145-.673.149-.148.33-.389.495-.584.165-.195.22-.329.33-.548.11-.219.055-.41-.027-.575-.083-.165-.81-1.952-1.11-2.674-.29-.701-.586-.607-.81-.617-.21-.01-.45-.011-.69-.011-.24 0-.63.09-.96.449-.33.359-1.258 1.229-1.258 2.996 0 1.767 1.287 3.473 1.467 3.712.18.24 2.534 3.869 6.138 5.426.857.371 1.526.593 2.05.759.86.273 1.643.235 2.261.143.689-.103 1.956-.8 2.235-1.573.279-.773.279-1.436.195-1.573-.083-.137-.31-.219-.64-.384z"/>
+                  </svg>
+                  Share on WhatsApp
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Document Content Viewport */}

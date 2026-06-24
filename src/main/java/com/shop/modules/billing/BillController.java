@@ -23,20 +23,28 @@ public class BillController {
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','SALESMAN','DELIVERY_BOY')")
-    public ResponseEntity<ApiResponse<List<BillResponse>>>
-    getAll() {
+    public ResponseEntity<ApiResponse<com.shop.common.PagedResponse<BillResponse>>>
+    getAll(
+            @RequestParam(required = false) BillStatus status,
+            @RequestParam(required = false) Boolean excludeDrafts,
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "createdAt,desc") String sort,
+            Authentication auth
+    ) {
         return ResponseEntity.ok(
                 ApiResponse.success(
-                        billService.getAllBills()));
+                        billService.getBillsPaged(status, excludeDrafts, search, page, size, sort, auth.getName())));
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','SALESMAN','DELIVERY_BOY')")
     public ResponseEntity<ApiResponse<BillResponse>>
-    getById(@PathVariable UUID id) {
+    getById(@PathVariable UUID id, Authentication auth) {
         return ResponseEntity.ok(
                 ApiResponse.success(
-                        billService.getBillById(id)));
+                        billService.getBillById(id, auth.getName())));
     }
 
     @GetMapping("/pending")
@@ -50,18 +58,21 @@ public class BillController {
 
     @GetMapping("/customer/{customerId}")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','SALESMAN','DELIVERY_BOY')")
-    public ResponseEntity<ApiResponse<List<BillResponse>>>
+    public ResponseEntity<ApiResponse<com.shop.common.PagedResponse<BillResponse>>>
     getCustomerHistory(
-            @PathVariable UUID customerId) {
+            @PathVariable UUID customerId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            Authentication auth) {
         return ResponseEntity.ok(
                 ApiResponse.success(
-                        billService.getCustomerHistory(
-                                customerId)));
+                        billService.getCustomerHistoryPaged(customerId, page, size, auth.getName())));
     }
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','SALESMAN','DELIVERY_BOY')")
     public ResponseEntity<ApiResponse<BillResponse>>
     create(@Valid @RequestBody CreateBillRequest req,
+           @RequestParam(required = false, defaultValue = "false") boolean overrideCost,
            Authentication auth) {
         try {
             boolean isRestricted = auth.getAuthorities().stream()
@@ -81,7 +92,7 @@ public class BillController {
                     ApiResponse.success(
                             "Bill created successfully",
                             billService.createBill(
-                                    req, auth.getName())));
+                                    req, auth.getName(), overrideCost)));
         } catch (RuntimeException ex) {
             return ResponseEntity
                     .status(HttpStatus.BAD_REQUEST)
@@ -96,8 +107,8 @@ public class BillController {
     @PutMapping("/{id}/cancel")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<ApiResponse<String>>
-    cancel(@PathVariable UUID id) {
-        billService.cancelBill(id);
+    cancel(@PathVariable UUID id, Authentication auth) {
+        billService.cancelBill(id, auth != null ? auth.getName() : "System");
         return ResponseEntity.ok(
                 ApiResponse.success(
                         "Bill cancelled", null));
@@ -107,11 +118,12 @@ public class BillController {
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<ApiResponse<BillResponse>>
     returnItems(@PathVariable UUID id,
-                @Valid @RequestBody ReturnItemsRequest req) {
+                @Valid @RequestBody ReturnItemsRequest req,
+                Authentication auth) {
         return ResponseEntity.ok(
                 ApiResponse.success(
                         "Items returned successfully",
-                        billService.returnItems(id, req)));
+                        billService.returnItems(id, req, auth != null ? auth.getName() : "System")));
     }
 
     // ── Delete bill — ADMIN only ──
@@ -131,7 +143,9 @@ public class BillController {
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<ApiResponse<BillResponse>>
     updateBill(@PathVariable UUID id,
-               @Valid @RequestBody UpdateBillRequest req) {
+               @Valid @RequestBody UpdateBillRequest req,
+               @RequestParam(required = false, defaultValue = "false") boolean overrideCost,
+               Authentication auth) {
         return ResponseEntity.ok(
                 ApiResponse.success(
                         "Bill updated successfully",
@@ -140,38 +154,46 @@ public class BillController {
                                 req.getPaymentMode(),
                                 req.getNotes(),
                                 req.getStatus(),
-                                req.getPaidAmount())));
+                                req.getPaidAmount(),
+                                req.getDiscount(),
+                                req.getVersion(),
+                                req.getEditReason(),
+                                req.getItems(),
+                                overrideCost,
+                                auth != null ? auth.getName() : "System")));
     }
 
     @PutMapping("/{id}/confirm")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<ApiResponse<BillResponse>>
-    confirmBill(@PathVariable UUID id) {
+    confirmBill(@PathVariable UUID id,
+                @RequestParam(required = false, defaultValue = "false") boolean overrideCost,
+                Authentication auth) {
         return ResponseEntity.ok(
                 ApiResponse.success(
                         "Bill confirmed and stock depleted",
-                        billService.confirmBill(id)));
+                        billService.confirmBill(id, overrideCost, auth != null ? auth.getName() : "System")));
     }
 
     @PutMapping("/{id}/restore")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<ApiResponse<BillResponse>>
-    restoreBill(@PathVariable UUID id) {
+    restoreBill(@PathVariable UUID id, Authentication auth) {
         return ResponseEntity.ok(
                 ApiResponse.success(
                         "Bill restored successfully",
-                        billService.restoreBill(id)));
+                        billService.restoreBill(id, auth != null ? auth.getName() : "System")));
     }
 
 
     @PostMapping("/bulk-confirm")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<ApiResponse<List<BillService.BulkConfirmResult>>>
-    bulkConfirmBills(@RequestBody List<UUID> ids) {
+    bulkConfirmBills(@RequestBody List<UUID> ids, Authentication auth) {
         return ResponseEntity.ok(
                 ApiResponse.success(
                         "Bulk confirmation processing completed",
-                        billService.bulkConfirmBills(ids)));
+                        billService.bulkConfirmBills(ids, auth != null ? auth.getName() : "System")));
     }
 
     @lombok.Data
@@ -180,5 +202,9 @@ public class BillController {
         private String notes;
         private BillStatus status;
         private java.math.BigDecimal paidAmount;
+        private java.math.BigDecimal discount;
+        private Integer version;
+        private String editReason;
+        private List<com.shop.modules.billing.dto.CreateBillRequest.BillItemRequest> items;
     }
 }

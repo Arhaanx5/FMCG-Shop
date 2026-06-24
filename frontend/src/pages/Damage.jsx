@@ -9,8 +9,8 @@ import StatCard from '../components/StatCard'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
 
-const REASONS = ['LEAK', 'CRUSH', 'EXPIRE', 'OTHER']
-const emptyForm = { productId: '', batchId: '', unitLevel: 'SECONDARY', quantity: '1', reason: 'EXPIRE', claimStatus: 'NON_CLAIMABLE', notes: '' }
+const REASONS = ['LEAK', 'CRUSH', 'EXPIRE', 'SUPPLIER_RETURN', 'OTHER']
+const emptyForm = { productId: '', batchId: '', unitLevel: 'SECONDARY', quantity: '1', reason: 'EXPIRE', claimStatus: 'NON_CLAIMABLE', notes: '', supplierName: '' }
 
 const getUnitPrices = (product) => {
   if (!product) return { primary: 0, secondary: 0, single: 0 }
@@ -49,6 +49,10 @@ export default function Damage() {
   const [saving, setSaving] = useState(false)
   const toast = useToast()
 
+  // Batches local state
+  const [batches, setBatches] = useState([])
+  const [loadingBatches, setLoadingBatches] = useState(false)
+
   // Edit Damage State
   const [editingDamage, setEditingDamage] = useState(null)
   const [editNotes, setEditNotes] = useState('')
@@ -58,11 +62,43 @@ export default function Damage() {
   useEffect(() => { loadDamage() }, [selectedYear, selectedMonth])
   useEffect(() => { loadProducts() }, [])
 
+  // Load batches dynamically when productId changes
+  useEffect(() => {
+    if (form.productId) {
+      loadBatches(form.productId)
+    } else {
+      setBatches([])
+      setForm(f => ({ ...f, batchId: '' }))
+    }
+  }, [form.productId])
+
+  // Clear fields on reason change or set default claimStatus
+  useEffect(() => {
+    if (form.reason !== 'SUPPLIER_RETURN') {
+      setForm(f => ({ ...f, supplierName: '', batchId: '' }))
+    } else {
+      setForm(f => ({ ...f, claimStatus: 'CLAIMABLE' }))
+    }
+  }, [form.reason])
+
   const loadProducts = async () => {
     try {
       const res = await api.get('/products?size=500')
       setProducts(res.data.data?.content || res.data.data || [])
     } catch {}
+  }
+
+  const loadBatches = async (productId) => {
+    setLoadingBatches(true)
+    try {
+      const res = await api.get(`/stock/batches/${productId}`)
+      setBatches(res.data.data || [])
+    } catch {
+      toast.error('Failed to load active batches, please enter details manually')
+      setBatches([])
+    } finally {
+      setLoadingBatches(false)
+    }
   }
 
   const loadDamage = async () => {
@@ -84,6 +120,11 @@ export default function Damage() {
     try {
       const selectedProduct = products.find(p => p.id === form.productId)
       if (!selectedProduct) throw new Error('Please select a valid product')
+
+      if (form.reason === 'SUPPLIER_RETURN') {
+        if (!form.batchId) throw new Error('Batch is required for Supplier Returns')
+        if (!form.supplierName || !form.supplierName.trim()) throw new Error('Supplier Name is required for Supplier Returns')
+      }
       
       const payload = {
         productId: form.productId,
@@ -92,7 +133,8 @@ export default function Damage() {
         claimStatus: form.claimStatus,
         quantity: Number(form.quantity || 0),
         reason: form.reason,
-        notes: form.notes
+        notes: form.notes,
+        supplierName: form.reason === 'SUPPLIER_RETURN' ? form.supplierName : null
       }
       await api.post('/damage', payload)
       toast.success('Damage logged!')
@@ -140,13 +182,19 @@ export default function Damage() {
   const updateField = (key, val) => setForm(f => ({ ...f, [key]: val }))
 
   const columns = [
-    { header: 'Product', accessor: 'productName', render: (row) => <span className="font-medium">{row.productName || '—'}</span> },
+    { header: 'Product', accessor: 'productName', render: (row) => (
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <span className="font-medium">{row.productName || '—'}</span>
+        {row.batchNumber && <span className="text-xs text-muted" style={{ fontSize: '11px', marginTop: '2px' }}>Batch: {row.batchNumber}</span>}
+      </div>
+    ) },
     { header: 'Qty', accessor: 'quantity', render: (row) => `${row.quantity} ${row.unitType || ''}` },
     { header: 'Reason', accessor: 'reason', render: (row) => {
-      const colors = { LEAK: 'badge-info', CRUSH: 'badge-warning', EXPIRE: 'badge-danger', OTHER: 'badge-neutral' }
+      const colors = { LEAK: 'badge-info', CRUSH: 'badge-warning', EXPIRE: 'badge-danger', SUPPLIER_RETURN: 'badge-success', OTHER: 'badge-neutral' }
       return <span className={`badge ${colors[row.reason] || 'badge-neutral'}`}>{row.reason}</span>
     }},
-    { header: 'Loss ₹', accessor: 'lossAmount', render: (row) => <span className="text-danger font-semibold">₹{Number(row.valueLoss || row.lossAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> },
+    { header: 'Supplier', accessor: 'supplierName', render: (row) => row.supplierName || <span className="text-muted">—</span> },
+    { header: 'Loss / Value ₹', accessor: 'lossAmount', render: (row) => <span className="text-danger font-semibold">₹{Number(row.valueLoss || row.lossAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> },
     { header: 'Claim Status', accessor: 'claimStatus', render: (row) => {
       const badges = { CLAIMABLE: 'badge-success', PERMANENT_LOSS: 'badge-danger', NON_CLAIMABLE: 'badge-neutral' }
       const labels = { CLAIMABLE: 'Claimable', PERMANENT_LOSS: 'Permanent Loss', NON_CLAIMABLE: 'Non-Claimable' }
@@ -214,6 +262,47 @@ export default function Damage() {
                 <label className="form-label">Product *</label>
                 <SearchSelect options={products.filter(p => p.active !== false)} value={form.productId} onChange={val => updateField('productId', val)} labelKey="name" valueKey="id" placeholder="Select product..." />
               </div>
+
+              {form.productId && (
+                <div className="form-group">
+                  <label className="form-label">Batch {form.reason === 'SUPPLIER_RETURN' ? '*' : '(Optional)'}</label>
+                  <select
+                    className="form-select"
+                    value={form.batchId}
+                    onChange={e => {
+                      const selectedBatchId = e.target.value
+                      updateField('batchId', selectedBatchId)
+                      const batchObj = batches.find(b => b.id === selectedBatchId)
+                      if (batchObj && batchObj.supplierName) {
+                        updateField('supplierName', batchObj.supplierName)
+                      }
+                    }}
+                    required={form.reason === 'SUPPLIER_RETURN'}
+                    disabled={loadingBatches}
+                  >
+                    <option value="">{loadingBatches ? 'Loading batches...' : 'Select a batch...'}</option>
+                    {batches.map(b => (
+                      <option key={b.id} value={b.id}>
+                        {b.batchNumber} - Rem: {b.secondaryRemaining} {selectedProduct?.secondaryUnit || 'units'} (Exp: {b.expiryDate || 'N/A'}) {b.supplierName ? `[${b.supplierName}]` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {form.reason === 'SUPPLIER_RETURN' && (
+                <div className="form-group">
+                  <label className="form-label">Supplier Name *</label>
+                  <input
+                    className="form-input"
+                    type="text"
+                    value={form.supplierName}
+                    onChange={e => updateField('supplierName', e.target.value)}
+                    placeholder="Enter supplier/distributor name..."
+                    required
+                  />
+                </div>
+              )}
               
               <div className="form-row">
                 <div className="form-group">
@@ -250,8 +339,8 @@ export default function Damage() {
               {selectedProduct && (
                 <div style={{
                   padding: 'var(--space-3) var(--space-4)',
-                  backgroundColor: 'rgba(239, 68, 68, 0.08)',
-                  borderLeft: '4px solid var(--color-danger)',
+                  backgroundColor: form.reason === 'SUPPLIER_RETURN' ? 'rgba(59, 130, 246, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+                  borderLeft: form.reason === 'SUPPLIER_RETURN' ? '4px solid var(--color-info)' : '4px solid var(--color-danger)',
                   borderRadius: 'var(--border-radius-md)',
                   display: 'flex',
                   flexDirection: 'column',
@@ -265,8 +354,10 @@ export default function Damage() {
                     </span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--font-size-base)', fontWeight: 'var(--font-weight-semibold)' }}>
-                    <span style={{ color: 'var(--color-danger)' }}>Estimated Financial Loss:</span>
-                    <span style={{ color: 'var(--color-danger)' }}>
+                    <span style={{ color: form.reason === 'SUPPLIER_RETURN' ? 'var(--color-info)' : 'var(--color-danger)' }}>
+                      {form.reason === 'SUPPLIER_RETURN' ? 'Estimated Return Value:' : 'Estimated Financial Loss:'}
+                    </span>
+                    <span style={{ color: form.reason === 'SUPPLIER_RETURN' ? 'var(--color-info)' : 'var(--color-danger)' }}>
                       ₹{currentLoss.toFixed(2)}
                     </span>
                   </div>
