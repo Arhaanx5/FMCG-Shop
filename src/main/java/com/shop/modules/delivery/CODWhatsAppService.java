@@ -114,4 +114,16 @@ public class CODWhatsAppService {
             log.error("Failed to send daily reconciliation report: {}", e.getMessage());
         }
     }
+
+    public void sendSummaryEscalationAlert(String summaryMessage, String managerPhone) {
+        try {
+            if (managerPhone == null || managerPhone.isEmpty()) {
+                return;
+            }
+            log.info("Sending summary escalation alert to manager {}: {}", managerPhone, summaryMessage);
+            whatsAppService.sendText(managerPhone, summaryMessage);
+        } catch (Exception e) {
+            log.error("Failed to send summary escalation alert: {}", e.getMessage());
+        }
+    }
 }

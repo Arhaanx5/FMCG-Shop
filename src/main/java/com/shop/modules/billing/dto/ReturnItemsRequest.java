@@ -13,6 +13,8 @@ public class ReturnItemsRequest {
     @Valid
     private List<ReturnedItemRequest> returnedItems;
 
+    private String refundPaymentMode;
+
     @Data
     public static class ReturnedItemRequest {
 
@@ -21,5 +23,7 @@ public class ReturnItemsRequest {
 
         @Min(value = 1, message = "Return quantity must be at least 1")
         private int quantityToReturn;
+
+        private String returnCondition;
     }
 }

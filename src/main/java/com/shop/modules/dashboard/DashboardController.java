@@ -24,10 +24,10 @@ public class DashboardController {
     @GetMapping("/summary")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<ApiResponse<DashboardSummaryResponse>>
-    getSummary(@RequestParam int year, @RequestParam int month) {
+    getSummary(@RequestParam int year, @RequestParam int month, @RequestParam(defaultValue = "5") int limit) {
         return ResponseEntity.ok(
                 ApiResponse.success(
-                        dashboardService.getDashboardSummary(year, month)));
+                        dashboardService.getDashboardSummary(year, month, limit)));
     }
 
     @GetMapping("/today")

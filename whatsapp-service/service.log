@@ -13986,3 +13986,260 @@ phaned Chrome/Puppeteer processes..."}
 {"ts":"2026-06-24T19:14:51.542Z","level":"INFO","module":"QUEUE","message":"Message processor started"}
 {"ts":"2026-06-24T19:14:51.629Z","level":"INFO","module":"WA","message":"Loading 99%: WhatsApp"}
 {"ts":"2026-06-24T19:18:56.042Z","level":"INFO","module":"SYSTEM","message":"Received SIGINT — shutting down"}
+[36m[2026-06-24T19:19:46.926Z] [INFO] [QUEUE] Loaded 0 pending messages from disk[0m
+[36m[2026-06-24T19:19:46.976Z] [INFO] [CHROME] Using Chrome from env: C:\Users\arhaa\.cache\puppeteer\chrome\win64-146.0.7680.31\chrome-win64\chrome.exe[0m
+[36m[2026-06-24T19:19:46.979Z] [INFO] [SYSTEM] 🚀 Lari Traders WhatsApp Service v2.0 starting...[0m
+[36m[2026-06-24T19:19:46.980Z] [INFO] [SYSTEM] Cleaning up any orphaned Chrome/Puppeteer processes...[0m
+[36m[2026-06-24T19:19:47.566Z] [INFO] [SYSTEM] Orphaned Chrome processes cleaned.[0m
+[36m[2026-06-24T19:19:47.584Z] [INFO] [SYSTEM] ✅ HTTP server listening on http://127.0.0.1:3000[0m
+[36m[2026-06-24T19:19:47.584Z] [INFO] [SYSTEM] 📋 Endpoints: /health /status /qr /send /send-bulk /send-media /queue/stats[0m
+[36m[2026-06-24T19:19:47.584Z] [INFO] [WA] Initializing WhatsApp client...[0m
+[36m[2026-06-24T19:19:57.317Z] [INFO] [WA] Loading 95%: WhatsApp[0m
+[36m[2026-06-24T19:20:04.976Z] [INFO] [WA] Authenticated ✅[0m
+[36m[2026-06-24T19:20:06.461Z] [INFO] [WA] Loading 99%: WhatsApp[0m
+[36m[2026-06-24T19:20:06.754Z] [INFO] [WA] WhatsApp READY ✅ — Queue processor started[0m
+[36m[2026-06-24T19:20:06.754Z] [INFO] [QUEUE] Message processor started[0m
+[36m[2026-06-24T19:22:00.477Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:22:00.577Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:22:03.919Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:22:04.113Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:22:08.152Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:22:12.091Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:22:16.165Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:22:20.096Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:22:24.151Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:22:28.093Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:22:32.153Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:22:36.593Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:22:40.679Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:22:44.098Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:22:48.148Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:22:52.095Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:22:53.262Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:22:53.395Z] [INFO] [API] POST /send[0m
+[36m[2026-06-24T19:22:53.449Z] [INFO] [QUEUE] Enqueued normal message[0m
+[36m[2026-06-24T19:22:55.276Z] [INFO] [QUEUE] ✅ Message sent[0m
+[36m[2026-06-24T19:22:56.167Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:23:00.098Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:23:04.160Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:23:08.091Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:23:12.177Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:23:14.987Z] [INFO] [RECEIVE] Incoming message from 210788740526104@lid ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T19:23:16.104Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:23:20.158Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:23:24.096Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:23:28.162Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:23:32.103Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:23:36.158Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:23:40.096Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:23:44.175Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T19:27:31.300Z] [INFO] [RECEIVE] Incoming message from status@broadcast ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T20:00:30.507Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T20:00:46.246Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T20:01:02.978Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T20:01:20.967Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T20:02:26.150Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T20:03:17.576Z] [INFO] [RECEIVE] Incoming message from 120363183958830946@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T20:03:56.118Z] [INFO] [RECEIVE] Incoming message from 120363183958830946@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T20:09:09.158Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T20:09:51.336Z] [INFO] [RECEIVE] Incoming message from 120363183958830946@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T20:10:25.045Z] [INFO] [RECEIVE] Incoming message from 120363183958830946@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T20:15:28.323Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T20:15:39.346Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T20:15:53.412Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T20:16:47.983Z] [INFO] [RECEIVE] Incoming message from 919819910801-1602660043@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T20:55:37.670Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T20:55:49.368Z] [INFO] [RECEIVE] Incoming message from 919819910801-1602660043@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T21:43:54.954Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T21:44:03.874Z] [INFO] [RECEIVE] Incoming message from 919819910801-1602660043@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T21:54:38.258Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T21:54:38.396Z] [INFO] [API] GET /status[0m
+[36m[2026-06-24T22:49:08.928Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T22:50:12.184Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T23:17:59.262Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T23:19:23.953Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T23:29:46.270Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T23:31:09.072Z] [INFO] [RECEIVE] Incoming message from 919819910801-1602660043@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T23:55:52.475Z] [INFO] [RECEIVE] Incoming message from status@broadcast ignored (1-Way OTP system active)[0m
+[36m[2026-06-24T23:56:56.431Z] [INFO] [RECEIVE] Incoming message from status@broadcast ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T00:03:35.475Z] [INFO] [RECEIVE] Incoming message from 919819910801-1602660043@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T00:03:59.146Z] [INFO] [RECEIVE] Incoming message from 919819910801-1602660043@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T00:05:59.323Z] [INFO] [RECEIVE] Incoming message from status@broadcast ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T00:25:35.368Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T00:48:44.296Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T00:49:27.935Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T01:00:42.941Z] [INFO] [RECEIVE] Incoming message from status@broadcast ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T01:17:54.216Z] [INFO] [RECEIVE] Incoming message from 120363161467566706@newsletter ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T01:21:25.977Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T01:22:09.656Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T01:26:05.444Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T01:26:05.784Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T01:50:45.086Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T01:50:57.021Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T01:51:10.767Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T01:51:42.428Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T01:51:54.708Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T01:52:06.697Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T02:20:40.472Z] [INFO] [RECEIVE] Incoming message from 120363183958830946@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T02:21:31.237Z] [INFO] [RECEIVE] Incoming message from 120363183958830946@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T02:23:00.907Z] [INFO] [RECEIVE] Incoming message from status@broadcast ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T02:46:23.134Z] [INFO] [RECEIVE] Incoming message from 120363169042478168@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T02:46:36.039Z] [INFO] [RECEIVE] Incoming message from 120363169042478168@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T02:46:55.191Z] [INFO] [RECEIVE] Incoming message from 120363169042478168@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T02:48:25.913Z] [INFO] [RECEIVE] Incoming message from 120363169042478168@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T02:51:12.287Z] [INFO] [RECEIVE] Incoming message from 120363169042478168@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T03:12:40.975Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T03:12:42.556Z] [INFO] [RECEIVE] Incoming message from 120363183958830946@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T03:36:05.350Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T03:36:15.554Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T03:36:18.570Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T03:36:18.705Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T03:36:19.059Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T03:36:19.506Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T03:36:19.717Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T03:36:23.500Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T03:36:25.854Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T03:36:26.271Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T03:36:26.695Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T03:36:27.132Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T03:36:27.549Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T03:36:30.023Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T03:36:31.080Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T03:36:31.393Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T04:19:56.842Z] [INFO] [RECEIVE] Incoming message from status@broadcast ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T04:31:15.348Z] [INFO] [RECEIVE] Incoming message from 120363141927364036@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T04:42:27.089Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T04:42:41.574Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T04:42:44.752Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T04:42:45.001Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T04:42:45.049Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T04:42:45.362Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T04:42:45.726Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T04:42:49.343Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T04:42:52.149Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T04:42:52.524Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T04:42:52.876Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T04:42:53.396Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T04:42:53.755Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T04:42:56.762Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T04:42:57.870Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T04:42:58.239Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T05:36:10.787Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T05:36:23.213Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T05:36:27.537Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T05:36:30.096Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T05:36:34.171Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T05:36:35.694Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T05:36:36.091Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T05:36:36.453Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T05:36:38.444Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T05:36:38.842Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T05:36:39.190Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T05:36:39.605Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T05:36:39.976Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T05:36:40.380Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T05:36:40.869Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T05:36:41.285Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T06:26:56.074Z] [INFO] [RECEIVE] Incoming message from status@broadcast ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T06:53:36.819Z] [INFO] [RECEIVE] Incoming message from 919819910801-1602660043@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:01:00.306Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:01:45.219Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:01:48.143Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:01:48.515Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:01:48.894Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:01:49.248Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:01:55.891Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:01:59.613Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:02:02.111Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:02:02.441Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:02:02.777Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:02:03.124Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:02:04.231Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:02:07.316Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:02:08.885Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:02:09.948Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:04:34.425Z] [INFO] [RECEIVE] Incoming message from 919819910801-1602660043@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:32:57.656Z] [INFO] [RECEIVE] Incoming message from status@broadcast ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:33:52.425Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:39:52.484Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:52:17.586Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:52:30.676Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:52:35.197Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:52:39.806Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:52:40.607Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:52:41.075Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:52:41.471Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:52:41.923Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:52:42.259Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:52:42.676Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:52:43.069Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:52:43.427Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:52:43.748Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:52:46.089Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:52:48.000Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T07:52:48.370Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T08:38:43.083Z] [INFO] [RECEIVE] Incoming message from 238907706851530@lid ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T08:51:19.394Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T08:51:20.433Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T08:51:21.169Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T08:51:30.137Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T08:51:31.327Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T08:51:32.443Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T08:51:33.562Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T08:51:34.886Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T08:51:36.783Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T08:51:37.344Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T08:51:37.836Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T08:51:38.351Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T08:51:38.830Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T08:51:40.028Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T08:51:41.386Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T08:51:41.963Z] [INFO] [RECEIVE] Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T09:31:37.090Z] [INFO] [RECEIVE] Incoming message from 919819910801-1602660043@g.us ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T09:47:26.191Z] [INFO] [RECEIVE] Incoming message from 135828340797583@lid ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T09:47:42.282Z] [INFO] [RECEIVE] Incoming message from status@broadcast ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T10:02:23.735Z] [INFO] [RECEIVE] Incoming message from status@broadcast ignored (1-Way OTP system active)[0m
+[36m[2026-06-25T10:36:08.964Z] [INFO] [RECEIVE] Incoming message from 70364952572103@lid ignored (1-Way OTP system active)[0m
+e":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T07:04:34.425Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 919819910801-1602660043@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T07:32:57.656Z","level":"INFO","module":"RECEIVE","message":"Incoming message from status@broadcast ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T07:33:52.425Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T07:39:52.484Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T07:52:17.586Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T07:52:30.676Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T07:52:35.197Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T07:52:39.806Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T07:52:40.607Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T07:52:41.075Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T07:52:41.471Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T07:52:41.923Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T07:52:42.259Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T07:52:42.676Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T07:52:43.069Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T07:52:43.427Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T07:52:43.748Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T07:52:46.089Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T07:52:48.000Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T07:52:48.370Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T08:38:43.083Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 238907706851530@lid ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T08:51:19.394Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T08:51:20.433Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T08:51:21.169Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T08:51:30.137Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T08:51:31.327Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T08:51:32.443Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T08:51:33.562Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T08:51:34.886Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T08:51:36.783Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T08:51:37.344Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T08:51:37.836Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T08:51:38.351Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T08:51:38.830Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T08:51:40.028Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T08:51:41.386Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T08:51:41.963Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 120363027868582354@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T09:31:37.090Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 919819910801-1602660043@g.us ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T09:47:26.191Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 135828340797583@lid ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T09:47:42.282Z","level":"INFO","module":"RECEIVE","message":"Incoming message from status@broadcast ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T10:02:23.735Z","level":"INFO","module":"RECEIVE","message":"Incoming message from status@broadcast ignored (1-Way OTP system active)"}
+{"ts":"2026-06-25T10:36:08.964Z","level":"INFO","module":"RECEIVE","message":"Incoming message from 70364952572103@lid ignored (1-Way OTP system active)"}

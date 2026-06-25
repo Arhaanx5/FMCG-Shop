@@ -140,4 +140,28 @@ public class StockBatch {
         }
         return BigDecimal.ZERO;
     }
+
+    public BigDecimal getWeightedAvgCostSecondary() {
+        if (product == null || buyPriceWithoutTax == null) {
+            return BigDecimal.ZERO;
+        }
+        Integer secondaryPerPrimary = product.getSecondaryPerPrimary();
+        if (secondaryPerPrimary == null || secondaryPerPrimary == 0) {
+            return BigDecimal.ZERO;
+        }
+        int secondary = (secondaryReceived != null) ? secondaryReceived : 0;
+        int offer = (offerSecondaryReceived != null) ? offerSecondaryReceived : 0;
+        int totalSecondary = secondary + offer;
+
+        if (totalSecondary > 0) {
+            BigDecimal baseSecondaryPrice = buyPriceWithoutTax.divide(
+                    BigDecimal.valueOf(secondaryPerPrimary),
+                    4,
+                    java.math.RoundingMode.HALF_UP
+            );
+            BigDecimal totalCost = baseSecondaryPrice.multiply(BigDecimal.valueOf(secondary));
+            return totalCost.divide(BigDecimal.valueOf(totalSecondary), 4, java.math.RoundingMode.HALF_UP);
+        }
+        return BigDecimal.ZERO;
+    }
 }

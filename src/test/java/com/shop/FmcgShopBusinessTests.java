@@ -147,6 +147,7 @@ public class FmcgShopBusinessTests {
                 userRepository
         );
 
+        StockMovementService movementService = new StockMovementService(movementRepository);
         this.billService = new BillService(
                 billRepository,
                 customerRepository,
@@ -158,7 +159,9 @@ public class FmcgShopBusinessTests {
                 productServiceMock,
                 batchRepository,
                 paymentRepository,
-                billEditHistoryRepository
+                billEditHistoryRepository,
+                damageLogRepository,
+                movementService
         );
 
         this.customerService = new CustomerService(

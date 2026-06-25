@@ -73,6 +73,10 @@ public interface BillRepository extends JpaRepository<Bill, UUID> {
     @EntityGraph(attributePaths = {"customer", "createdBy", "items.product"})
     List<Bill> findTop5ByOrderByCreatedAtDesc();
 
+    @EntityGraph(attributePaths = {"customer", "createdBy", "items.product"})
+    @Query("SELECT b FROM Bill b WHERE b.status <> 'CANCELLED' ORDER BY b.createdAt DESC")
+    List<Bill> findRecentBills(org.springframework.data.domain.Pageable pageable);
+
     @Query("SELECT COALESCE(SUM(b.paidAmount), 0) FROM Bill b WHERE b.customer.id = :customerId AND b.status IN ('CONFIRMED', 'PARTIAL', 'PAID')")
     java.math.BigDecimal sumPaidAmountByCustomerId(@Param("customerId") UUID customerId);
 
@@ -95,4 +99,11 @@ public interface BillRepository extends JpaRepository<Bill, UUID> {
     List<Bill> findPendingBillsForCustomerExcluding(
             @Param("customerId") UUID customerId,
             @Param("excludeBillId") UUID excludeBillId);
+
+    @EntityGraph(attributePaths = {"items.product", "items.batch"})
+    org.springframework.data.domain.Page<Bill> findByStatusAndCreatedAtBefore(
+        BillStatus status,
+        LocalDateTime cutoff,
+        org.springframework.data.domain.Pageable pageable
+    );
 }

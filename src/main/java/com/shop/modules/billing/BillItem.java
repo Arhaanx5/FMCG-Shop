@@ -72,6 +72,10 @@ public class BillItem {
     @Builder.Default
     private Boolean offer = false;
 
+    @Column(name = "is_returned")
+    @Builder.Default
+    private boolean returned = false;
+
     @OneToMany(mappedBy = "billItem", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private java.util.List<BillItemBatchDeduction> batchDeductions = new java.util.ArrayList<>();

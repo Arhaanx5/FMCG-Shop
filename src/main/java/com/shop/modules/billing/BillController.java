@@ -160,7 +160,16 @@ public class BillController {
                                 req.getEditReason(),
                                 req.getItems(),
                                 overrideCost,
+                                req.getPartialPaymentMode(),
                                 auth != null ? auth.getName() : "System")));
+    }
+
+    @GetMapping("/{id}/history")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<List<BillEditHistory>>> getEditHistory(@PathVariable UUID id) {
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        billService.getBillEditHistory(id)));
     }
 
     @PutMapping("/{id}/confirm")
@@ -206,5 +215,6 @@ public class BillController {
         private Integer version;
         private String editReason;
         private List<com.shop.modules.billing.dto.CreateBillRequest.BillItemRequest> items;
+        private String partialPaymentMode;
     }
 }

@@ -27,6 +27,8 @@ public class CreateBillRequest {
     @PositiveOrZero(message = "Paid amount cannot be negative")
     private BigDecimal paidAmount = BigDecimal.ZERO;
 
+    private String partialPaymentMode;
+
     private String notes;
 
     @NotEmpty(message = "Bill must have at least one item")

@@ -451,6 +451,13 @@ export default function Billing() {
   const [returningItemId, setReturningItemId] = useState(null)
   const [returnQty, setReturnQty] = useState(1)
   const [submittingReturn, setSubmittingReturn] = useState(false)
+  const [returnCondition, setReturnCondition] = useState('GOOD')
+  const [refundPaymentMode, setRefundPaymentMode] = useState('CASH')
+  const [viewBillTab, setViewBillTab] = useState('items')
+  const [billHistoryList, setBillHistoryList] = useState([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+  const [partialPaymentMode, setPartialPaymentMode] = useState('CASH')
+  const [editPartialPaymentMode, setEditPartialPaymentMode] = useState('CASH')
   const iframeRef = useRef(null)
 
   // Edit Bill state
@@ -935,17 +942,32 @@ export default function Billing() {
       if (search) params.set('search', search)
       const res = await api.get(`/bills?${params.toString()}`)
       const paged = res.data.data
-      setBills(paged?.content || [])
-      setBillsTotalPages(paged?.totalPages || 0)
-      setBillsTotalElements(paged?.totalElements || 0)
-      setBillsPage(paged?.currentPage ?? page)
-    } catch { toast.error('Failed to load bills') }
+      
+      if (Array.isArray(paged)) {
+        setBills(paged)
+        setBillsTotalPages(1)
+        setBillsTotalElements(paged.length)
+        setBillsPage(0)
+      } else {
+        setBills(paged?.content || [])
+        setBillsTotalPages(paged?.totalPages || 0)
+        setBillsTotalElements(paged?.totalElements || 0)
+        setBillsPage(paged?.currentPage ?? page)
+      }
+    } catch (err) { 
+      toast.error('Failed to load bills') 
+    }
   }
 
   const loadDraftCount = async () => {
     try {
       const res = await api.get('/bills?status=DRAFT&page=0&size=1')
-      setBillsDraftTotalElements(res.data.data?.totalElements || 0)
+      const paged = res.data.data
+      if (Array.isArray(paged)) {
+        setBillsDraftTotalElements(paged.filter(b => b.status === 'DRAFT').length)
+      } else {
+        setBillsDraftTotalElements(paged?.totalElements || 0)
+      }
     } catch { /* silent */ }
   }
 
@@ -1328,6 +1350,7 @@ export default function Billing() {
         paymentMode,
         discount: Number(discount || 0),
         paidAmount: (paymentMode === 'CASH' || paymentMode === 'UPI') ? grandTotal : (paymentMode === 'COD' ? 0 : Number(paidAmount || 0)),
+        partialPaymentMode: paymentMode === 'PARTIAL' ? partialPaymentMode : null,
         notes,
         items: itemsPayload,
         status: isOrderBooker ? 'DRAFT' : 'CONFIRMED'
@@ -1339,9 +1362,7 @@ export default function Billing() {
       loadAll()
       loadBillsPage(0, billsStatusFilter, billsSearchQuery)
       loadDraftCount()
-      if (createdBill) {
-        setPreviewBill(createdBill)
-      }
+      setPreviewBill(null)
     } catch (err) {
       toast.error(err.response?.data?.message || 'Bill creation failed')
     } finally { setCreating(false) }
@@ -1452,6 +1473,7 @@ export default function Billing() {
     setEditingBill(bill)
     setEditNotes(bill.notes || '')
     setEditPaymentMode(bill.paymentMode || 'CASH')
+    setEditPartialPaymentMode(bill.partialPaymentMode || 'CASH')
     setEditStatus(bill.status || 'CONFIRMED')
     setEditPaidAmount(bill.paidAmount || 0)
     setEditDiscount(bill.discount || 0)
@@ -1520,6 +1542,7 @@ export default function Billing() {
     setEditFormTarget({
       id: editingBill.id,
       paymentMode: editPaymentMode,
+      partialPaymentMode: editPaymentMode === 'PARTIAL' ? editPartialPaymentMode : null,
       notes: editNotes,
       status: editStatus,
       paidAmount: editPaymentMode === 'COD' ? 0 : Number(editPaidAmount || 0),
@@ -1535,6 +1558,7 @@ export default function Billing() {
     try {
       await api.put(`/bills/${target.id}`, {
         paymentMode: target.paymentMode,
+        partialPaymentMode: target.partialPaymentMode,
         notes: target.notes,
         status: target.status,
         paidAmount: target.paidAmount,
@@ -1569,9 +1593,11 @@ export default function Billing() {
         returnedItems: [
           {
             billItemId: billItemId,
-            quantityToReturn: qty
+            quantityToReturn: qty,
+            returnCondition: returnCondition
           }
-        ]
+        ],
+        refundPaymentMode: refundPaymentMode
       }
       const res = await api.put(`/bills/${viewBill.id}/return`, payload)
       toast.success('Product returned successfully!')
@@ -2300,10 +2326,19 @@ Thank you for doing business with Lari Traders!`
                 )}
               </div>
               {paymentMode === 'PARTIAL' && (
-                <div className="form-group">
-                  <label className="form-label">Paid Amount ₹</label>
-                  <input className="form-input" type="number" min="0" step="0.01" value={paidAmount} onChange={e => setPaidAmount(e.target.value)} />
-                </div>
+                <>
+                  <div className="form-group">
+                    <label className="form-label">Paid Amount ₹</label>
+                    <input className="form-input" type="number" min="0" step="0.01" value={paidAmount} onChange={e => setPaidAmount(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Immediate Payment Mode</label>
+                    <select className="form-select" value={partialPaymentMode} onChange={e => setPartialPaymentMode(e.target.value)}>
+                      <option value="CASH">Cash</option>
+                      <option value="UPI">UPI</option>
+                    </select>
+                  </div>
+                </>
               )}
               <div className="form-group">
                 <label className="form-label">Discount ₹</label>
@@ -2546,7 +2581,7 @@ Thank you for doing business with Lari Traders!`
       )}
 
       {/* Bill Detail Modal */}
-      <Modal isOpen={!!viewBill} onClose={() => setViewBill(null)} title={`Bill ${viewBill?.billNumber || ''}`} wide>
+      <Modal isOpen={!!viewBill} onClose={() => { setViewBill(null); setViewBillTab('items'); }} title={`Bill ${viewBill?.billNumber || ''}`} wide>
         {viewBill && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
             <div className="form-row-3">
@@ -2564,90 +2599,206 @@ Thank you for doing business with Lari Traders!`
                 <p className="font-medium" style={{ color: 'var(--color-accent)' }}>{viewBill.createdBy || 'System'}</p>
               </div>
             </div>
-            <div className="divider" style={{ margin: 'var(--space-2) 0' }} />
-            <div className="table-container">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Product</th><th>Qty</th><th>Rate</th><th>GST</th><th>Total</th>
-                    {(viewBill.status !== 'DRAFT' && viewBill.status !== 'CANCELLED') && <th>Action</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {(viewBill.items || []).map((item, idx) => (
-                    <tr key={idx}>
-                      <td>
-                        {item.productName} {item.brand && <span className="text-muted text-xs">({item.brand})</span>}
-                        {item.offer && (
-                          <span className="badge badge-success" style={{ marginLeft: 6, fontSize: '9px', padding: '2px 4px' }}>
-                            🎁 Offer
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        {item.quantity} {item.unitType || ''} {item.freeQuantity > 0 && (
-                          <span className="text-success text-xs">+{item.freeQuantity} {item.unitType || ''} free</span>
-                        )}
-                      </td>
-                      <td>₹{Number(item.rate || 0).toLocaleString('en-IN')}</td>
-                      <td>{item.gstPercent}%</td>
-                      <td className="font-semibold">₹{Number(item.total || 0).toLocaleString('en-IN')}</td>
-                      {(viewBill.status !== 'DRAFT' && viewBill.status !== 'CANCELLED') && (
-                        <td>
-                          {returningItemId === item.id ? (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={e => e.stopPropagation()}>
-                              <input 
-                                type="number" 
-                                min="1" 
-                                max={item.quantity} 
-                                value={returnQty} 
-                                onChange={e => setReturnQty(Math.min(item.quantity, Math.max(1, parseInt(e.target.value) || 1)))} 
-                                className="form-input" 
-                                style={{ width: '60px', padding: '2px 4px', height: '28px', fontSize: '12px', textAlign: 'center' }} 
-                              />
-                              <button 
-                                className="btn btn-primary btn-sm" 
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleReturnSubmit(item.id, returnQty)
-                                }}
-                                disabled={submittingReturn}
-                                style={{ padding: '2px 8px', height: '28px', fontSize: '11px' }}
-                              >
-                                {submittingReturn ? '...' : 'OK'}
-                              </button>
-                              <button 
-                                className="btn btn-ghost btn-sm" 
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setReturningItemId(null)
-                                  setReturnQty(1)
-                                }}
-                                style={{ padding: '2px 4px', height: '28px', fontSize: '11px' }}
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <button 
-                              className="btn btn-ghost btn-sm text-danger" 
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setReturningItemId(item.id)
-                                setReturnQty(1)
-                              }}
-                              style={{ padding: '2px 4px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
-                            >
-                              <RotateCcw size={14} /> Return
-                            </button>
-                          )}
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            
+            {/* Tab Navigation inside View Bill Modal */}
+            <div style={{ display: 'flex', gap: 'var(--space-2)', borderBottom: '1px solid var(--color-border)', paddingBottom: 'var(--space-2)' }}>
+              <button
+                className={`btn btn-sm ${viewBillTab === 'items' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setViewBillTab('items')}
+              >
+                Items
+              </button>
+              <button
+                className={`btn btn-sm ${viewBillTab === 'history' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={async () => {
+                  setViewBillTab('history')
+                  setLoadingHistory(true)
+                  try {
+                    const res = await api.get(`/bills/${viewBill.id}/history`)
+                    setBillHistoryList(res.data.data || [])
+                  } catch (err) {
+                    toast.error('Failed to load edit history')
+                  } finally {
+                    setLoadingHistory(false)
+                  }
+                }}
+              >
+                Edit History
+              </button>
             </div>
+
+            {viewBillTab === 'items' ? (
+              <div className="table-container">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Product</th><th>Qty</th><th>Rate</th><th>GST</th><th>Total</th>
+                      {(viewBill.status !== 'DRAFT' && viewBill.status !== 'CANCELLED') && <th>Action</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(viewBill.items || []).map((item, idx) => {
+                      const rowStyle = item.returned ? { opacity: 0.6 } : {};
+                      const textStyle = item.returned ? { textDecoration: 'line-through' } : {};
+                      return (
+                        <tr key={idx} style={rowStyle}>
+                          <td>
+                            <span style={textStyle}>
+                              {item.productName} {item.brand && <span className="text-muted text-xs">({item.brand})</span>}
+                            </span>
+                            {item.offer && (
+                              <span className="badge badge-success" style={{ marginLeft: 6, fontSize: '9px', padding: '2px 4px' }}>
+                                🎁 Offer
+                              </span>
+                            )}
+                            {item.returned && (
+                              <span className="badge badge-danger" style={{ marginLeft: 6, fontSize: '9px', padding: '2px 4px' }}>
+                                ↩️ Returned
+                              </span>
+                            )}
+                          </td>
+                          <td style={textStyle}>
+                            {item.quantity} {item.unitType || ''} {item.freeQuantity > 0 && (
+                              <span className="text-success text-xs">+{item.freeQuantity} {item.unitType || ''} free</span>
+                            )}
+                          </td>
+                          <td style={textStyle}>₹{Number(item.rate || 0).toLocaleString('en-IN')}</td>
+                          <td>{item.gstPercent}%</td>
+                          <td className="font-semibold" style={textStyle}>₹{Number(item.total || 0).toLocaleString('en-IN')}</td>
+                          {(viewBill.status !== 'DRAFT' && viewBill.status !== 'CANCELLED') && (
+                            <td>
+                              {item.returned ? (
+                                <span className="text-muted text-xs">Fully Returned</span>
+                              ) : returningItemId === item.id ? (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px' }} onClick={e => e.stopPropagation()}>
+                                  <input 
+                                    type="number" 
+                                    min="1" 
+                                    max={item.quantity} 
+                                    value={returnQty} 
+                                    onChange={e => setReturnQty(Math.min(item.quantity, Math.max(1, parseInt(e.target.value) || 1)))} 
+                                    className="form-input" 
+                                    style={{ width: '50px', padding: '2px', height: '28px', fontSize: '12px', textAlign: 'center' }} 
+                                  />
+                                  <select
+                                    className="form-select"
+                                    value={returnCondition}
+                                    onChange={e => setReturnCondition(e.target.value)}
+                                    style={{ width: '95px', padding: '2px', height: '28px', fontSize: '11px' }}
+                                  >
+                                    <option value="GOOD">Good Stock</option>
+                                    <option value="DAMAGED">Damaged</option>
+                                  </select>
+                                  <select
+                                    className="form-select"
+                                    value={refundPaymentMode}
+                                    onChange={e => setRefundPaymentMode(e.target.value)}
+                                    style={{ width: '105px', padding: '2px', height: '28px', fontSize: '11px' }}
+                                  >
+                                    <option value="CASH">Refund Cash</option>
+                                    <option value="UPI">Refund UPI</option>
+                                    <option value="STORE_CREDIT">Store Credit</option>
+                                  </select>
+                                  <button 
+                                    className="btn btn-primary btn-sm" 
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleReturnSubmit(item.id, returnQty)
+                                    }}
+                                    disabled={submittingReturn}
+                                    style={{ padding: '2px 8px', height: '28px', fontSize: '11px' }}
+                                  >
+                                    {submittingReturn ? '...' : 'OK'}
+                                  </button>
+                                  <button 
+                                    className="btn btn-ghost btn-sm" 
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setReturningItemId(null)
+                                      setReturnQty(1)
+                                    }}
+                                    style={{ padding: '2px 4px', height: '28px', fontSize: '11px' }}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <button 
+                                  className="btn btn-ghost btn-sm text-danger" 
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setReturningItemId(item.id)
+                                    setReturnQty(1)
+                                  }}
+                                  style={{ padding: '2px 4px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                >
+                                  <RotateCcw size={14} /> Return
+                                </button>
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', maxHeight: '400px', overflowY: 'auto', padding: 'var(--space-2)' }}>
+                {loadingHistory ? (
+                  <div style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>Loading history...</div>
+                ) : billHistoryList.length === 0 ? (
+                  <div style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>No edit history found for this bill.</div>
+                ) : (
+                  billHistoryList.map((hist, hIdx) => {
+                    let oldSnap = {};
+                    let newSnap = {};
+                    try {
+                      oldSnap = JSON.parse(hist.oldJson || '{}');
+                      newSnap = JSON.parse(hist.newJson || '{}');
+                    } catch (e) {}
+                    
+                    const changes = [];
+                    const fields = [
+                      { key: 'paymentMode', label: 'Payment Mode' },
+                      { key: 'status', label: 'Status' },
+                      { key: 'discount', label: 'Discount' },
+                      { key: 'grandTotal', label: 'Grand Total' },
+                      { key: 'paidAmount', label: 'Paid Amount' },
+                      { key: 'pendingAmount', label: 'Pending Amount' }
+                    ];
+                    fields.forEach(f => {
+                      const oldVal = oldSnap[f.key];
+                      const newVal = newSnap[f.key];
+                      if (oldVal !== newVal) {
+                        changes.push({ label: f.label, oldVal, newVal });
+                      }
+                    });
+
+                    return (
+                      <div key={hIdx} style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-3)' }}>
+                        <div style={{ display: 'flex', justifycontent: 'space-between', width: '100%', alignitems: 'center', gap: 'var(--space-2)' }}>
+                          <span style={{ fontWeight: '600', color: 'var(--color-text)' }}>Edited by {hist.editedBy}</span>
+                          <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{new Date(hist.editedAt).toLocaleString('en-IN')}</span>
+                        </div>
+                        <p style={{ fontSize: '13px', margin: '0 0 var(--space-2) 0', fontStyle: 'italic', color: 'var(--color-info)' }}>
+                          Reason: {hist.reason || 'No reason provided'}
+                        </p>
+                        {changes.length > 0 && (
+                          <div style={{ fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '4px', borderLeft: '3px solid var(--color-warning)', paddingLeft: 'var(--space-2)', margin: 'var(--space-2) 0' }}>
+                            {changes.map((c, cIdx) => (
+                              <div key={cIdx}>
+                                <strong>{c.label}:</strong> <span style={{ textDecoration: 'line-through', color: 'red' }}>{c.oldVal ?? 'N/A'}</span> → <span style={{ color: 'green', fontWeight: 'bold' }}>{c.newVal ?? 'N/A'}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 'var(--space-4)' }}>
               <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
                 <button className="btn btn-secondary" onClick={() => setViewBill(null)}>
@@ -2671,7 +2822,14 @@ Thank you for doing business with Lari Traders!`
                 <div className="flex justify-between text-sm"><span className="text-secondary">Subtotal</span><span>₹{Number(viewBill.subtotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-secondary">GST Total</span><span>₹{Number(viewBill.gstTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
                 {Number(viewBill.cessTotal || 0) > 0 && (
-                  <div className="flex justify-between text-sm"><span className="text-secondary">Cess Total</span><span style={{ color: 'var(--color-primary)' }}>₹{Number(viewBill.cessTotal).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                  <>
+                    <div className="flex justify-between text-sm"><span className="text-secondary">Cess Total</span><span style={{ color: 'var(--color-primary)' }}>₹{Number(viewBill.cessTotal).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                    {viewBill.cessSummary && (
+                      <div className="text-xs text-muted text-right" style={{ marginTop: '-4px', marginBottom: '4px' }}>
+                        ({viewBill.cessSummary})
+                      </div>
+                    )}
+                  </>
                 )}
                 {Number(viewBill.discount) > 0 && <div className="flex justify-between text-sm"><span className="text-secondary">Discount</span><span className="text-danger">-₹{Number(viewBill.discount).toLocaleString('en-IN')}</span></div>}
                 <div className="flex justify-between font-bold" style={{ borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-2)' }}>
@@ -2835,19 +2993,32 @@ Thank you for doing business with Lari Traders!`
                   )}
                 </div>
                 {editPaymentMode === 'PARTIAL' && (
-                  <div className="form-group">
-                    <label className="form-label">Paid Amount ₹ (Grand Total: ₹{editGrandTotal.toFixed(2)})</label>
-                    <input
-                      className="form-input"
-                      type="number"
-                      min="0"
-                      max={editGrandTotal}
-                      step="0.01"
-                      value={editPaidAmount}
-                      onChange={e => { setEditPaidAmount(e.target.value); setEditHasUnsavedChanges(true); }}
-                      required
-                    />
-                  </div>
+                  <>
+                    <div className="form-group">
+                      <label className="form-label">Paid Amount ₹ (Grand Total: ₹{editGrandTotal.toFixed(2)})</label>
+                      <input
+                        className="form-input"
+                        type="number"
+                        min="0"
+                        max={editGrandTotal}
+                        step="0.01"
+                        value={editPaidAmount}
+                        onChange={e => { setEditPaidAmount(e.target.value); setEditHasUnsavedChanges(true); }}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Immediate Payment Mode</label>
+                      <select
+                        className="form-select"
+                        value={editPartialPaymentMode}
+                        onChange={e => { setEditPartialPaymentMode(e.target.value); setEditHasUnsavedChanges(true); }}
+                      >
+                        <option value="CASH">Cash</option>
+                        <option value="UPI">UPI</option>
+                      </select>
+                    </div>
+                  </>
                 )}
                 <div className="form-group">
                   <label className="form-label">Discount ₹</label>
@@ -3182,7 +3353,7 @@ Thank you for doing business with Lari Traders!`
       {/* Fullscreen Invoice Print Preview Overlay */}
       {previewBill && (
         <div 
-          className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex flex-col z-[250]"
+          className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex flex-col z-[400]"
           onClick={() => {
             if (!previewBill.isDraftPreview) {
               setPreviewBill(null)
@@ -3191,7 +3362,7 @@ Thank you for doing business with Lari Traders!`
         >
           {/* Top Bar Header */}
           <div 
-            className="bg-slate-900/90 text-white px-4 py-3 flex items-center justify-between border-b border-slate-800 shadow-md z-[260]"
+            className="bg-slate-900/90 text-white px-4 py-3 flex items-center justify-between border-b border-slate-800 shadow-md z-[410]"
             onClick={(e) => e.stopPropagation()}
           >
             <button 

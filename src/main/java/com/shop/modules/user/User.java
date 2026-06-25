@@ -59,6 +59,9 @@ public class User {
     @Builder.Default
     private Boolean mfaEnabled = false;
 
+    @Column(name = "last_whatsapp_alert_sent")
+    private LocalDateTime lastWhatsappAlertSent;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 

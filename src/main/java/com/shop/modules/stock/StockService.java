@@ -280,12 +280,12 @@ public class StockService {
     }
 
     @Transactional
-    public void addBackStock(UUID productId, int primaryQty, int secondaryQty, String username, String referenceNumber, BigDecimal unitPrice, String remarks) {
-        addBackStock(productId, primaryQty, secondaryQty, username, referenceNumber, unitPrice, remarks, "RETURN_IN");
+    public void addBackStock(UUID productId, int primaryQty, int secondaryQty, String username, String referenceNumber, BigDecimal unitCostPrice, String remarks) {
+        addBackStock(productId, primaryQty, secondaryQty, username, referenceNumber, unitCostPrice, remarks, "RETURN_IN");
     }
 
     @Transactional
-    public void addBackStock(UUID productId, int primaryQty, int secondaryQty, String username, String referenceNumber, BigDecimal unitPrice, String remarks, String movementType) {
+    public void addBackStock(UUID productId, int primaryQty, int secondaryQty, String username, String referenceNumber, BigDecimal unitCostPrice, String remarks, String movementType) {
         Stock stock = inventoryService.getOrCreateStock(productId);
         int qtyBefore = stock.getTotalSecondaryUnits();
         int qtyAfter = qtyBefore + secondaryQty;
@@ -294,7 +294,7 @@ public class StockService {
         inventoryService.normalizeStock(stock, stock.getProduct());
         stockRepository.save(stock);
 
-        BigDecimal price = unitPrice != null ? unitPrice : stock.getProduct().getBuyPricePerSecondary();
+        BigDecimal price = unitCostPrice != null ? unitCostPrice : stock.getProduct().getBuyPricePerSecondary();
         movementService.logMovement(
                 stock.getProduct(),
                 null,
@@ -310,12 +310,12 @@ public class StockService {
     }
 
     @Transactional
-    public void addBackStockToBatch(UUID productId, UUID batchId, int primaryQty, int secondaryQty, String username, String referenceNumber, BigDecimal unitPrice, String remarks) {
-        addBackStockToBatch(productId, batchId, primaryQty, secondaryQty, username, referenceNumber, unitPrice, remarks, "RETURN_IN");
+    public void addBackStockToBatch(UUID productId, UUID batchId, int primaryQty, int secondaryQty, String username, String referenceNumber, BigDecimal unitCostPrice, String remarks) {
+        addBackStockToBatch(productId, batchId, primaryQty, secondaryQty, username, referenceNumber, unitCostPrice, remarks, "RETURN_IN");
     }
 
     @Transactional
-    public void addBackStockToBatch(UUID productId, UUID batchId, int primaryQty, int secondaryQty, String username, String referenceNumber, BigDecimal unitPrice, String remarks, String movementType) {
+    public void addBackStockToBatch(UUID productId, UUID batchId, int primaryQty, int secondaryQty, String username, String referenceNumber, BigDecimal unitCostPrice, String remarks, String movementType) {
         Stock stock = inventoryService.getOrCreateStock(productId);
         int qtyBefore = stock.getTotalSecondaryUnits();
         int qtyAfter = qtyBefore + secondaryQty;
@@ -324,7 +324,7 @@ public class StockService {
         inventoryService.normalizeStock(stock, stock.getProduct());
         stockRepository.save(stock);
 
-        BigDecimal price = unitPrice != null ? unitPrice : stock.getProduct().getBuyPricePerSecondary();
+        BigDecimal price = unitCostPrice != null ? unitCostPrice : stock.getProduct().getBuyPricePerSecondary();
 
         if (batchId != null) {
             StockBatch batch = batchRepository.findByIdForUpdate(batchId)
@@ -398,12 +398,12 @@ public class StockService {
     }
 
     @Transactional
-    public void addBackStockToSpecificBatch(UUID batchId, int secondaryQty, String username, String referenceNumber, BigDecimal unitPrice, String remarks) {
-        addBackStockToSpecificBatch(batchId, secondaryQty, username, referenceNumber, unitPrice, remarks, "RETURN_IN");
+    public void addBackStockToSpecificBatch(UUID batchId, int secondaryQty, String username, String referenceNumber, BigDecimal unitCostPrice, String remarks) {
+        addBackStockToSpecificBatch(batchId, secondaryQty, username, referenceNumber, unitCostPrice, remarks, "RETURN_IN");
     }
 
     @Transactional
-    public void addBackStockToSpecificBatch(UUID batchId, int secondaryQty, String username, String referenceNumber, BigDecimal unitPrice, String remarks, String movementType) {
+    public void addBackStockToSpecificBatch(UUID batchId, int secondaryQty, String username, String referenceNumber, BigDecimal unitCostPrice, String remarks, String movementType) {
         StockBatch batch = batchRepository.findByIdForUpdate(batchId)
                 .orElseThrow(() -> new RuntimeException("Batch not found: " + batchId));
 
@@ -424,7 +424,7 @@ public class StockService {
                 secondaryQty,
                 null,
                 null,
-                unitPrice != null ? unitPrice : batch.getBuyPricePerSecondary(batch.getProduct().getSecondaryPerPrimary()),
+                unitCostPrice != null ? unitCostPrice : batch.getBuyPricePerSecondary(batch.getProduct().getSecondaryPerPrimary()),
                 username,
                 referenceNumber != null ? referenceNumber : batch.getInvoiceNumber(),
                 remarks != null ? remarks : "Restored specific batch stock"

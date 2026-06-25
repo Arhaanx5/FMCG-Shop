@@ -1090,10 +1090,14 @@ public class DashboardService {
     }
 
     public DashboardSummaryResponse getDashboardSummary(int year, int month) {
+        return getDashboardSummary(year, month, 5);
+    }
+
+    public DashboardSummaryResponse getDashboardSummary(int year, int month, int limit) {
         DashboardResponse today = getTodaySummary();
         MonthlyReportResponse monthly = getMonthlyReport(year, month);
         MonthlyReportResponse yearly = getYearlyReport(year);
-        List<BillResponse> recentBills = billService.getRecentBills(5);
+        List<BillResponse> recentBills = billService.getRecentBills(limit);
 
         return DashboardSummaryResponse.builder()
                 .today(today)
@@ -1107,7 +1111,7 @@ public class DashboardService {
         List<Payment> periodPayments = paymentRepository.findBetween(start, end);
 
         BigDecimal collectedUdhar = periodPayments.stream()
-                .filter(p -> !"WAIVE_OFF".equalsIgnoreCase(p.getPaymentMode()))
+                .filter(p -> !"WAIVE_OFF".equalsIgnoreCase(p.getPaymentMode()) && !"REFUND".equalsIgnoreCase(p.getPaymentMode()))
                 .map(p -> p.getAmount() != null ? p.getAmount() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
@@ -1123,6 +1127,11 @@ public class DashboardService {
 
         BigDecimal waivedAmount = periodPayments.stream()
                 .filter(p -> "WAIVE_OFF".equalsIgnoreCase(p.getPaymentMode()))
+                .map(p -> p.getAmount() != null ? p.getAmount() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal collectedRefunds = periodPayments.stream()
+                .filter(p -> "REFUND".equalsIgnoreCase(p.getPaymentMode()))
                 .map(p -> p.getAmount() != null ? p.getAmount() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
@@ -1149,13 +1158,16 @@ public class DashboardService {
             if (netImmediate.compareTo(BigDecimal.ZERO) > 0) {
                 if (bill.getPaymentMode() != null && "UPI".equalsIgnoreCase(bill.getPaymentMode().name())) {
                     immediateUpi = immediateUpi.add(netImmediate);
+                } else if (bill.getPaymentMode() != null && "PARTIAL".equalsIgnoreCase(bill.getPaymentMode().name())
+                        && "UPI".equalsIgnoreCase(bill.getPartialPaymentMode())) {
+                    immediateUpi = immediateUpi.add(netImmediate);
                 } else {
                     immediateCash = immediateCash.add(netImmediate);
                 }
             }
         }
 
-        BigDecimal collectedCash = khataCash.add(immediateCash);
+        BigDecimal collectedCash = khataCash.add(immediateCash).add(collectedRefunds);
         BigDecimal collectedUpi = khataUpi.add(immediateUpi);
         BigDecimal totalCollected = collectedCash.add(collectedUpi);
 

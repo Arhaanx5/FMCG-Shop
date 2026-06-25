@@ -11,6 +11,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import java.util.Set;
+import java.util.HashSet;
+
 @Component
 @RequiredArgsConstructor
 @Slf4j
@@ -35,47 +40,65 @@ public class SoftReserveScheduler {
         String errorMsg = null;
         try {
             LocalDateTime cutoff = LocalDateTime.now().minusHours(4);
+            int maxIterations = 100;
+            int iteration = 0;
+            Set<java.util.UUID> processedIds = new HashSet<>();
 
-            // Find all draft bills created more than 4 hours ago
-            List<Bill> draftBills = billRepository.findAll().stream()
-                    .filter(b -> b.getStatus() == BillStatus.DRAFT && b.getCreatedAt().isBefore(cutoff))
-                    .toList();
+            while (iteration++ < maxIterations) {
+                // Fetch page 0 repeatedly because processed bills will change status from DRAFT to CANCELLED
+                Page<Bill> draftPage = billRepository.findByStatusAndCreatedAtBefore(
+                        BillStatus.DRAFT,
+                        cutoff,
+                        PageRequest.of(0, 50)
+                );
 
-            if (draftBills.isEmpty()) {
-                log.info("[SOFT-RESERVE CLEANUP] No expired draft bookings found.");
-                lastRunTime = LocalDateTime.now();
-                lastRunStatus = "Success — 0 bills cancelled";
-                return 0;
+                List<Bill> draftBills = draftPage.getContent();
+                if (draftBills.isEmpty()) {
+                    break;
+                }
+
+                boolean progressMade = false;
+                for (Bill bill : draftBills) {
+                    if (processedIds.contains(bill.getId())) {
+                        continue;
+                    }
+                    processedIds.add(bill.getId());
+                    progressMade = true;
+
+                    try {
+                        // Release soft reservations
+                        for (BillItem item : bill.getItems()) {
+                            StockBatch batch = item.getBatch();
+                            if (batch != null && batch.getSecondarySoftReserved() != null) {
+                                int qty = item.getQuantity() + item.getFreeQuantity();
+                                boolean isPrimary = item.getUnitType().name().equalsIgnoreCase(item.getProduct().getPrimaryUnit());
+                                int secondaryQty = isPrimary ? qty * item.getProduct().getSecondaryPerPrimary() : qty;
+                                
+                                int newReserved = batch.getSecondarySoftReserved() - secondaryQty;
+                                batch.setSecondarySoftReserved(Math.max(0, newReserved));
+                                stockBatchRepository.save(batch);
+                            }
+                        }
+                        
+                        bill.setStatus(BillStatus.CANCELLED);
+                        bill.setNotes((bill.getNotes() != null ? bill.getNotes() : "") + " [Expired & Cancelled by Auto-Scheduler]");
+                        bill.setUpdatedAt(LocalDateTime.now());
+                        billRepository.save(bill);
+                        count++;
+                        log.info("[SOFT-RESERVE CLEANUP] Bill {} successfully cancelled and stock reservations released.", bill.getBillNumber());
+                    } catch (Exception e) {
+                        log.error("[SOFT-RESERVE CLEANUP] Failed to clean up reservation for bill: {}", bill.getBillNumber(), e);
+                        errorMsg = e.getMessage();
+                    }
+                }
+
+                if (!progressMade) {
+                    break;
+                }
             }
 
-            log.info("[SOFT-RESERVE CLEANUP] Found {} expired draft bookings to cancel and release.", draftBills.size());
-
-            for (Bill bill : draftBills) {
-                try {
-                    // Release soft reservations
-                    for (BillItem item : bill.getItems()) {
-                        StockBatch batch = item.getBatch();
-                        if (batch != null && batch.getSecondarySoftReserved() != null) {
-                            int qty = item.getQuantity() + item.getFreeQuantity();
-                            boolean isPrimary = item.getUnitType().name().equalsIgnoreCase(item.getProduct().getPrimaryUnit());
-                            int secondaryQty = isPrimary ? qty * item.getProduct().getSecondaryPerPrimary() : qty;
-                            
-                            int newReserved = batch.getSecondarySoftReserved() - secondaryQty;
-                            batch.setSecondarySoftReserved(Math.max(0, newReserved));
-                            stockBatchRepository.save(batch);
-                        }
-                    }
-                    
-                    bill.setStatus(BillStatus.CANCELLED);
-                    bill.setNotes((bill.getNotes() != null ? bill.getNotes() : "") + " [Expired & Cancelled by Auto-Scheduler]");
-                    bill.setUpdatedAt(LocalDateTime.now());
-                    billRepository.save(bill);
-                    count++;
-                    log.info("[SOFT-RESERVE CLEANUP] Bill {} successfully cancelled and stock reservations released.", bill.getBillNumber());
-                } catch (Exception e) {
-                    log.error("[SOFT-RESERVE CLEANUP] Failed to clean up reservation for bill: {}", bill.getBillNumber(), e);
-                    errorMsg = e.getMessage();
-                }
+            if (iteration >= maxIterations) {
+                log.warn("[SOFT-RESERVE CLEANUP] Safety cap of {} iterations reached. Some drafts may remain unprocessed.", maxIterations);
             }
         } catch (Exception e) {
             log.error("[SOFT-RESERVE CLEANUP] Sweep error", e);

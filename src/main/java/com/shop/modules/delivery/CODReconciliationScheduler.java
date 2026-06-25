@@ -11,6 +11,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import com.shop.modules.billing.Bill;
+import java.math.BigDecimal;
+
 @Component
 @RequiredArgsConstructor
 @Slf4j
@@ -41,14 +44,50 @@ public class CODReconciliationScheduler {
 
             if (!outstanding.isEmpty()) {
                 log.warn("Found {} outstanding deliveries older than 4 hours!", outstanding.size());
-                List<User> adminsAndManagers = userRepository.findByRole(UserRole.ADMIN);
-                adminsAndManagers.addAll(userRepository.findByRole(UserRole.MANAGER));
-
+                
+                // Build summary message
+                StringBuilder sb = new StringBuilder();
+                sb.append("📦 *COD Alert — ").append(outstanding.size()).append(" deliveries pending*\n\n");
+                
+                BigDecimal totalAmount = BigDecimal.ZERO;
+                int idx = 1;
                 for (Delivery delivery : outstanding) {
-                    for (User recipient : adminsAndManagers) {
-                        if (recipient.getPhone() != null && !recipient.getPhone().isEmpty()) {
-                            codWhatsAppService.sendEscalationAlert(delivery, recipient.getPhone());
+                    Bill bill = delivery.getBill();
+                    String customerName = "Unknown";
+                    String areaName = "N/A";
+                    BigDecimal amount = BigDecimal.ZERO;
+                    if (bill != null) {
+                        amount = bill.getGrandTotal() != null ? bill.getGrandTotal() : BigDecimal.ZERO;
+                        totalAmount = totalAmount.add(amount);
+                        if (bill.getCustomer() != null) {
+                            customerName = bill.getCustomer().getShopName() != null ? bill.getCustomer().getShopName() : bill.getCustomer().getName();
+                            if (bill.getCustomer().getArea() != null) {
+                                areaName = bill.getCustomer().getArea().getName();
+                            }
                         }
+                    }
+                    sb.append(idx++).append(". ").append(customerName).append(" — ₹").append(String.format("%.2f", amount)).append(" (").append(areaName).append(")\n");
+                }
+                
+                sb.append("\n💰 *Total Pending: ₹").append(String.format("%.2f", totalAmount)).append("*\n");
+                sb.append("🏪 Lari Traders | ").append(java.time.LocalDate.now().toString()).append(" ").append(java.time.LocalTime.now().toString().substring(0, 5));
+                String summaryMessage = sb.toString();
+
+                List<User> adminsAndManagers = userRepository.findByRoleIn(List.of(UserRole.ADMIN, UserRole.MANAGER));
+
+                for (User recipient : adminsAndManagers) {
+                    if (recipient.getPhone() != null && !recipient.getPhone().isEmpty()) {
+                        // Cooldown logic: Check if recipient lastWhatsappAlertSent was sent in last 1 hour
+                        LocalDateTime lastSent = recipient.getLastWhatsappAlertSent();
+                        if (lastSent != null && lastSent.isAfter(LocalDateTime.now().minusHours(1))) {
+                            log.info("Skipping alert for manager {} due to cooldown (last sent at {})", recipient.getName(), lastSent);
+                            continue;
+                        }
+                        
+                        codWhatsAppService.sendSummaryEscalationAlert(summaryMessage, recipient.getPhone());
+                        
+                        recipient.setLastWhatsappAlertSent(LocalDateTime.now());
+                        userRepository.save(recipient);
                     }
                 }
             }

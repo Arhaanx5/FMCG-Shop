@@ -67,6 +67,9 @@ public class Bill {
     @Column(name = "payment_mode")
     private PaymentMode paymentMode;
 
+    @Column(name = "partial_payment_mode")
+    private String partialPaymentMode;
+
     @Enumerated(EnumType.STRING)
     @Builder.Default
     private BillStatus status = BillStatus.CONFIRMED;

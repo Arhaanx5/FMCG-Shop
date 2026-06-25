@@ -43,6 +43,7 @@ public class BillResponse {
     private String gstSummary;
     private BigDecimal gstTotal;
     private BigDecimal cessTotal;
+    private String cessSummary;
 
     // Items — clean and minimal
     private List<BillItemResponse> items;

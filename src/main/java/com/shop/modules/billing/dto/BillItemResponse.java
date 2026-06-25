@@ -29,4 +29,5 @@ public class BillItemResponse {
 
     private BigDecimal total;
     private boolean offer;
+    private boolean returned;
 }
