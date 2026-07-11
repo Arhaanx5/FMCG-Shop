@@ -8,7 +8,6 @@ import com.shop.modules.product.ProductService;
 import com.shop.modules.product.UnitType;
 import com.shop.modules.stock.StockBatch;
 import com.shop.modules.stock.StockBatchRepository;
-import com.shop.modules.stock.StockService;
 import com.shop.modules.stock.StockRepository;
 import com.shop.modules.stock.StockInventoryService;
 import com.shop.modules.stock.StockMovementService;
@@ -35,7 +34,8 @@ public class DamageService {
     private final ProductRepository productRepository;
     private final ProductService productService;
     private final StockBatchRepository batchRepository;
-    private final StockService stockService;
+    private final com.shop.modules.stock.StockDeductionService stockDeductionService;
+    private final com.shop.modules.stock.StockRestorationService stockRestorationService;
     private final UserRepository userRepository;
     private final StockRepository stockRepository;
     private final StockInventoryService inventoryService;
@@ -177,7 +177,7 @@ public class DamageService {
         // Deduct exact secondary quantity from stock
         String movementType = req.getReason() == DamageReason.SUPPLIER_RETURN ? "RETURN_OUT" : "DAMAGE";
         if (totalSecondaryQuantity > 0) {
-            stockService.deductBySecondary(
+            stockDeductionService.deductBySecondary(
                     product.getId(),
                     totalSecondaryQuantity,
                     req.getBatchId(),
@@ -227,7 +227,7 @@ public class DamageService {
         if (secondaryToRestore > 0) {
             int primaryToRestore = (level == UnitLevel.PRIMARY)
                     ? log.getQuantity() : 0;
-            stockService.addBackStockToBatch(
+            stockRestorationService.addBackStockToBatch(
                     product.getId(),
                     log.getBatch() != null ? log.getBatch().getId() : null,
                     primaryToRestore,

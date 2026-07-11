@@ -132,7 +132,8 @@ public class FmcgShopBusinessTests {
                 productRepository,
                 productServiceMock,
                 batchRepository,
-                null,
+                stockDeductionService,
+                stockRestorationService,
                 userRepository,
                 stockRepository,
                 inventoryServiceMock,
@@ -153,13 +154,7 @@ public class FmcgShopBusinessTests {
                 damageService
         );
 
-        try {
-            java.lang.reflect.Field field = DamageService.class.getDeclaredField("stockService");
-            field.setAccessible(true);
-            field.set(this.damageService, this.stockService);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+
 
 
         StockMovementService movementService = new StockMovementService(movementRepository);

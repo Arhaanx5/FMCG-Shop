@@ -90,7 +90,6 @@ jobs:
         accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         command: pages deploy dist --project-name=lari-traders-uat-ui
 
-  # Job 4: Deploy Backend to UAT Windows Server (CD)
   backend-cd:
     name: Backend CD (UAT Windows Server)
     needs: backend-ci
@@ -98,6 +97,9 @@ jobs:
     runs-on: self-hosted
 
     steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
     - name: Rebuild and Restart Service
       run: |
         # Run UAT backend rebuild and restart batch script

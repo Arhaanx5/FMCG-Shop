@@ -107,7 +107,8 @@ public class FmcgShopHighSeverityBugsTests {
                 productRepository,
                 productServiceMock,
                 batchRepository,
-                null,
+                stockDeductionService,
+                stockRestorationService,
                 userRepository,
                 stockRepository,
                 inventoryServiceReal,
@@ -128,13 +129,7 @@ public class FmcgShopHighSeverityBugsTests {
                 damageService
         );
 
-        try {
-            java.lang.reflect.Field field = DamageService.class.getDeclaredField("stockService");
-            field.setAccessible(true);
-            field.set(damageService, this.stockService);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+
 
 
         com.shop.modules.shopprofile.ShopProfileService shopProfileServiceMock = mock(com.shop.modules.shopprofile.ShopProfileService.class);
