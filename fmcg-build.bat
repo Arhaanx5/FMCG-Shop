@@ -9,7 +9,7 @@ call npm run build
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo [ERROR] Frontend build failed!
-    pause
+    if not defined GITHUB_ACTIONS pause
     exit /b %ERRORLEVEL%
 )
 echo.
@@ -18,11 +18,11 @@ call npx wrangler pages deploy dist --project-name lari-traders-uat-ui
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo [ERROR] Cloudflare Pages deployment failed!
-    pause
+    if not defined GITHUB_ACTIONS pause
     exit /b %ERRORLEVEL%
 )
 echo.
 echo ===================================================
 echo [SUCCESS] Frontend deployed to Cloudflare Pages!
 echo ===================================================
-pause
+if not defined GITHUB_ACTIONS pause

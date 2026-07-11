@@ -8,7 +8,7 @@ if %errorLevel% neq 0 (
     echo.
     echo [ERROR] Please close this and run it by right-clicking and selecting "Run as administrator"!
     echo.
-    pause
+    if not defined GITHUB_ACTIONS pause
     exit /b 1
 )
 
@@ -42,7 +42,7 @@ if %ERRORLEVEL% neq 0 (
 if %ERRORLEVEL% neq 0 (
     echo.
     echo [ERROR] Build failed! Please check console errors.
-    pause
+    if not defined GITHUB_ACTIONS pause
     exit /b %ERRORLEVEL%
 )
 
@@ -58,4 +58,4 @@ echo ========================================================
 echo   [SUCCESS] Backend JAR built and services restarted!
 echo ========================================================
 echo.
-pause
+if not defined GITHUB_ACTIONS pause
