@@ -19,6 +19,7 @@ import java.util.UUID;
 public class KhataAiService {
 
     private final CustomerRepository customerRepository;
+    private final RestTemplate restTemplate;
     private static final String PYTHON_TEXT_GEN_URL = "http://127.0.0.1:8087/ocr/generate-text";
 
     public String generateReminder(UUID customerId, String language) {
@@ -46,7 +47,6 @@ public class KhataAiService {
           .append("Draft message showing clear outstanding balance, mentioning online modes (UPI, QR) or cash collection options, and wishing them good business. Do not add placeholders. Write the final text directly.");
 
         try {
-            RestTemplate restTemplate = new RestTemplate();
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
 

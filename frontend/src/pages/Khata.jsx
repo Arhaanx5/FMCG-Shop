@@ -267,7 +267,8 @@ export default function Khata() {
       const fetchedTodayPayments = tRes.data || []
       const fetchedCustomers = cRes.data.data?.content || cRes.data.data || []
       const fetchedPendingBills = bRes.data?.data || []
-      const fetchedAllBills = billsRes.data?.data || billsRes.data || []
+      const rawBills = billsRes.data?.data?.content || billsRes.data?.data || billsRes.data || []
+      const fetchedAllBills = Array.isArray(rawBills) ? rawBills : (rawBills.content || [])
 
       const runningMap = computeRunningOutstandings(fetchedPayments, fetchedAllBills, fetchedCustomers)
 

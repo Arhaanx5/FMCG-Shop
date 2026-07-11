@@ -3,12 +3,14 @@ package com.shop.modules.product;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.BatchSize;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
 @Table(name = "products")
+@BatchSize(size = 50) // Batch-loads Product proxies in one IN-clause query (prevents N+1 from BillItem.product)
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -90,6 +92,9 @@ public class Product {
 
     @Column(name = "is_active")
     private Boolean active = true;
+
+    @Column(name = "hsn_code")
+    private String hsnCode;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;

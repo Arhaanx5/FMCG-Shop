@@ -63,3 +63,15 @@ whatsapp-service/queue.json
 google-drive-key.json
 
 
+
+# Ignore local scratch directory
+scratch/
+
+# Agent and Local Tool directories
+.agents/
+graphify-out/
+learning/
+backups/
+'
+'2026-06-27
+

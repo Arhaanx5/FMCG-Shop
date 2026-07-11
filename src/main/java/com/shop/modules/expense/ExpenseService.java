@@ -18,29 +18,12 @@ public class ExpenseService {
 
     private final ExpenseRepository expenseRepository;
     private final UserRepository userRepository;
-
-    // Convert entity to DTO
-    private ExpenseResponse toResponse(Expense expense) {
-        return ExpenseResponse.builder()
-                .id(expense.getId())
-                .category(expense.getCategory())
-                .amount(expense.getAmount())
-                .description(expense.getDescription())
-                .expenseDate(expense.getExpenseDate())
-                .addedBy(expense.getAddedBy() != null
-                        ? expense.getAddedBy().getName() : null)
-                .recipientId(expense.getRecipient() != null
-                        ? expense.getRecipient().getId() : null)
-                .recipientName(expense.getRecipient() != null
-                        ? expense.getRecipient().getName() : null)
-                .createdAt(expense.getCreatedAt())
-                .build();
-    }
+    private final ExpenseMapper expenseMapper;
 
     public List<ExpenseResponse> getAllExpenses() {
         return expenseRepository.findAll()
                 .stream()
-                .map(this::toResponse)
+                .map(expenseMapper::toResponse)
                 .collect(Collectors.toList());
     }
 
@@ -49,7 +32,7 @@ public class ExpenseService {
         return expenseRepository
                 .findByYearAndMonth(year, month)
                 .stream()
-                .map(this::toResponse)
+                .map(expenseMapper::toResponse)
                 .collect(Collectors.toList());
     }
 
@@ -98,7 +81,8 @@ public class ExpenseService {
                 .recipient(recipient)
                 .build();
 
-        return toResponse(expenseRepository.save(expense));
+        return expenseMapper.toResponse(expenseRepository.save(expense));
+
     }
 
     public void deleteExpense(UUID id) {

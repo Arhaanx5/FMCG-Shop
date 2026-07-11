@@ -97,60 +97,115 @@ public class FmcgShopMediumLowBugsTests {
                 mock(com.shop.modules.expense.ExpenseRepository.class), movementServiceReal, inventoryServiceReal
         );
 
+        StockDeductionService stockDeductionService = new StockDeductionService(stockRepository, batchRepository, productRepository, inventoryServiceReal, movementServiceReal);
+        StockRestorationService stockRestorationService = new StockRestorationService(stockRepository, batchRepository, productRepository, inventoryServiceReal, movementServiceReal);
+        StockAdjustmentLogRepository adjLogRepo = mock(StockAdjustmentLogRepository.class);
+        StockAdjustmentService stockAdjustmentService = new StockAdjustmentService(batchRepository, stockRepository, inventoryServiceReal, movementServiceReal, damageLogRepository, userRepository, adjLogRepo);
+
+        DamageService damageService = new DamageService(
+                damageLogRepository,
+                productRepository,
+                productServiceMock,
+                batchRepository,
+                null,
+                userRepository,
+                stockRepository,
+                inventoryServiceReal,
+                movementServiceReal,
+                new DamageMapper()
+        );
+
         this.stockService = new StockService(
                 stockRepository,
                 batchRepository,
-                productRepository,
-                mock(StockAdjustmentLogRepository.class),
-                userRepository,
-                damageLogRepository,
-                mock(com.shop.modules.expense.ExpenseRepository.class),
+                adjLogRepo,
                 receiveServiceReal,
                 movementServiceReal,
-                inventoryServiceReal
+                inventoryServiceReal,
+                stockDeductionService,
+                stockRestorationService,
+                stockAdjustmentService,
+                damageService
+        );
+
+        try {
+            java.lang.reflect.Field field = DamageService.class.getDeclaredField("stockService");
+            field.setAccessible(true);
+            field.set(damageService, this.stockService);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+
+        com.shop.modules.shopprofile.ShopProfileService shopProfileServiceMock = mock(com.shop.modules.shopprofile.ShopProfileService.class);
+        com.shop.modules.shopprofile.ShopProfile dummyProfile = com.shop.modules.shopprofile.ShopProfile.builder()
+                .companyName("Lari Traders")
+                .gstin("09DIMPA1174G1ZC")
+                .stateCode("09")
+                .build();
+        lenient().when(shopProfileServiceMock.getActiveProfileEntity()).thenReturn(dummyProfile);
+
+        com.shop.common.ledger.CustomerLedgerService customerLedgerService = new com.shop.common.ledger.CustomerLedgerService(
+                paymentRepository, billRepository, customerRepository
+        );
+
+        com.shop.modules.billing.BillMapper billMapper = new com.shop.modules.billing.BillMapper();
+        com.shop.modules.billing.BillCalculationHelper billCalculationHelper = new com.shop.modules.billing.BillCalculationHelper();
+        com.shop.modules.billing.validator.BillCreditValidator billCreditValidator = new com.shop.modules.billing.validator.BillCreditValidator(customerServiceMock);
+        
+        com.shop.modules.billing.BillCreationService billCreationService = new com.shop.modules.billing.BillCreationService(
+                billRepository, customerRepository, userRepository, stockService, productServiceMock, batchRepository, shopProfileServiceMock, billCreditValidator, customerLedgerService, billCalculationHelper, billMapper, customerServiceMock
+        );
+        com.shop.modules.billing.BillConfirmationService billConfirmationService = new com.shop.modules.billing.BillConfirmationService(
+                billRepository, customerRepository, userRepository, batchRepository, stockService, customerLedgerService, billCalculationHelper, billMapper, billCreditValidator
+        );
+        com.shop.modules.billing.BillCancellationService billCancellationService = new com.shop.modules.billing.BillCancellationService(
+                billRepository, userRepository, batchRepository, stockService, damageLogRepository, movementServiceReal, paymentRepository, customerLedgerService, billCalculationHelper, billMapper, billCreditValidator
+        );
+        com.shop.modules.billing.BillUpdateService billUpdateService = new com.shop.modules.billing.BillUpdateService(
+                billRepository, userRepository, batchRepository, stockService, productServiceMock, paymentRepository, billEditHistoryRepository, customerLedgerService, billCalculationHelper, billMapper, billCreditValidator, billCancellationService, billConfirmationService
         );
 
         this.billService = new BillService(
                 billRepository,
                 customerRepository,
-                productRepository,
                 userRepository,
-                stockService,
-                stockRepository,
                 customerServiceMock,
-                productServiceMock,
-                batchRepository,
-                paymentRepository,
                 billEditHistoryRepository,
-                damageLogRepository,
-                movementServiceReal
+                billMapper,
+                billCreationService,
+                billUpdateService,
+                billCancellationService,
+                billConfirmationService,
+                paymentRepository
         );
 
+
+        com.shop.modules.dashboard.DashboardCalculationHelper dashboardCalculationHelper = new com.shop.modules.dashboard.DashboardCalculationHelper(
+                paymentRepository, productRepository, batchRepository, stockRepository
+        );
+        com.shop.modules.dashboard.SalesReportService salesReportService = new com.shop.modules.dashboard.SalesReportService(
+                billRepository, mock(com.shop.modules.expense.ExpenseRepository.class), damageLogRepository, customerRepository, productRepository, paymentRepository, dashboardCalculationHelper
+        );
+        com.shop.modules.dashboard.SalesmenPerformanceService salesmenPerformanceService = new com.shop.modules.dashboard.SalesmenPerformanceService(
+                userRepository, mock(com.shop.modules.area.AreaRepository.class), billRepository, paymentRepository, customerRepository
+        );
+        com.shop.modules.dashboard.DashboardSummaryService dashboardSummaryService = new com.shop.modules.dashboard.DashboardSummaryService(
+                billRepository, customerRepository, productRepository, batchRepository, stockRepository, mock(DeliveryRepository.class), mock(com.shop.modules.expense.ExpenseRepository.class), customerServiceMock, dashboardCalculationHelper, salesReportService, billService, damageLogRepository, paymentRepository
+        );
         this.dashboardService = new DashboardService(
-                billRepository,
-                customerRepository,
-                productRepository,
-                batchRepository,
-                stockRepository,
-                mock(DeliveryRepository.class),
-                mock(com.shop.modules.expense.ExpenseRepository.class),
-                userRepository,
-                mock(com.shop.modules.area.AreaRepository.class),
-                paymentRepository,
-                damageLogRepository,
-                billService,
-                customerServiceMock,
-                mock(com.shop.modules.backup.BackupService.class)
+                dashboardSummaryService, salesReportService, salesmenPerformanceService
         );
 
         // Inject deliveryServiceMock using reflection
         try {
-            Field field = BillService.class.getDeclaredField("deliveryService");
+            Field field = com.shop.modules.billing.BillCancellationService.class.getDeclaredField("deliveryService");
             field.setAccessible(true);
-            field.set(this.billService, deliveryServiceMock);
+            field.set(billCancellationService, deliveryServiceMock);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+
     }
 
     // Helper to mock stock and batch

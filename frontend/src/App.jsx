@@ -26,16 +26,19 @@ import HealthReport from './pages/HealthReport'
 import TrendDashboard from './pages/TrendDashboard'
 import UdharCollection from './pages/UdharCollection'
 import CODCollectionDashboard from './pages/CODCollectionDashboard'
+import Settings from './pages/Settings'
+import GstReports from './pages/GstReports'
 
 function ProtectedRoute({ children, roles }) {
-  const { isAuthenticated, user } = useAuth()
+  const isAuthenticated = useAuth().isAuthenticated
+  const user = useAuth().user
   if (!isAuthenticated) return <Navigate to="/login" replace />
   if (roles && !roles.includes(user?.role)) return <Navigate to="/" replace />
   return children
 }
 
 function DashboardRedirect() {
-  const { user } = useAuth()
+  const user = useAuth().user
   if (user?.role === 'DELIVERY_BOY' || user?.role === 'SALESMAN') {
     return <Navigate to="/deliveries" replace />
   }
@@ -46,7 +49,7 @@ function DashboardRedirect() {
 }
 
 export default function App() {
-  const { loading } = useAuth()
+  const loading = useAuth().loading
 
   useEffect(() => {
     if (Capacitor.isNativePlatform()) {
@@ -93,6 +96,8 @@ export default function App() {
         <Route path="health-trend" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><TrendDashboard /></ProtectedRoute>} />
         <Route path="receivables" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><UdharCollection /></ProtectedRoute>} />
         <Route path="cod-dashboard" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><CODCollectionDashboard /></ProtectedRoute>} />
+        <Route path="gst-reports" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><GstReports /></ProtectedRoute>} />
+        <Route path="settings" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']}><Settings /></ProtectedRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

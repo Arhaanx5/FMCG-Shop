@@ -64,5 +64,7 @@ public class ReceiveStockRequest {
 
     private BigDecimal gstPercent;
 
+    private String receiveSource;
+
     private boolean logAsExpense = true;
 }

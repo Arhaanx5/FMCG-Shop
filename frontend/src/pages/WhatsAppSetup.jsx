@@ -232,7 +232,8 @@ export default function WhatsAppSetup() {
           api.get('/bills?size=5000'),
           api.get('/payments')
         ])
-        allBills    = bRes.data?.data || bRes.data || []
+        const rawBills = bRes.data?.data?.content || bRes.data?.data || bRes.data || []
+        allBills    = Array.isArray(rawBills) ? rawBills : (rawBills.content || [])
         allPayments = pRes.data || []
       } catch (err) {
         toast.error('Could not fetch bill/payment data. Aborting.')

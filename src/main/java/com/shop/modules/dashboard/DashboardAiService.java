@@ -47,6 +47,7 @@ public class DashboardAiService {
     private final CustomerRepository customerRepository;
     private final ObjectMapper objectMapper;
     private final com.shop.modules.receivables.ReceivablesAgingService receivablesAgingService;
+    private final RestTemplate restTemplate;
 
     private static final String PYTHON_TEXT_GEN_URL = "http://127.0.0.1:8087/ocr/generate-text";
     private static final String PYTHON_STRUCTURED_URL = "http://127.0.0.1:8087/ocr/parse-structured";
@@ -363,12 +364,7 @@ public class DashboardAiService {
         Exception lastException = null;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                // Set 45-second Connection/Read Timeout on RestTemplate
-                SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-                factory.setConnectTimeout(45000);
-                factory.setReadTimeout(45000);
-                RestTemplate restTemplate = new RestTemplate(factory);
-
+                // Use injected RestTemplate with 45-second Connection/Read Timeout
                 HttpHeaders headers = new HttpHeaders();
                 headers.setContentType(MediaType.APPLICATION_JSON);
 
@@ -531,7 +527,6 @@ public class DashboardAiService {
 
     private String callPythonTextGen(String prompt) {
         try {
-            RestTemplate restTemplate = new RestTemplate();
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
 

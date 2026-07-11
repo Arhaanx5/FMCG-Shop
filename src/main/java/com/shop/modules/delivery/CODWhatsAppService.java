@@ -1,6 +1,6 @@
 package com.shop.modules.delivery;
 
-import com.shop.modules.customer.WhatsAppService;
+import com.shop.modules.whatsapp.WhatsAppService;
 import com.shop.modules.billing.Bill;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

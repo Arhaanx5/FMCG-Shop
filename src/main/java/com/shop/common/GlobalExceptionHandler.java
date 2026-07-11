@@ -70,6 +70,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<ApiResponse<Object>>
     handleRuntimeException(RuntimeException ex) {
+        log.error("Runtime exception occurred: ", ex);
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.<Object>builder()

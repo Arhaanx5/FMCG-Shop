@@ -158,7 +158,8 @@ export default function Customers() {
         api.get(`/bills/customer/${customer.id}`),
         api.get(`/payments/customer/${customer.id}`)
       ])
-      const fetchedBills = (billsRes.data?.data || []).map(b => ({ ...b, customerId: customer.id }))
+      const rawBills = billsRes.data?.data?.content || billsRes.data?.data || []
+      const fetchedBills = (Array.isArray(rawBills) ? rawBills : []).map(b => ({ ...b, customerId: customer.id }))
       const fetchedPayments = (paymentsRes.data || []).map(p => ({ ...p, customerId: customer.id }))
       setCustomerBills(fetchedBills)
       setCustomerPayments(fetchedPayments)

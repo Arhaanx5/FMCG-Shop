@@ -106,6 +106,9 @@ public class StockBatch {
     @Builder.Default
     private Boolean exhausted = false;
 
+    @Column(name = "receive_source", length = 50)
+    private String receiveSource;
+
     @PrePersist
     public void prePersist() {
         receivedAt = LocalDateTime.now();
@@ -118,6 +121,9 @@ public class StockBatch {
     }
 
     // Get buy price per secondary unit
+    // NOTE: Offer units are excluded from denominator intentionally.
+    // Offer units have ₹0 cost (free from supplier) and are tracked/billed separately.
+    // Including them in the divisor would understate COGS for paid units.
     public BigDecimal getBuyPricePerSecondary(
             Integer secondaryPerPrimary) {
         if (buyPriceWithoutTax == null
@@ -126,21 +132,22 @@ public class StockBatch {
             return BigDecimal.ZERO;
         }
         int secondary = (secondaryReceived != null) ? secondaryReceived : 0;
-        int offer = (offerSecondaryReceived != null) ? offerSecondaryReceived : 0;
-        int totalSecondary = secondary + offer;
 
-        if (totalSecondary > 0) {
+        if (secondary > 0) {
             BigDecimal baseSecondaryPrice = buyPriceWithoutTax.divide(
                     BigDecimal.valueOf(secondaryPerPrimary),
                     4,
                     java.math.RoundingMode.HALF_UP
             );
-            BigDecimal totalCost = baseSecondaryPrice.multiply(BigDecimal.valueOf(secondary));
-            return totalCost.divide(BigDecimal.valueOf(totalSecondary), 4, java.math.RoundingMode.HALF_UP);
+            // totalCost = cost of all paid secondary units
+            // Divide by paid secondary units only (offer units excluded)
+            return baseSecondaryPrice;
         }
         return BigDecimal.ZERO;
     }
 
+    // Weighted average cost per secondary unit (offer units excluded from denominator)
+    // Offer units have ₹0 cost — including them dilutes COGS. Only paid units are considered.
     public BigDecimal getWeightedAvgCostSecondary() {
         if (product == null || buyPriceWithoutTax == null) {
             return BigDecimal.ZERO;
@@ -150,17 +157,15 @@ public class StockBatch {
             return BigDecimal.ZERO;
         }
         int secondary = (secondaryReceived != null) ? secondaryReceived : 0;
-        int offer = (offerSecondaryReceived != null) ? offerSecondaryReceived : 0;
-        int totalSecondary = secondary + offer;
 
-        if (totalSecondary > 0) {
-            BigDecimal baseSecondaryPrice = buyPriceWithoutTax.divide(
+        if (secondary > 0) {
+            // Cost per secondary = buyPriceWithoutTax / secondaryPerPrimary
+            // Offer units excluded — they are free (₹0 cost) and tracked separately
+            return buyPriceWithoutTax.divide(
                     BigDecimal.valueOf(secondaryPerPrimary),
                     4,
                     java.math.RoundingMode.HALF_UP
             );
-            BigDecimal totalCost = baseSecondaryPrice.multiply(BigDecimal.valueOf(secondary));
-            return totalCost.divide(BigDecimal.valueOf(totalSecondary), 4, java.math.RoundingMode.HALF_UP);
         }
         return BigDecimal.ZERO;
     }

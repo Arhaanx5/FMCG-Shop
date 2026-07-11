@@ -55,4 +55,23 @@ public interface StockMovementRepository extends JpaRepository<StockMovement, UU
             @Param("start") LocalDateTime start,
             @Param("end") LocalDateTime end,
             @Param("search") String search);
+
+    List<StockMovement> findByBatchIdOrderByTimestampAsc(UUID batchId);
+
+    @Query("SELECT m FROM StockMovement m " +
+           "LEFT JOIN FETCH m.product p " +
+           "LEFT JOIN FETCH m.batch b " +
+           "WHERE m.movementType IN ('PURCHASE', 'PURCHASE_TOPUP', 'OFFER_RECEIVE') " +
+           "ORDER BY m.timestamp DESC")
+    List<StockMovement> findAllPurchaseAndOfferMovements();
+
+    // For monthly inventory flow chart — SALE movements since a given date
+    // Narrow query: type filter + timestamp range — both indexed fields
+    @Query("SELECT m FROM StockMovement m " +
+           "LEFT JOIN FETCH m.product p " +
+           "LEFT JOIN FETCH m.batch b " +
+           "WHERE m.movementType = 'SALE' " +
+           "AND m.timestamp >= :since " +
+           "ORDER BY m.timestamp ASC")
+    List<StockMovement> findSaleMovementsSince(@Param("since") LocalDateTime since);
 }

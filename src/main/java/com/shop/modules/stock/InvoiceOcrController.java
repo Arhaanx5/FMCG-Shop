@@ -27,6 +27,7 @@ public class InvoiceOcrController {
 
     private final StockMappingService mappingService;
     private final StockBatchRepository batchRepository;
+    private final RestTemplate restTemplate;
 
     // Python OCR service URL
     private static final String PYTHON_SERVICE_URL = "http://127.0.0.1:8087/ocr/scan-invoice";
@@ -82,7 +83,6 @@ public class InvoiceOcrController {
 
         try {
             // 1. Forward the image to the Python FastAPI microservice
-            RestTemplate restTemplate = new RestTemplate();
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.MULTIPART_FORM_DATA);
 

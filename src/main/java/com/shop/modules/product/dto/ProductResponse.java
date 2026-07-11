@@ -47,5 +47,6 @@ public class ProductResponse {
     private Boolean isLowStock;
 
     private Boolean active;
+    private String hsnCode;
     private LocalDateTime createdAt;
 }

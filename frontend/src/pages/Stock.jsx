@@ -49,6 +49,7 @@ export default function Stock() {
   // 1. Dashboard State
   const [dashboardData, setDashboardData] = useState(null)
   const [dashboardLoading, setDashboardLoading] = useState(false)
+  const [monthlyFlowData, setMonthlyFlowData] = useState([])
 
   // 2. Receive Stock Sub-Tabs ("single" vs "bulk")
   const [receiveMode, setReceiveMode] = useState('single')
@@ -72,6 +73,9 @@ export default function Stock() {
     logAsExpense: true
   })
   const [savingStock, setSavingStock] = useState(false)
+  // Real-time batch-exists check result for single receive form
+  const [batchCheckResult, setBatchCheckResult] = useState(null)
+  // null | { exists: false } | { exists: true, priceMatch: true, ... } | { exists: true, priceMatch: false, ... }
 
   // Manual Bulk Receive State
   const [bulkSupplierName, setBulkSupplierName] = useState('')
@@ -130,6 +134,7 @@ export default function Stock() {
   const [movementList, setMovementList] = useState([])
   const [movementPage, setMovementPage] = useState(0)
   const [movementTotalPages, setMovementTotalPages] = useState(0)
+  const [movementTotalElements, setMovementTotalElements] = useState(0)
   const [selectedMovementType, setSelectedMovementType] = useState('')
   const [movementStartDate, setMovementStartDate] = useState('')
   const [movementEndDate, setMovementEndDate] = useState('')
@@ -182,6 +187,13 @@ export default function Stock() {
   // Expiry Write-Off confirmation
   const [writeOffTarget, setWriteOffTarget] = useState(null)
 
+  // Batch History Modal States
+  const [selectedBatchHistoryId, setSelectedBatchHistoryId] = useState(null)
+  const [batchHistoryData, setBatchHistoryData] = useState(null)
+  const [batchHistoryLoading, setBatchHistoryLoading] = useState(false)
+  const [selectedInvoiceForModal, setSelectedInvoiceForModal] = useState(null)
+
+
   // Fetch Products for dropdowns
   const loadProducts = async () => {
     try {
@@ -214,12 +226,16 @@ export default function Stock() {
     }
   }
 
-  // Fetch Dashboard Stats
+  // Fetch Dashboard Stats + Monthly Flow (parallel for performance)
   const loadDashboard = async () => {
     setDashboardLoading(true)
     try {
-      const res = await api.get('/stock/dashboard')
-      setDashboardData(res.data.data)
+      const [summaryRes, flowRes] = await Promise.all([
+        api.get('/stock/dashboard'),
+        api.get('/stock/dashboard/monthly-flow?months=6')
+      ])
+      setDashboardData(summaryRes.data.data)
+      setMonthlyFlowData(flowRes.data.data || [])
     } catch {
       toast.error('Failed to load dashboard metrics')
     } finally {
@@ -245,13 +261,13 @@ export default function Stock() {
     }
   }
 
-  // Fetch ALL Batches for Invoice Summary (unpaginated)
+  // Fetch ALL Purchases for Invoice Summary (unpaginated)
   const loadAllBatches = async () => {
     try {
-      const res = await api.get(`/stock/batches?page=0&size=10000`)
-      setAllBatchList(res.data.data?.content || res.data.data || [])
+      const res = await api.get(`/stock/purchases`)
+      setAllBatchList(res.data.data || [])
     } catch {
-      toast.error('Failed to load all batches for invoice summary')
+      toast.error('Failed to load purchase transactions for invoice summary')
     }
   }
 
@@ -261,6 +277,7 @@ export default function Stock() {
       const res = await api.get(`/stock/movements?page=${page}&size=15&movementType=${selectedMovementType}&startDate=${movementStartDate}&endDate=${movementEndDate}&search=${debouncedMovementSearchTerm}`)
       setMovementList(res.data.data?.content || [])
       setMovementTotalPages(res.data.data?.totalPages || 0)
+      setMovementTotalElements(res.data.data?.totalElements || 0)
     } catch {
       toast.error('Failed to load stock movement ledger')
     }
@@ -320,7 +337,6 @@ export default function Stock() {
 
   useEffect(() => {
     loadProducts()
-    loadDashboard()
   }, [])
 
   // Debounce batch search term and reset page
@@ -353,6 +369,30 @@ export default function Stock() {
     // Always refresh products list when receive tab is opened
     if (activeTab === 'receive') loadProducts()
   }, [activeTab, invPage, batchPage, movementPage, auditPage, reportPage, selectedReport, selectedMovementType, searchTerm, selectedCategory, selectedStatus, debouncedBatchSearchTerm, movementStartDate, movementEndDate, debouncedMovementSearchTerm])
+
+  // Fetch Batch History when selectedBatchHistoryId is set
+  useEffect(() => {
+    if (!selectedBatchHistoryId) {
+      setBatchHistoryData(null)
+      return
+    }
+
+    const fetchBatchHistory = async () => {
+      setBatchHistoryLoading(true)
+      try {
+        const res = await api.get(`/stock/batches/${selectedBatchHistoryId}/history`)
+        setBatchHistoryData(res.data.data)
+      } catch (err) {
+        toast.error('Failed to load batch transaction history')
+        setSelectedBatchHistoryId(null)
+      } finally {
+        setBatchHistoryLoading(false)
+      }
+    }
+
+    fetchBatchHistory()
+  }, [selectedBatchHistoryId])
+
 
   // Helper to handle product change in single receive form (pre-fill fields)
   const handleSingleProductChange = (productId) => {
@@ -387,6 +427,26 @@ export default function Stock() {
     return { totalTaxable, totalGst, totalNet }
   }
 
+  // Debounced real-time batch-exists check for single receive form
+  useEffect(() => {
+    const { productId, batchNumber, buyPriceWithoutTax } = manualForm
+    if (!productId || !batchNumber || !batchNumber.trim()) {
+      setBatchCheckResult(null)
+      return
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ productId, batchNumber: batchNumber.trim() })
+        if (buyPriceWithoutTax) params.append('buyPrice', buyPriceWithoutTax)
+        const res = await api.get(`/stock/batch-exists?${params.toString()}`)
+        setBatchCheckResult(res.data.data)
+      } catch {
+        setBatchCheckResult(null)
+      }
+    }, 600)
+    return () => clearTimeout(timer)
+  }, [manualForm.productId, manualForm.batchNumber, manualForm.buyPriceWithoutTax])
+
   // Single Manual Receive Form Submit
   const handleReceiveSubmit = async (e) => {
     e.preventDefault()
@@ -403,6 +463,7 @@ export default function Stock() {
         extraSecondaryReceived: manualForm.extraSecondaryReceived === '' ? 0 : Number(manualForm.extraSecondaryReceived),
         offerSecondaryReceived: manualForm.offerSecondaryReceived === '' ? 0 : Number(manualForm.offerSecondaryReceived),
         buyPriceWithoutTax: Number(manualForm.buyPriceWithoutTax),
+        receiveSource: 'SINGLE_RECEIVE',
         manufacturingDate: null
       }
 
@@ -499,7 +560,13 @@ export default function Stock() {
         headers: { 'Content-Type': 'multipart/form-data' }
       })
       const scanData = res.data.data || {}
-      setScannerPreview(scanData.items || [])
+      setScannerPreview((scanData.items || []).map(item => ({
+        ...item,
+        // Recalculate secondaryAdded from primaryAdded only (exclude OCR's openBoxAdded)
+        secondaryAdded: (Number(item.primaryAdded) || 0) * (item.secondaryPerPrimary || 1),
+        openBoxAdded: 0,
+      })))
+
       setScannerInvoiceNumber(scanData.invoiceNumber || '')
       setInvoiceAlreadyScanned(scanData.alreadyScanned || false)
       toast.success('Invoice scanned and items mapped successfully!')
@@ -591,12 +658,14 @@ export default function Stock() {
         stockReceivedDate: new Date().toISOString().split('T')[0],
         manufacturingDate: item.manufacturingDate || new Date().toISOString().split('T')[0],
         primaryReceived: item.primaryAdded,
-        extraSecondaryReceived: item.openBoxAdded,
+        extraSecondaryReceived: 0, // Open box/loose ladi not used in scanner flow
+
         offerSecondaryReceived: item.offerUnitsAdded || 0,
         buyPriceWithoutTax: item.buyPriceWithoutTax,
         expiryDate: item.expiryDate,
         supplierName: scannerSupplier,
         gstPercent: Number(item.gstPercent || 0),
+        receiveSource: 'OCR_SCAN',
         logAsExpense: true
       }))
       
@@ -1019,6 +1088,19 @@ export default function Stock() {
       return
     }
 
+    // Block duplicate batch+product within the same bulk request (data entry error)
+    const seenBatchKeys = new Set()
+    for (const row of bulkRows) {
+      if (row.productId && row.batchNumber && row.batchNumber.trim()) {
+        const key = row.productId + '|' + row.batchNumber.trim().toUpperCase()
+        if (seenBatchKeys.has(key)) {
+          toast.error(`Duplicate Batch No. "${row.batchNumber.trim()}" found in this invoice for the same product. Har product ka batch number unique hona chahiye.`)
+          return
+        }
+        seenBatchKeys.add(key)
+      }
+    }
+
     setSavingStock(true)
     try {
       const payload = bulkRows.map(row => ({
@@ -1035,6 +1117,7 @@ export default function Stock() {
         supplierName: bulkSupplierName,
         gstPercent: Number(row.gstPercent || 0),
         remarks: bulkRemarks || null,
+        receiveSource: 'BULK_RECEIVE',
         logAsExpense: true
       }))
 
@@ -1417,12 +1500,12 @@ export default function Stock() {
                 <table className="w-full text-left border-collapse text-xs md:text-sm">
                   <thead>
                     <tr className="bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-350 font-semibold uppercase">
+                      <th className="p-3 text-center w-12">#</th>
                       <th className="p-3 min-w-[200px]">Invoice Item</th>
                       <th className="p-3 min-w-[100px]">Category</th>
                       <th className="p-3 min-w-[100px]">Qty (Primary)</th>
                       <th className="p-3 min-w-[100px]">Qty (Secondary)</th>
-                      <th className="p-3 min-w-[100px]">Open Box</th>
-                      <th className="p-3 min-w-[100px]">Offer units</th>
+                      <th className="p-3 min-w-[100px]">Offer Units</th>
                       <th className="p-3 min-w-[100px]">Batch No</th>
                       <th className="p-3 min-w-[120px]">Expiry Date</th>
                       <th className="p-3 min-w-[100px]">Buy (BOX)</th>
@@ -1436,6 +1519,9 @@ export default function Stock() {
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                     {scannerPreview.map((item, index) => (
                       <tr key={index} className="hover:bg-slate-100/50 dark:hover:bg-slate-800/20">
+                        <td className="p-3 text-center font-bold text-slate-400 dark:text-slate-600">
+                          {index + 1}
+                        </td>
                         <td className="p-3">
                           {editingNameIndex === index ? (
                             <textarea
@@ -1493,8 +1579,7 @@ export default function Stock() {
                                 updated[index].primaryAdded = val;
                                 const ratio = item.secondaryPerPrimary || 1;
                                 const pAdded = val === '' ? 0 : (parseInt(val) || 0);
-                                const oAdded = item.openBoxAdded === '' ? 0 : (parseInt(item.openBoxAdded) || 0);
-                                updated[index].secondaryAdded = (pAdded * ratio) + oAdded;
+                                updated[index].secondaryAdded = pAdded * ratio;
                                 setScannerPreview(updated);
                               }}
                             />
@@ -1502,28 +1587,7 @@ export default function Stock() {
                           </div>
                         </td>
                         <td className="p-3 font-semibold text-slate-600 dark:text-slate-400">
-                          {item.secondaryAdded} {item.secondaryUnit || 'Units'}
-                        </td>
-                        <td className="p-3">
-                          <div className="flex items-center gap-1.5">
-                            <input
-                              type="number"
-                              className="w-14 px-2 py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded text-xs text-slate-800 dark:text-slate-200"
-                              value={item.openBoxAdded ?? ''}
-                              min="0"
-                              onChange={e => {
-                                const val = e.target.value;
-                                const updated = [...scannerPreview];
-                                updated[index].openBoxAdded = val;
-                                const ratio = item.secondaryPerPrimary || 1;
-                                const pAdded = item.primaryAdded === '' ? 0 : (parseInt(item.primaryAdded) || 0);
-                                const oAdded = val === '' ? 0 : (parseInt(val) || 0);
-                                updated[index].secondaryAdded = (pAdded * ratio) + oAdded;
-                                setScannerPreview(updated);
-                              }}
-                            />
-                            <span className="text-slate-400 text-xxs font-medium">loose</span>
-                          </div>
+                          {((Number(item.primaryAdded) || 0) * (item.secondaryPerPrimary || 1))} {item.secondaryUnit || 'Units'}
                         </td>
                         <td className="p-3">
                           <div className="flex items-center gap-1.5">
@@ -1607,11 +1671,9 @@ export default function Stock() {
                           {(() => {
                             const ratio = item.secondaryPerPrimary || 1;
                             const pAdded = item.primaryAdded === '' ? 0 : (Number(item.primaryAdded) || 0);
-                            const oAdded = item.openBoxAdded === '' ? 0 : (Number(item.openBoxAdded) || 0);
                             const buyPrice = Number(item.buyPriceWithoutTax || 0);
                             const gst = Number(item.gstPercent || 0);
-                            
-                            const valWithoutTax = (pAdded * buyPrice) + (oAdded * (buyPrice / ratio));
+                            const valWithoutTax = pAdded * buyPrice;
                             const valWithTax = valWithoutTax * (1 + gst / 100);
                             return `₹${valWithTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                           })()}
@@ -1756,7 +1818,7 @@ export default function Stock() {
 
                   {[
                     { label: 'MRP Valuation', val: `₹${Number(dashboardData.totalMrpValue).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, desc: 'Total retail price potential', color: 'text-sky-600 dark:text-sky-400' },
-                    { label: 'Profit Potential', val: `₹${Number(dashboardData.expectedProfit).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, desc: 'Expected gross margin profits', color: 'text-emerald-600 dark:text-emerald-400' },
+                    { label: 'Profit Potential', val: `₹${Number(dashboardData.expectedProfit).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, desc: 'MRP minus GST-inclusive buy cost', color: 'text-emerald-600 dark:text-emerald-400' },
                     { label: 'Inventory Health Score', val: `${dashboardData.healthScore}/100`, desc: `Score Status: ${dashboardData.healthClassification}`, color: 'text-rose-600 dark:text-rose-400' }
                   ].map((card, i) => (
                     <div key={i} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-2xl shadow-sm relative overflow-hidden group hover:border-slate-300 dark:hover:border-slate-700 transition duration-300">
@@ -1784,6 +1846,45 @@ export default function Stock() {
                     </div>
                   ))}
                 </div>
+
+                {/* Missing Sell Price Warning Badge */}
+                {dashboardData.skusWithMissingPrice > 0 && (
+                  <div className="flex items-center gap-3 px-5 py-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-700/50 text-amber-700 dark:text-amber-400">
+                    <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+                    <span className="text-sm font-semibold">{dashboardData.skusWithMissingPrice} SKU{dashboardData.skusWithMissingPrice > 1 ? 's have' : ' has'} no sell price set — MRP Valuation may be understated. Go to Products to fix.</span>
+                  </div>
+                )}
+
+                {/* Monthly Inventory Flow Chart */}
+                {monthlyFlowData.length > 0 && (
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-2xl shadow-sm">
+                    <div className="flex items-center justify-between mb-5">
+                      <div>
+                        <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Monthly Inventory Flow</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Stock added vs sold — last 6 months</p>
+                      </div>
+                      <div className="flex items-center gap-4 text-xs text-slate-500">
+                        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-indigo-500 inline-block"></span>Stock Added</span>
+                        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-rose-400 inline-block"></span>Stock Sold</span>
+                      </div>
+                    </div>
+                    <div className="h-72">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={monthlyFlowData} barCategoryGap="30%" barGap={4}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
+                          <XAxis dataKey="month" stroke="#94a3b8" tick={{ fontSize: 12 }} />
+                          <YAxis stroke="#94a3b8" tick={{ fontSize: 11 }} tickFormatter={v => `₹${(v/1000).toFixed(0)}k`} />
+                          <Tooltip
+                            contentStyle={chartTooltipStyle}
+                            formatter={(value, name) => [`₹${Number(value).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, name === 'stockAddedValue' ? 'Stock Added' : name === 'stockSoldValue' ? 'Stock Sold' : 'Net Change']}
+                          />
+                          <Bar dataKey="stockAddedValue" fill="#6366f1" radius={[4, 4, 0, 0]} name="stockAddedValue" />
+                          <Bar dataKey="stockSoldValue" fill="#fb7185" radius={[4, 4, 0, 0]} name="stockSoldValue" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                )}
 
                 {/* BI Forecast charts and Recent logs widgets */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -2087,8 +2188,46 @@ export default function Stock() {
                         onChange={(e) => setManualForm(f => ({ ...f, batchNumber: e.target.value }))}
                         required
                         placeholder="e.g. B-99388"
-                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 font-mono"
+                        className={`w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border rounded-xl text-slate-900 dark:text-slate-100 focus:ring-2 font-mono ${
+                          batchCheckResult?.exists && !batchCheckResult?.priceMatch
+                            ? 'border-red-400 focus:ring-red-400'
+                            : batchCheckResult?.exists && batchCheckResult?.priceMatch
+                            ? 'border-amber-400 focus:ring-amber-400'
+                            : 'border-slate-200 dark:border-slate-800 focus:ring-indigo-500'
+                        }`}
                       />
+                      {/* Top-Up Mode Banner */}
+                      {batchCheckResult?.exists && batchCheckResult?.priceMatch && (
+                        <div className="mt-2 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded-lg text-sm">
+                          <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-semibold mb-1">
+                            🔄 Top-Up Mode — Batch Already Exists
+                          </div>
+                          <div className="text-amber-600 dark:text-amber-500 text-xs space-y-0.5">
+                            <div>Remaining: <strong>{batchCheckResult.secondaryRemaining} pcs</strong></div>
+                            {batchCheckResult.expiryDate && <div>Expiry: <strong>{batchCheckResult.expiryDate}</strong></div>}
+                            {batchCheckResult.invoiceNumber && <div>Original Invoice: <strong>{batchCheckResult.invoiceNumber}</strong></div>}
+                            <div className="mt-1 text-amber-700 dark:text-amber-400">Naya stock is batch mein add ho jaayega.</div>
+                          </div>
+                        </div>
+                      )}
+                      {/* Price Mismatch Banner */}
+                      {batchCheckResult?.exists && !batchCheckResult?.priceMatch && (
+                        <div className="mt-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded-lg text-sm">
+                          <div className="flex items-center gap-2 text-red-700 dark:text-red-400 font-semibold mb-1">
+                            ⚠️ Price Mismatch — Alag Batch Number Use Karo
+                          </div>
+                          <div className="text-red-600 dark:text-red-500 text-xs space-y-1">
+                            <div>Existing price: <strong>₹{batchCheckResult.existingPrice}</strong> | Entered: <strong>₹{manualForm.buyPriceWithoutTax || '?'}</strong></div>
+                            <button
+                              type="button"
+                              onClick={() => setManualForm(f => ({ ...f, batchNumber: f.batchNumber.trim() + '-R2' }))}
+                              className="mt-1 px-2 py-1 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400 rounded text-xs font-semibold hover:bg-red-200 transition"
+                            >
+                              Use {manualForm.batchNumber.trim()}-R2 →
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div>
@@ -2245,10 +2384,17 @@ export default function Stock() {
 
                   <button
                     type="submit"
-                    disabled={savingStock}
-                    className="w-full py-3 px-6 rounded-xl font-bold bg-gradient-to-r from-indigo-600 to-sky-600 hover:from-indigo-500 hover:to-sky-500 text-white shadow disabled:opacity-50 transition duration-300"
+                    disabled={savingStock || (batchCheckResult?.exists && !batchCheckResult?.priceMatch)}
+                    className={`w-full py-3 px-6 rounded-xl font-bold text-white shadow disabled:opacity-50 transition duration-300 ${
+                      batchCheckResult?.exists && batchCheckResult?.priceMatch
+                        ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400'
+                        : 'bg-gradient-to-r from-indigo-600 to-sky-600 hover:from-indigo-500 hover:to-sky-500'
+                    }`}
                   >
-                    {savingStock ? 'Registering Batch...' : 'Register Inward Stock'}
+                    {savingStock
+                      ? (batchCheckResult?.exists && batchCheckResult?.priceMatch ? 'Topping Up...' : 'Registering Batch...')
+                      : (batchCheckResult?.exists && batchCheckResult?.priceMatch ? '🔄 Top-Up Batch' : 'Register Inward Stock')
+                    }
                   </button>
                 </form>
               ) : (
@@ -2660,7 +2806,14 @@ export default function Stock() {
                         </tr>
                       )
                       return filteredBatchList.map(batch => (
-                        <tr key={batch.id} className="hover:bg-slate-100/40 dark:hover:bg-slate-800/40 transition-colors">
+                        <tr 
+                          key={batch.id} 
+                          onClick={(e) => {
+                            if (e.target.closest('.actions-td') || e.target.closest('button')) return;
+                            setSelectedBatchHistoryId(batch.id);
+                          }}
+                          className="hover:bg-slate-100/50 dark:hover:bg-slate-800/30 cursor-pointer transition-colors"
+                        >
                           <td className="py-2 px-4">
                             <span className="font-semibold text-slate-800 dark:text-slate-100 block">{batch.productName}</span>
                             <span className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold font-mono">Batch: {batch.batchNumber}</span>
@@ -2711,7 +2864,7 @@ export default function Stock() {
                             <span className="text-xs text-slate-500 dark:text-slate-400">Age: {batch.stockAgeDays} days</span>
                           </td>
                           <td className="py-2 px-4 font-mono text-emerald-600 dark:text-emerald-400 font-semibold">₹{batch.batchValue}</td>
-                          <td className="py-2 px-4 text-center">
+                          <td className="py-2 px-4 text-center actions-td">
                             <div className="flex gap-2 justify-center">
                               <button
                                 onClick={() => {
@@ -2774,7 +2927,7 @@ export default function Stock() {
               const allBatches = allBatchList
               const grouped = {}
               allBatches.forEach(b => {
-                const key = (b.invoiceNumber || '(No Invoice)') + '||' + (b.supplierName || '') + '||' + (b.supplierInvoiceDate || '')
+                const key = (b.invoiceNumber || '(No Invoice)') + '||' + (b.supplierName || '')
                 if (!grouped[key]) {
                   grouped[key] = {
                     invoiceNumber: b.invoiceNumber || '—',
@@ -2782,6 +2935,9 @@ export default function Stock() {
                     supplierInvoiceDate: b.supplierInvoiceDate || null,
                     batches: []
                   }
+                }
+                if (!grouped[key].supplierInvoiceDate && b.supplierInvoiceDate) {
+                  grouped[key].supplierInvoiceDate = b.supplierInvoiceDate
                 }
                 grouped[key].batches.push(b)
               })
@@ -2795,7 +2951,11 @@ export default function Stock() {
                   totalIncl += (b.secondaryReceived || 0) * priceIncl
                 })
                 return { ...grp, totalItems, totalExcl, totalGst: totalIncl - totalExcl, totalIncl }
-              }).sort((a, b) => b.totalIncl - a.totalIncl)
+              }).sort((a, b) => {
+                const dateA = a.supplierInvoiceDate ? new Date(a.supplierInvoiceDate) : new Date(0)
+                const dateB = b.supplierInvoiceDate ? new Date(b.supplierInvoiceDate) : new Date(0)
+                return dateB - dateA
+              })
               const grandExcl = invoiceRows.reduce((s, r) => s + r.totalExcl, 0)
               const grandGst = invoiceRows.reduce((s, r) => s + r.totalGst, 0)
               const grandIncl = invoiceRows.reduce((s, r) => s + r.totalIncl, 0)
@@ -2836,7 +2996,11 @@ export default function Stock() {
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                         {paginatedInvoiceRows.map((inv, idx) => (
-                          <tr key={idx} className="hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10 transition-colors">
+                          <tr 
+                            key={idx} 
+                            onClick={() => setSelectedInvoiceForModal(inv)}
+                            className="hover:bg-indigo-50/40 dark:hover:bg-indigo-900/20 transition-colors cursor-pointer"
+                          >
                             <td className="py-3 px-5 text-slate-400 dark:text-slate-500 font-mono text-xs">{invoicePage * INVOICE_PAGE_SIZE + idx + 1}</td>
                             <td className="py-3 px-5">
                               <span className="font-mono font-semibold text-indigo-600 dark:text-indigo-400 text-sm">{inv.invoiceNumber}</span>
@@ -3080,6 +3244,19 @@ export default function Stock() {
                   </tbody>
                 </table>
               </div>
+
+              {/* Pagination */}
+              {movementTotalPages > 1 && (
+                <div className="p-4 bg-slate-50 dark:bg-slate-950/80 border-t border-slate-200 dark:border-slate-800">
+                  <Pagination 
+                    page={movementPage} 
+                    totalPages={movementTotalPages} 
+                    totalElements={movementTotalElements} 
+                    pageSize={15} 
+                    onPageChange={setMovementPage} 
+                  />
+                </div>
+              )}
             </div>
           </motion.div>
         )}
@@ -3969,6 +4146,263 @@ export default function Stock() {
           </form>
         </Modal>
       )}
+
+      {/* Batch History Modal */}
+      {selectedBatchHistoryId && (
+        <Modal 
+          isOpen={!!selectedBatchHistoryId} 
+          title="Batch Transaction Ledger & History" 
+          onClose={() => setSelectedBatchHistoryId(null)}
+        >
+          {batchHistoryLoading ? (
+            <div className="flex flex-col items-center justify-center py-12 gap-3">
+              <div className="w-8 h-8 border-4 border-indigo-650 border-t-transparent rounded-full animate-spin"></div>
+              <span className="text-sm text-slate-500 dark:text-slate-400 font-medium">Loading ledger history...</span>
+            </div>
+          ) : batchHistoryData ? (
+            <div className="space-y-6 max-h-[75vh] overflow-y-auto pr-2 relative">
+              {/* Batch Metadata Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+                <div>
+                  <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Batch Details</h4>
+                  <div className="space-y-1.5 text-xs text-slate-850 dark:text-slate-205">
+                    <div>Product Name: <span className="font-semibold text-slate-900 dark:text-slate-100">{batchHistoryData.batchDetails.productName}</span></div>
+                    <div>Batch Number: <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">{batchHistoryData.batchDetails.batchNumber}</span></div>
+                    <div>Expiry Date: <span className="font-semibold text-rose-600 dark:text-rose-450">{batchHistoryData.batchDetails.expiryDate || 'No Expiry'}</span></div>
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Original Supply Info</h4>
+                  <div className="space-y-1.5 text-xs text-slate-850 dark:text-slate-205">
+                    <div>Supplier: <span className="font-semibold text-slate-900 dark:text-slate-100">{batchHistoryData.batchDetails.supplierName}</span></div>
+                    <div>Invoice: <span className="font-semibold font-mono text-slate-900 dark:text-slate-100">{batchHistoryData.batchDetails.invoiceNumber || 'N/A'}</span></div>
+                    <div>Original Cost: <span className="font-semibold text-slate-900 dark:text-slate-100">₹{batchHistoryData.batchDetails.buyPriceWithoutTax} (Excl. Tax)</span></div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Transaction Timeline */}
+              <div>
+                <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">
+                  Timeline Ledger ({batchHistoryData.history?.length || 0} events)
+                </h4>
+                
+                {(!batchHistoryData.history || batchHistoryData.history.length === 0) ? (
+                  <div className="text-center py-8 text-slate-400 dark:text-slate-500 text-sm">
+                    No transactions recorded for this batch yet.
+                  </div>
+                ) : (
+                  <div className="relative border-l border-slate-200 dark:border-slate-800 ml-3 pl-6 space-y-6">
+                    {batchHistoryData.history.map((item, index) => {
+                      const isAddition = item.movementType.includes('PURCHASE') || item.movementType.includes('RETURN_IN');
+                      const isReduction = item.movementType.includes('SALE') || item.movementType.includes('DAMAGE') || item.movementType.includes('EXPIRY');
+                      const isAdjustment = item.movementType.includes('ADJUSTMENT');
+
+                      return (
+                        <div key={item.id || index} className="relative group">
+                          {/* Timeline dot */}
+                          <div className={`absolute -left-[33px] top-1.5 w-3.5 h-3.5 rounded-full border border-white dark:border-slate-900 flex items-center justify-center shadow-sm ${
+                            isAddition ? 'bg-emerald-500' :
+                            isReduction ? 'bg-rose-500' :
+                            isAdjustment ? 'bg-amber-500' : 'bg-slate-500'
+                          }`} />
+
+                          <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-2 bg-slate-50/40 dark:bg-slate-900/20 p-3 rounded-lg border border-slate-100 dark:border-slate-800/40">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className={`text-xxs font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                                  isAddition ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
+                                  isReduction ? 'bg-rose-500/10 text-rose-500' :
+                                  'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                                }`}>
+                                  {item.movementType.replace('_', ' ')}
+                                </span>
+                                <span className="text-xxs text-slate-400 dark:text-slate-500 font-medium">
+                                  {new Date(item.timestamp).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-700 dark:text-slate-300 mt-1.5 font-medium">
+                                {item.remarks || `${item.movementType.toLowerCase().replace('_', ' ')} transaction logged.`}
+                              </p>
+                              {item.username && (
+                                <div className="text-xxs text-slate-400 dark:text-slate-500 mt-1 font-mono">
+                                  By: {item.username} {item.referenceNumber ? `| Ref: ${item.referenceNumber}` : ''}
+                                </div>
+                              )}
+                            </div>
+                            <div className="text-right font-mono flex-shrink-0">
+                              <span className={`text-xs font-bold block ${
+                                isAddition ? 'text-emerald-600 dark:text-emerald-400' :
+                                isReduction ? 'text-rose-500' : 'text-slate-700 dark:text-slate-350'
+                              }`}>
+                                {item.quantity > 0 ? `+${item.quantity}` : item.quantity} {batchHistoryData.batchDetails.secondaryUnit || 'LADI'}
+                              </span>
+                              <span className="text-xxs text-slate-400 dark:text-slate-500 block">
+                                Balance: {item.quantityBefore} ➔ {item.quantityAfter}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Sticky Summary Card */}
+              <div className="sticky bottom-0 right-0 bg-slate-50/95 dark:bg-slate-950/95 backdrop-blur border border-slate-200 dark:border-slate-800 p-4 rounded-xl shadow-lg max-w-sm ml-auto z-10 space-y-2 mt-6">
+                <h4 className="text-xxs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-800 pb-1.5">Remaining Stock Configuration</h4>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-slate-700 dark:text-slate-300 font-medium">
+                  <span>Paid Units:</span>
+                  <span className="text-right font-mono font-bold text-slate-900 dark:text-slate-100">{batchHistoryData.stockSummary.secondaryRemaining} {batchHistoryData.batchDetails.secondaryUnit}</span>
+                  <span>Offer Units (Free):</span>
+                  <span className="text-right font-mono font-bold text-slate-900 dark:text-slate-100">{batchHistoryData.stockSummary.offerSecondaryRemaining} {batchHistoryData.batchDetails.secondaryUnit}</span>
+                  <span className="border-t border-slate-200 dark:border-slate-800 pt-1.5 font-bold">Total Boxes:</span>
+                  <span className="border-t border-slate-200 dark:border-slate-800 pt-1.5 text-right font-mono font-extrabold text-indigo-650 dark:text-indigo-400">
+                    {batchHistoryData.stockSummary.boxesRemaining} BOX {batchHistoryData.stockSummary.looseUnitsRemaining > 0 ? `+ ${batchHistoryData.stockSummary.looseUnitsRemaining} ${batchHistoryData.batchDetails.secondaryUnit}` : ''}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-12 text-slate-400 dark:text-slate-500">
+              Failed to load batch history data.
+            </div>
+          )}
+        </Modal>
+      )}
+      {/* Invoice Details Modal */}
+      {selectedInvoiceForModal && (() => {
+        const items = allBatchList.filter(b => b.invoiceNumber === selectedInvoiceForModal.invoiceNumber && b.supplierName === selectedInvoiceForModal.supplierName)
+        
+        let subtotal = 0
+        let grandTotal = 0
+        
+        items.forEach(item => {
+          const qty = item.secondaryReceived || 0
+          const ratio = item.secondaryPerPrimary || 1
+          const priceExcl = item.buyPriceWithoutTax ? (Number(item.buyPriceWithoutTax) / ratio) : 0
+          const priceIncl = item.buyPriceWithTax ? (Number(item.buyPriceWithTax) / ratio) : 0
+          subtotal += qty * priceExcl
+          grandTotal += qty * priceIncl
+        })
+        const gstTotal = grandTotal - subtotal
+
+        return (
+          <Modal
+            isOpen={!!selectedInvoiceForModal}
+            title={`Invoice Details: ${selectedInvoiceForModal.invoiceNumber}`}
+            onClose={() => setSelectedInvoiceForModal(null)}
+            xl
+          >
+            <div className="space-y-6 max-h-[75vh] overflow-y-auto pr-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-900/60 p-5 rounded-xl border border-slate-200 dark:border-slate-800">
+                <div>
+                  <h4 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">Invoice Information</h4>
+                  <div className="space-y-1.5 text-xs">
+                    <div className="text-slate-500 dark:text-slate-400">Invoice Number: <span className="font-mono font-extrabold text-indigo-600 dark:text-indigo-400 text-sm ml-1">{selectedInvoiceForModal.invoiceNumber}</span></div>
+                    <div className="text-slate-500 dark:text-slate-400">Invoice Date: <span className="font-semibold text-slate-800 dark:text-slate-200 ml-1">{selectedInvoiceForModal.supplierInvoiceDate || 'N/A'}</span></div>
+                    <div className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-1">
+                      Entry Method: 
+                      {(() => {
+                        const source = items[0]?.receiveSource || 'BULK_RECEIVE';
+                        if (source === 'OCR_SCAN') {
+                          return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">OCR Scanned</span>;
+                        } else if (source === 'SINGLE_RECEIVE') {
+                          return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-500/10 text-slate-700 dark:text-slate-400">Manual Single Receive</span>;
+                        } else {
+                          return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">Manual Bulk Entry</span>;
+                        }
+                      })()}
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">Supplier Details</h4>
+                  <div className="space-y-1.5 text-xs">
+                    <div className="text-slate-500 dark:text-slate-400">Supplier Name: <span className="font-semibold text-slate-800 dark:text-slate-200 ml-1">{selectedInvoiceForModal.supplierName}</span></div>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-xs font-bold text-slate-500 dark:text-slate-450 uppercase tracking-wider mb-3">
+                  Scanned Items List ({items.length} Products)
+                </h4>
+                <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100/60 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-bold uppercase tracking-wider">
+                        <th className="py-3 px-4 text-center">#</th>
+                        <th className="py-3 px-4">Product Name</th>
+                        <th className="py-3 px-4 text-center">Batch No.</th>
+                        <th className="py-3 px-4 text-center">Qty Recd.</th>
+                        <th className="py-3 px-4 text-center">Offer Ladi</th>
+                        <th className="py-3 px-4 text-center">GST %</th>
+                        <th className="py-3 px-4 text-right">Taxable Value</th>
+                        <th className="py-3 px-4 text-right">Total (Incl. Tax)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-150 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                      {items.map((item, idx) => {
+                        const ratio = item.secondaryPerPrimary || 1
+                        const primaryQty = Math.floor(item.secondaryReceived / ratio)
+                        const extraSecondary = item.secondaryReceived % ratio
+                        
+                        let qtyString = ''
+                        if (primaryQty > 0 && extraSecondary > 0) {
+                           qtyString = `${primaryQty} Box, ${extraSecondary} Ladi`
+                        } else if (primaryQty > 0) {
+                           qtyString = `${primaryQty} Box`
+                        } else {
+                           qtyString = `${extraSecondary} Ladi`
+                        }
+
+                        const rateExcl = item.buyPriceWithoutTax ? (Number(item.buyPriceWithoutTax) / ratio) : 0
+                        const rateIncl = item.buyPriceWithTax ? (Number(item.buyPriceWithTax) / ratio) : 0
+                        
+                        const itemTaxable = item.secondaryReceived * rateExcl
+                        const itemTotal = item.secondaryReceived * rateIncl
+
+                        return (
+                          <tr key={idx} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition-colors">
+                            <td className="py-3 px-4 text-center text-slate-400 dark:text-slate-550 font-mono">{idx + 1}</td>
+                            <td className="py-3 px-4 font-semibold text-slate-900 dark:text-slate-100">{item.productName}</td>
+                            <td className="py-3 px-4 text-center font-mono font-extrabold text-indigo-650 dark:text-indigo-400">{item.batchNumber || '—'}</td>
+                            <td className="py-3 px-4 text-center font-bold font-mono text-slate-800 dark:text-slate-200">{qtyString}</td>
+                            <td className="py-3 px-4 text-center font-mono font-bold text-amber-600 dark:text-amber-500">{item.offerSecondaryReceived && item.offerSecondaryReceived > 0 ? `${item.offerSecondaryReceived} Ladi` : '-'}</td>
+                            <td className="py-3 px-4 text-center font-mono">{item.gstPercent}%</td>
+                            <td className="py-3 px-4 text-right font-mono font-semibold text-slate-800 dark:text-slate-200">₹{itemTaxable.toFixed(2)}</td>
+                            <td className="py-3 px-4 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">₹{itemTotal.toFixed(2)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 dark:bg-slate-900/60 p-5 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row justify-between items-center gap-4 text-xs font-semibold">
+                <div className="flex gap-6">
+                  <div className="text-center md:text-left">
+                    <div className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Taxable (Excl.)</div>
+                    <div className="text-sm font-extrabold text-slate-800 dark:text-slate-200">₹{subtotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</div>
+                  </div>
+                  <div className="text-center md:text-left border-l border-slate-200 dark:border-slate-800 pl-6">
+                    <div className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">GST Amt</div>
+                    <div className="text-sm font-extrabold text-amber-600 dark:text-amber-400">₹{gstTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</div>
+                  </div>
+                </div>
+                <div className="text-center md:text-right border-t md:border-t-0 md:border-l border-slate-200 dark:border-slate-800 pt-3 md:pt-0 md:pl-6">
+                  <div className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Grand Total (Incl. GST)</div>
+                  <div className="text-base font-black text-emerald-600 dark:text-emerald-450 font-mono">₹{grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</div>
+                </div>
+              </div>
+            </div>
+          </Modal>
+        )
+      })()}
     </div>
   )
 }
+

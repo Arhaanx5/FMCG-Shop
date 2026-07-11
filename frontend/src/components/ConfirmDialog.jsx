@@ -2,9 +2,9 @@ import { motion } from 'framer-motion'
 import { AlertTriangle } from 'lucide-react'
 import Modal from './Modal'
 
-export default function ConfirmDialog({ isOpen, onClose, onConfirm, title, message, confirmLabel = 'Delete', danger = true }) {
+export default function ConfirmDialog({ isOpen, onClose, onConfirm, title, message, confirmLabel = 'Delete', danger = true, zIndex }) {
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={title || 'Confirm Action'}>
+    <Modal isOpen={isOpen} onClose={onClose} title={title || 'Confirm Action'} zIndex={zIndex}>
       <div className="flex flex-col items-center text-center gap-4 py-4">
         <motion.div
           initial={{ scale: 0 }}

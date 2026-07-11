@@ -20,6 +20,11 @@ public class BillResponse {
     private LocalDateTime createdAt;
     private String createdBy;
     private Integer version;
+    private String shopName;
+    private String shopGstin;
+    private String shopFssai;
+    private String shopStateCode;
+    private Boolean isLegacySnapshot;
 
     // Customer info — flat, no nested object
     private UUID customerId;

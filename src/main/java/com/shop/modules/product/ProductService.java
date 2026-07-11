@@ -18,58 +18,7 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final StockRepository stockRepository;
     private final StockService stockService;
-
-    private ProductResponse toResponse(Product product) {
-
-        var stock = stockService.getOrCreateStock(product.getId());
-
-        int totalPrimary = stock != null
-                ? stock.getTotalPrimaryUnits() : 0;
-        int totalSecondary = stock != null
-                ? stock.getTotalSecondaryUnits() : 0;
-        int openRemaining = stock != null
-                ? stock.getOpenPrimaryRemaining() : 0;
-        boolean hasOpen = stock != null
-                && stock.getHasOpenPrimary() != null
-                && stock.getHasOpenPrimary();
-
-        boolean isLowStock = totalSecondary <= product.getLowStockAlert() || totalSecondary <= 0;
-
-        return ProductResponse.builder()
-                .id(product.getId())
-                .name(product.getName())
-                .productCode(product.getProductCode())
-                .brand(product.getBrand())
-                .category(product.getCategory())
-                .otherCategoryDetail(product.getOtherCategoryDetail())
-                .gstPercent(product.getGstPercent())
-                .cessPercent(product.getCessPercent())
-                .primaryUnit(product.getPrimaryUnit())
-                .secondaryUnit(product.getSecondaryUnit())
-                .secondaryPerPrimary(
-                        product.getSecondaryPerPrimary())
-                .canSellPrimary(product.getCanSellPrimary())
-                .canSellSecondary(
-                        product.getCanSellSecondary())
-                .buyPriceWithoutTax(
-                        product.getBuyPriceWithoutTax())
-                .buyPriceWithTax(
-                        product.getBuyPriceWithTax())
-                .sellPricePrimary(
-                        product.getSellPricePrimary())
-                .sellPriceSecondary(
-                        product.getSellPriceSecondary())
-                .totalPrimaryUnits(totalPrimary)
-                .totalSecondaryUnits(totalSecondary)
-                .openPrimaryRemaining(openRemaining)
-                .hasOpenPrimary(hasOpen)
-                .lowStockAlert(product.getLowStockAlert())
-                .lowStockUnit(product.getLowStockUnit())
-                .isLowStock(isLowStock)
-                .active(product.getActive())
-                .createdAt(product.getCreatedAt())
-                .build();
-    }
+    private final ProductMapper productMapper;
 
     public Product findProductByIdentifier(String identifier) {
         if (identifier == null || identifier.trim().isEmpty()) {
@@ -87,8 +36,9 @@ public class ProductService {
     }
 
     public ProductResponse getProductByIdentifier(String identifier) {
-        return toResponse(findProductByIdentifier(identifier));
+        return productMapper.toResponse(findProductByIdentifier(identifier));
     }
+
 
     private String generateProductCode() {
         int nextSeq = productRepository.findMaxProductSequence() + 1;
@@ -98,13 +48,13 @@ public class ProductService {
     public List<ProductResponse> getAllProducts() {
         return productRepository.findByActiveTrue()
                 .stream()
-                .map(this::toResponse)
+                .map(productMapper::toResponse)
                 .collect(Collectors.toList());
     }
 
     public org.springframework.data.domain.Page<ProductResponse> getAllProducts(org.springframework.data.domain.Pageable pageable) {
         return productRepository.findByActiveTrue(pageable)
-                .map(this::toResponse);
+                .map(productMapper::toResponse);
     }
 
     public org.springframework.data.domain.Page<ProductResponse> getFilteredProductsPaged(
@@ -130,11 +80,11 @@ public class ProductService {
         String cleanSearch = (search != null && !search.isBlank()) ? search.trim() : null;
         
         return productRepository.findProductsFiltered(cleanSearch, category, otherCategory, pageable)
-                .map(this::toResponse);
+                .map(productMapper::toResponse);
     }
 
     public ProductResponse getProductById(UUID id) {
-        return toResponse(productRepository.findById(id)
+        return productMapper.toResponse(productRepository.findById(id)
                 .orElseThrow(() ->
                         new RuntimeException(
                                 "Product not found: " + id)));
@@ -152,7 +102,7 @@ public class ProductService {
                 .findByNameContainingIgnoreCaseAndActiveTrue(
                         name.trim())
                 .stream()
-                .map(this::toResponse)
+                .map(productMapper::toResponse)
                 .collect(Collectors.toList());
     }
 
@@ -162,13 +112,13 @@ public class ProductService {
         }
         return productRepository
                 .findByNameContainingIgnoreCaseAndActiveTrue(name.trim(), pageable)
-                .map(this::toResponse);
+                .map(productMapper::toResponse);
     }
 
     public List<ProductResponse> getLowStockProducts() {
         return productRepository.findLowStockProducts()
                 .stream()
-                .map(this::toResponse)
+                .map(productMapper::toResponse)
                 .collect(Collectors.toList());
     }
 
@@ -224,13 +174,14 @@ public class ProductService {
                         req.getSellPriceSecondary())
                 .lowStockAlert(req.getLowStockAlert())
                 .lowStockUnit(req.getLowStockUnit())
+                .hsnCode(req.getHsnCode() != null && !req.getHsnCode().isBlank() ? req.getHsnCode().trim() : null)
                 .active(true)
                 .build();
 
         // Auto calculate buy price with tax
         product.calculateBuyPriceWithTax();
 
-        return toResponse(productRepository.save(product));
+        return productMapper.toResponse(productRepository.save(product));
     }
 
     public ProductResponse updateProduct(
@@ -279,8 +230,9 @@ public class ProductService {
         product.setCanSellPrimary(req.getCanSellPrimary());
         product.setCanSellSecondary(req.getCanSellSecondary());
         product.setLowStockUnit(req.getLowStockUnit());
+        product.setHsnCode(req.getHsnCode() != null && !req.getHsnCode().isBlank() ? req.getHsnCode().trim() : null);
 
-        return toResponse(productRepository.save(product));
+        return productMapper.toResponse(productRepository.save(product));
     }
 
     public void deleteProduct(String idOrCode) {

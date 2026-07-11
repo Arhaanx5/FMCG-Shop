@@ -31,6 +31,7 @@ public interface StockBatchRepository
     List<StockBatch> findByProductIdOrderByReceivedAtDesc(UUID productId);
 
     // Expiring within given date
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"product"})
     @Query("SELECT b FROM StockBatch b " +
             "WHERE b.expiryDate <= :date " +
             "AND b.exhausted = false " +
@@ -41,6 +42,10 @@ public interface StockBatchRepository
     boolean existsByBatchNumberIgnoreCase(String batchNumber);
 
     boolean existsByProductIdAndBatchNumberIgnoreCase(UUID productId, String batchNumber);
+
+    // Used for top-up logic: find active (non-exhausted) batch by product + batchNumber
+    Optional<StockBatch> findByProductIdAndBatchNumberIgnoreCaseAndExhaustedFalse(UUID productId, String batchNumber);
+
 
     boolean existsBySupplierNameIgnoreCaseAndInvoiceNumberIgnoreCase(String supplierName, String invoiceNumber);
 

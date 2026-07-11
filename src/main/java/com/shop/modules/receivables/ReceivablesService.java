@@ -5,7 +5,7 @@ import com.shop.modules.billing.BillRepository;
 import com.shop.modules.customer.AiReminderGenerator;
 import com.shop.modules.customer.Customer;
 import com.shop.modules.customer.CustomerRepository;
-import com.shop.modules.customer.WhatsAppService;
+import com.shop.modules.whatsapp.WhatsAppService;
 import com.shop.modules.receivables.dto.ReceivablesPendingResponse;
 import com.shop.modules.receivables.dto.SendReminderResponse;
 import com.shop.modules.user.User;

@@ -5,6 +5,7 @@ import com.shop.modules.billing.dto.CreateBillRequest;
 import com.shop.modules.billing.dto.ReturnItemsRequest;
 import com.shop.modules.customer.*;
 import com.shop.modules.customer.dto.*;
+import com.shop.modules.whatsapp.WhatsAppService;
 import com.shop.modules.dashboard.DashboardService;
 import com.shop.modules.dashboard.HealthReportRepository;
 import com.shop.modules.dashboard.DashboardAiService;
@@ -16,10 +17,7 @@ import com.shop.modules.delivery.RouteOptimizationService.RouteAreaGroup;
 import com.shop.modules.delivery.RouteOptimizationService.RouteStop;
 import com.shop.modules.expense.Expense;
 import com.shop.modules.expense.ExpenseRepository;
-import com.shop.modules.damage.DamageLog;
-import com.shop.modules.damage.DamageLogRepository;
-import com.shop.modules.damage.DamageService;
-import com.shop.modules.damage.DamageReason;
+import com.shop.modules.damage.*;
 import com.shop.modules.damage.dto.LogDamageRequest;
 import com.shop.modules.product.Product;
 import com.shop.modules.product.ProductRepository;
@@ -125,49 +123,95 @@ public class FmcgShopBusinessTests {
         StockInventoryService inventoryServiceMock = new StockInventoryService(stockRepository, batchRepository, productRepository, stockAdjustmentLogRepository, userRepository, movementServiceMock);
         StockReceiveService receiveServiceMock = new StockReceiveService(batchRepository, productRepository, stockRepository, userRepository, expenseRepository, movementServiceMock, inventoryServiceMock);
 
-        this.stockService = new StockService(
-                stockRepository,
-                batchRepository,
-                productRepository,
-                stockAdjustmentLogRepository,
-                userRepository,
-                damageLogRepository,
-                expenseRepository,
-                receiveServiceMock,
-                movementServiceMock,
-                inventoryServiceMock
-        );
-        
+        StockDeductionService stockDeductionService = new StockDeductionService(stockRepository, batchRepository, productRepository, inventoryServiceMock, movementServiceMock);
+        StockRestorationService stockRestorationService = new StockRestorationService(stockRepository, batchRepository, productRepository, inventoryServiceMock, movementServiceMock);
+        StockAdjustmentService stockAdjustmentService = new StockAdjustmentService(batchRepository, stockRepository, inventoryServiceMock, movementServiceMock, damageLogRepository, userRepository, stockAdjustmentLogRepository);
+
         this.damageService = new DamageService(
                 damageLogRepository,
                 productRepository,
                 productServiceMock,
                 batchRepository,
-                stockService,
-                userRepository
+                null,
+                userRepository,
+                stockRepository,
+                inventoryServiceMock,
+                movementServiceMock,
+                new DamageMapper()
         );
 
+        this.stockService = new StockService(
+                stockRepository,
+                batchRepository,
+                stockAdjustmentLogRepository,
+                receiveServiceMock,
+                movementServiceMock,
+                inventoryServiceMock,
+                stockDeductionService,
+                stockRestorationService,
+                stockAdjustmentService,
+                damageService
+        );
+
+        try {
+            java.lang.reflect.Field field = DamageService.class.getDeclaredField("stockService");
+            field.setAccessible(true);
+            field.set(this.damageService, this.stockService);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+
         StockMovementService movementService = new StockMovementService(movementRepository);
+        com.shop.modules.shopprofile.ShopProfileService shopProfileServiceMock = mock(com.shop.modules.shopprofile.ShopProfileService.class);
+        com.shop.modules.shopprofile.ShopProfile dummyProfile = com.shop.modules.shopprofile.ShopProfile.builder()
+                .companyName("Lari Traders")
+                .gstin("09DIMPA1174G1ZC")
+                .stateCode("09")
+                .build();
+        lenient().when(shopProfileServiceMock.getActiveProfileEntity()).thenReturn(dummyProfile);
+
+        com.shop.common.ledger.CustomerLedgerService customerLedgerService = new com.shop.common.ledger.CustomerLedgerService(
+                paymentRepository, billRepository, customerRepository
+        );
+
+        com.shop.modules.billing.BillMapper billMapper = new com.shop.modules.billing.BillMapper();
+        com.shop.modules.billing.BillCalculationHelper billCalculationHelper = new com.shop.modules.billing.BillCalculationHelper();
+        com.shop.modules.billing.validator.BillCreditValidator billCreditValidator = new com.shop.modules.billing.validator.BillCreditValidator(customerServiceMock);
+        
+        com.shop.modules.billing.BillCreationService billCreationService = new com.shop.modules.billing.BillCreationService(
+                billRepository, customerRepository, userRepository, stockService, productServiceMock, batchRepository, shopProfileServiceMock, billCreditValidator, customerLedgerService, billCalculationHelper, billMapper, customerServiceMock
+        );
+        com.shop.modules.billing.BillConfirmationService billConfirmationService = new com.shop.modules.billing.BillConfirmationService(
+                billRepository, customerRepository, userRepository, batchRepository, stockService, customerLedgerService, billCalculationHelper, billMapper, billCreditValidator
+        );
+        com.shop.modules.billing.BillCancellationService billCancellationService = new com.shop.modules.billing.BillCancellationService(
+                billRepository, userRepository, batchRepository, stockService, damageLogRepository, movementService, paymentRepository, customerLedgerService, billCalculationHelper, billMapper, billCreditValidator
+        );
+        com.shop.modules.billing.BillUpdateService billUpdateService = new com.shop.modules.billing.BillUpdateService(
+                billRepository, userRepository, batchRepository, stockService, productServiceMock, paymentRepository, billEditHistoryRepository, customerLedgerService, billCalculationHelper, billMapper, billCreditValidator, billCancellationService, billConfirmationService
+        );
+
         this.billService = new BillService(
                 billRepository,
                 customerRepository,
-                productRepository,
                 userRepository,
-                stockService,
-                stockRepository,
                 customerServiceMock,
-                productServiceMock,
-                batchRepository,
-                paymentRepository,
                 billEditHistoryRepository,
-                damageLogRepository,
-                movementService
+                billMapper,
+                billCreationService,
+                billUpdateService,
+                billCancellationService,
+                billConfirmationService,
+                paymentRepository
         );
+
 
         this.customerService = new CustomerService(
                 customerRepository,
                 null,
-                billRepository
+                billRepository,
+                new CustomerMapper(billRepository)
         );
 
         this.aiReminderService = new AiReminderService(
@@ -175,22 +219,22 @@ public class FmcgShopBusinessTests {
                 aiReminderGenerator
         );
 
+        com.shop.modules.dashboard.DashboardCalculationHelper dashboardCalculationHelper = new com.shop.modules.dashboard.DashboardCalculationHelper(
+                paymentRepository, productRepository, batchRepository, stockRepository
+        );
+        com.shop.modules.dashboard.SalesReportService salesReportService = new com.shop.modules.dashboard.SalesReportService(
+                billRepository, expenseRepository, damageLogRepository, customerRepository, productRepository, paymentRepository, dashboardCalculationHelper
+        );
+        com.shop.modules.dashboard.SalesmenPerformanceService salesmenPerformanceService = new com.shop.modules.dashboard.SalesmenPerformanceService(
+                userRepository, areaRepository, billRepository, paymentRepository, customerRepository
+        );
+        com.shop.modules.dashboard.DashboardSummaryService dashboardSummaryService = new com.shop.modules.dashboard.DashboardSummaryService(
+                billRepository, customerRepository, productRepository, batchRepository, stockRepository, deliveryRepository, expenseRepository, customerServiceMock, dashboardCalculationHelper, salesReportService, billServiceMock, damageLogRepository, paymentRepository
+        );
         this.dashboardService = spy(new DashboardService(
-                billRepository,
-                customerRepository,
-                productRepository,
-                batchRepository,
-                stockRepository,
-                deliveryRepository,
-                expenseRepository,
-                userRepository,
-                areaRepository,
-                paymentRepository,
-                damageLogRepository,
-                billServiceMock,
-                customerServiceMock,
-                backupServiceMock
+                dashboardSummaryService, salesReportService, salesmenPerformanceService
         ));
+
 
         this.routeOptimizationService = new RouteOptimizationService(deliveryRepository, userRepository);
         
@@ -204,7 +248,8 @@ public class FmcgShopBusinessTests {
                 batchRepository,
                 customerRepository,
                 new com.fasterxml.jackson.databind.ObjectMapper(),
-                receivablesAgingService
+                receivablesAgingService,
+                mock(org.springframework.web.client.RestTemplate.class)
         );
     }
 
@@ -957,6 +1002,9 @@ public class FmcgShopBusinessTests {
     @Test
     public void testAiReminderGeneratorFallbackAndFormatting() {
         class TestReminderGenerator extends com.shop.modules.customer.AiReminderGenerator {
+            public TestReminderGenerator() {
+                super(mock(org.springframework.web.client.RestTemplate.class));
+            }
             public String testFallback(String name, String shopName, BigDecimal pendingAmount) {
                 return generateLocalFallback(name, shopName, pendingAmount);
             }
@@ -978,6 +1026,9 @@ public class FmcgShopBusinessTests {
     @Test
     public void testAiReminderGeneratorFallbackNoShopName() {
         class TestReminderGenerator extends com.shop.modules.customer.AiReminderGenerator {
+            public TestReminderGenerator() {
+                super(mock(org.springframework.web.client.RestTemplate.class));
+            }
             public String testFallback(String name, String shopName, BigDecimal pendingAmount) {
                 return generateLocalFallback(name, shopName, pendingAmount);
             }
@@ -1180,7 +1231,23 @@ public class FmcgShopBusinessTests {
 
         when(batchRepository.findById(batchId)).thenReturn(Optional.of(batch));
 
-        StockAdjustmentService service = new StockAdjustmentService(batchRepository, stockService);
+        StockInventoryService inventoryServiceMockLocal = new StockInventoryService(
+                stockRepository,
+                batchRepository,
+                productRepository,
+                stockAdjustmentLogRepository,
+                userRepository,
+                new StockMovementService(mock(StockMovementRepository.class))
+        );
+        StockAdjustmentService service = new StockAdjustmentService(
+                batchRepository,
+                stockRepository,
+                inventoryServiceMockLocal,
+                new StockMovementService(mock(StockMovementRepository.class)),
+                damageLogRepository,
+                userRepository,
+                stockAdjustmentLogRepository
+        );
         
         // 1. Adjusting with the same stock should throw exception
         assertThrows(RuntimeException.class, () -> {
@@ -1298,8 +1365,13 @@ public class FmcgShopBusinessTests {
     @Test
     public void testKhataService_WaiveOffLimits() {
         org.springframework.messaging.simp.SimpMessagingTemplate simpMock = mock(org.springframework.messaging.simp.SimpMessagingTemplate.class);
+        com.shop.modules.khata.KhataMapper mapper = new com.shop.modules.khata.KhataMapper(billRepository);
+        com.shop.common.ledger.CustomerLedgerService ledgerService = new com.shop.common.ledger.CustomerLedgerService(paymentRepository, billRepository, customerRepository);
+        com.shop.modules.khata.PaymentRecordingService recordingService = new com.shop.modules.khata.PaymentRecordingService(
+                paymentRepository, customerRepository, billRepository, userRepository, simpMock, ledgerService, mapper
+        );
         com.shop.modules.khata.KhataService khataServiceInstance = new com.shop.modules.khata.KhataService(
-                paymentRepository, customerRepository, billRepository, userRepository, simpMock
+                paymentRepository, mapper, recordingService, null, null
         );
 
         UUID custId = UUID.randomUUID();

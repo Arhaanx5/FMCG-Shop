@@ -1,0 +1,104 @@
+name: FMCG Shop CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main", "master", "uat" ]
+  pull_request:
+    branches: [ "main", "master", "uat" ]
+
+jobs:
+  # Job 1: Build and test Backend
+  backend-ci:
+    name: Backend CI (Build & Test)
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: 'maven'
+
+    - name: Make Maven Wrapper Executable
+      run: chmod +x mvnw
+
+    - name: Run Maven Tests & Build
+      run: ./mvnw clean package
+
+    - name: Upload Backend Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: fmcg-shop-backend
+        path: target/*.jar
+        retention-days: 7
+
+  # Job 2: Build Frontend
+  frontend-ci:
+    name: Frontend CI (Build & Test)
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+
+    - name: Install Dependencies
+      run: |
+        cd frontend
+        npm ci
+
+    - name: Build React App
+      run: |
+        cd frontend
+        npm run build
+
+    - name: Upload Frontend Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: fmcg-shop-frontend
+        path: frontend/dist/
+        retention-days: 7
+
+  # Job 3: Deploy Frontend to Cloudflare Pages (CD)
+  frontend-cd:
+    name: Frontend CD (Cloudflare Pages)
+    needs: frontend-ci
+    if: github.ref == 'refs/heads/uat' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Download Frontend Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: fmcg-shop-frontend
+        path: dist
+
+    - name: Deploy to Cloudflare Pages
+      uses: cloudflare/wrangler-action@v3
+      with:
+        apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        command: pages deploy dist --project-name=lari-traders-uat-ui
+
+  # Job 4: Deploy Backend to UAT Windows Server (CD)
+  backend-cd:
+    name: Backend CD (UAT Windows Server)
+    needs: backend-ci
+    if: github.ref == 'refs/heads/uat' && github.event_name == 'push'
+    runs-on: self-hosted
+
+    steps:
+    - name: Rebuild and Restart Service
+      run: |
+        # Run UAT backend rebuild and restart batch script
+        cmd.exe /c "build-and-restart.bat"

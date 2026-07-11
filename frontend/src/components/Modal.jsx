@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { X } from 'lucide-react'
 
-export default function Modal({ isOpen, onClose, title, children, wide, xl }) {
+export default function Modal({ isOpen, onClose, title, children, wide, xl, zIndex = 'z-[500]' }) {
   if (!isOpen) return null
 
   // Tailwind size configurations
@@ -11,7 +11,7 @@ export default function Modal({ isOpen, onClose, title, children, wide, xl }) {
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center z-[500] p-4"
+          className={`fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center ${zIndex} p-4`}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}

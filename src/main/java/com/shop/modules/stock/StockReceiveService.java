@@ -39,15 +39,25 @@ public class StockReceiveService {
             throw new RuntimeException("Product unit config missing — set secondaryPerPrimary first");
         }
 
-        // Check duplicate batch
+        // ── TOP-UP LOGIC ────────────────────────────────────────────────────────
+        // Check if a non-exhausted batch already exists for this product + batchNumber
         if (req.getBatchNumber() != null && !req.getBatchNumber().isBlank()) {
-            boolean batchExists = batchRepository.existsByProductIdAndBatchNumberIgnoreCase(product.getId(), req.getBatchNumber().trim());
-            if (batchExists) {
-                throw new RuntimeException("Batch number '" + req.getBatchNumber().trim() + "' already exists for this product.");
-            }
-        }
+            java.util.Optional<StockBatch> existingOpt =
+                batchRepository.findByProductIdAndBatchNumberIgnoreCaseAndExhaustedFalse(
+                    product.getId(), req.getBatchNumber().trim());
 
-        // Update product master prices
+            if (existingOpt.isPresent()) {
+                StockBatch existing = existingOpt.get();
+
+                // Top-Up batch directly even if price is slightly different (e.g. due to scheme discounts)
+                return topUpBatch(existing, product, req, addedByUsername);
+            }
+            // If exhausted batch exists with same number → fall through and create new batch (allowed)
+        }
+        // ────────────────────────────────────────────────────────────────────────
+
+        // Update product master prices (only for NEW batch, not top-up)
+
         product.setBuyPriceWithoutTax(req.getBuyPriceWithoutTax());
         product.calculateBuyPriceWithTax();
 
@@ -93,6 +103,7 @@ public class StockReceiveService {
                 .remarks(req.getRemarks())
                 .batchStatus(BatchStatus.ACTIVE)
                 .exhausted(false)
+                .receiveSource(req.getReceiveSource() != null ? req.getReceiveSource() : "BULK_RECEIVE")
                 .build();
 
         batchRepository.save(batch);
@@ -106,7 +117,7 @@ public class StockReceiveService {
         inventoryService.normalizeStock(stock, product);
         stockRepository.save(stock);
 
-        // Async log stock movement
+        // Log paid units movement
         String movementType = "PURCHASE";
         if (req.getBatchNumber() != null && 
             (req.getBatchNumber().toUpperCase().contains("OPENING") || 
@@ -118,14 +129,30 @@ public class StockReceiveService {
                 product,
                 batch,
                 movementType,
-                receivedQty,
+                totalSecondary,
                 qtyBefore,
-                qtyAfter,
+                qtyBefore + totalSecondary,
                 batch.getBuyPricePerSecondary(product.getSecondaryPerPrimary()),
                 addedByUsername,
                 batch.getInvoiceNumber(),
                 req.getRemarks()
         );
+
+        // Log offer/free units movement (if any)
+        if (offerUnits > 0) {
+            movementService.logMovement(
+                    product,
+                    batch,
+                    "OFFER_RECEIVE",
+                    offerUnits,
+                    qtyBefore + totalSecondary,
+                    qtyBefore + totalSecondary + offerUnits,
+                    BigDecimal.ZERO,
+                    addedByUsername,
+                    batch.getInvoiceNumber(),
+                    "Free offer units received"
+            );
+        }
 
         // Auto-log stock purchase as expense
         if (req.isLogAsExpense()) {
@@ -180,4 +207,108 @@ public class StockReceiveService {
 
         return batch;
     }
+
+    /**
+     * Top-up an existing non-exhausted batch with additional stock (same price).
+     * Updates qty fields, GST, dates. Does NOT change batch price or product sell price.
+     */
+    @Transactional
+    private StockBatch topUpBatch(
+            StockBatch existing,
+            Product product,
+            StockService.ReceiveStockRequest req,
+            String addedByUsername) {
+
+        int secondaryFromPrimary = req.getPrimaryReceived() * product.getSecondaryPerPrimary();
+        int newSecondary = secondaryFromPrimary + req.getExtraSecondaryReceived();
+        int newOffer = req.getOfferSecondaryReceived();
+        int newTotal = newSecondary + newOffer;
+
+        // Update batch quantities
+        existing.setPrimaryReceived((existing.getPrimaryReceived() != null ? existing.getPrimaryReceived() : 0) + req.getPrimaryReceived());
+        existing.setSecondaryReceived((existing.getSecondaryReceived() != null ? existing.getSecondaryReceived() : 0) + newSecondary);
+        existing.setSecondaryRemaining((existing.getSecondaryRemaining() != null ? existing.getSecondaryRemaining() : 0) + newSecondary);
+        existing.setOfferSecondaryReceived((existing.getOfferSecondaryReceived() != null ? existing.getOfferSecondaryReceived() : 0) + newOffer);
+        existing.setOfferSecondaryRemaining((existing.getOfferSecondaryRemaining() != null ? existing.getOfferSecondaryRemaining() : 0) + newOffer);
+
+        // Update GST to latest (govt rate, product-level)
+        BigDecimal latestGst = req.getGstPercent() != null && req.getGstPercent().compareTo(java.math.BigDecimal.ZERO) >= 0
+                ? req.getGstPercent() : product.getGstPercent();
+        existing.setGstPercent(latestGst);
+
+        // Update supplier/date info to latest delivery
+        if (req.getSupplierInvoiceDate() != null) existing.setSupplierInvoiceDate(req.getSupplierInvoiceDate());
+        if (req.getStockReceivedDate() != null) existing.setStockReceivedDate(req.getStockReceivedDate());
+        if (req.getSupplierName() != null && !req.getSupplierName().isBlank()) existing.setSupplierName(req.getSupplierName());
+
+        // Mark active in case it was somehow set inactive
+        existing.setExhausted(false);
+        existing.setBatchStatus(BatchStatus.ACTIVE);
+
+        batchRepository.save(existing);
+
+        // Update aggregate stock
+        Stock stock = inventoryService.getOrCreateStock(product.getId());
+        int qtyBefore = stock.getTotalSecondaryUnits();
+        int qtyAfter = qtyBefore + newTotal;
+        stock.setTotalSecondaryUnits(qtyAfter);
+        inventoryService.normalizeStock(stock, product);
+        stockRepository.save(stock);
+
+        // Log movement as PURCHASE_TOPUP (separate from original PURCHASE)
+        String newInvoice = req.getSupplierInvoiceNumber() != null ? req.getSupplierInvoiceNumber() : req.getInvoiceNumber();
+        // Log paid units top-up movement
+        BigDecimal scanUnitPricePerSecondary = req.getBuyPriceWithoutTax() != null 
+                ? req.getBuyPriceWithoutTax().divide(BigDecimal.valueOf(product.getSecondaryPerPrimary()), 4, java.math.RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+
+        movementService.logMovement(
+                product, existing, "PURCHASE_TOPUP",
+                newSecondary, qtyBefore, qtyBefore + newSecondary,
+                scanUnitPricePerSecondary,
+                addedByUsername, newInvoice,
+                "Top-Up of batch " + existing.getBatchNumber() + " via invoice " + newInvoice);
+
+        // Log offer units top-up movement (if any)
+        if (newOffer > 0) {
+            movementService.logMovement(
+                    product, existing, "OFFER_RECEIVE",
+                    newOffer, qtyBefore + newSecondary, qtyBefore + newSecondary + newOffer,
+                    BigDecimal.ZERO,
+                    addedByUsername, newInvoice,
+                    "Free offer units topped-up via invoice " + newInvoice);
+        }
+
+        // Log expense for the top-up purchase
+        if (req.isLogAsExpense() && newSecondary > 0) {
+            BigDecimal gstRate = latestGst.divide(java.math.BigDecimal.valueOf(100));
+            BigDecimal buyWithTax = req.getBuyPriceWithoutTax().multiply(java.math.BigDecimal.ONE.add(gstRate))
+                    .setScale(2, java.math.RoundingMode.HALF_UP);
+            BigDecimal cost = buyWithTax.multiply(java.math.BigDecimal.valueOf(req.getPrimaryReceived()));
+            if (cost.compareTo(java.math.BigDecimal.ZERO) > 0) {
+                com.shop.modules.user.User user = null;
+                if (addedByUsername != null && !addedByUsername.equals("System")) {
+                    user = userRepository.findByPhone(addedByUsername).orElse(null);
+                }
+                String desc = String.format(
+                    "Stock Top-Up: %d %s of %s from %s (Batch: %s, Invoice: %s)",
+                    req.getPrimaryReceived(),
+                    product.getPrimaryUnit() != null ? product.getPrimaryUnit() : "BOX",
+                    product.getName(),
+                    req.getSupplierName(),
+                    existing.getBatchNumber(),
+                    newInvoice);
+                expenseRepository.save(Expense.builder()
+                        .category(ExpenseCategory.STOCK_PURCHASE)
+                        .amount(cost)
+                        .description(desc)
+                        .expenseDate(LocalDate.now())
+                        .addedBy(user)
+                        .build());
+            }
+        }
+
+        return existing;
+    }
 }
+

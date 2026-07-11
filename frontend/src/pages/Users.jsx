@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Plus, Edit2, Trash2, ToggleLeft, ToggleRight, MapPin } from 'lucide-react'
+import { Plus, Edit2, Trash2, ToggleLeft, ToggleRight, MapPin, KeyRound } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import api from '../services/api'
 import DataTable from '../components/DataTable'
@@ -54,6 +54,12 @@ export default function Users() {
   const [saving, setSaving] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const toast = useToast()
+
+  // Reset Password states
+  const [resetTarget, setResetTarget] = useState(null)  // {id, name}
+  const [resetPw, setResetPw] = useState('')
+  const [resetPwConfirm, setResetPwConfirm] = useState('')
+  const [resetSaving, setResetSaving] = useState(false)
 
   // MFA states
   const [mfaEnabled, setMfaEnabled] = useState(false)
@@ -201,6 +207,41 @@ export default function Users() {
       setDeleteTarget(null)
       loadUsers()
     } catch { toast.error('Delete failed') }
+  }
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault()
+    const pw = resetPw.trim()
+    const pwConfirm = resetPwConfirm.trim()
+
+    if (!pw) { toast.error('Password cannot be blank'); return }
+    if (pw !== pwConfirm) { toast.error('Passwords do not match'); return }
+    if (pw.length < 8 || pw.length > 72) { toast.error('Password must be 8–72 characters'); return }
+    const pwRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,72}$/
+    if (!pwRegex.test(pw)) {
+      toast.error('Must contain uppercase, lowercase, digit & special character (@$!%*?&)')
+      return
+    }
+
+    setResetSaving(true)
+    try {
+      // Fetch existing user details to keep name/phone/role unchanged
+      const res = await api.get(`/users/${resetTarget.id}`)
+      const u = res.data.data
+      await api.put(`/users/${resetTarget.id}`, {
+        name: u.name,
+        phone: u.phone,
+        role: u.role,
+        monthlySalary: u.monthlySalary,
+        password: pw
+      })
+      toast.success(`Password reset for ${resetTarget.name}`)
+      setResetTarget(null)
+      setResetPw('')
+      setResetPwConfirm('')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Reset failed')
+    } finally { setResetSaving(false) }
   }
 
   const columns = [
@@ -445,6 +486,12 @@ export default function Users() {
               {row.active ? <ToggleRight size={18} style={{ color: 'var(--color-success)' }} /> : <ToggleLeft size={18} style={{ color: 'var(--color-text-muted)' }} />}
             </button>
             <button className="btn btn-ghost btn-icon btn-sm" onClick={() => openEdit(row)} title="Edit"><Edit2 size={15} /></button>
+            <button
+              className="btn btn-ghost btn-icon btn-sm"
+              onClick={() => { setResetTarget({ id: row.id, name: row.name }); setResetPw(''); setResetPwConfirm('') }}
+              title="Reset Password"
+              style={{ color: 'var(--color-warning)' }}
+            ><KeyRound size={15} /></button>
             <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setDeleteTarget(row.id)} style={{ color: 'var(--color-danger)' }} title="Delete"><Trash2 size={15} /></button>
           </>
         )}
@@ -524,6 +571,71 @@ export default function Users() {
 
       <ConfirmDialog isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDelete}
         title="Delete User" message="This will permanently delete the user." />
+
+      {/* ═══════ RESET PASSWORD MODAL ═══════ */}
+      <Modal
+        isOpen={!!resetTarget}
+        onClose={() => { setResetTarget(null); setResetPw(''); setResetPwConfirm('') }}
+        title={`🔑 Reset Password — ${resetTarget?.name || ''}`}
+      >
+        <form onSubmit={handleResetPassword} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          <div style={{
+            background: 'var(--color-warning-bg, rgba(245,158,11,0.1))',
+            border: '1px solid var(--color-warning)',
+            borderRadius: 'var(--radius-md)',
+            padding: 'var(--space-3)',
+            fontSize: 'var(--font-size-xs)',
+            color: 'var(--color-warning)',
+          }}>
+            ⚠️ Admin action — user will need to login with the new password immediately.
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">New Password *</label>
+            <input
+              className="form-input"
+              type="password"
+              value={resetPw}
+              onChange={e => setResetPw(e.target.value)}
+              required
+              autoComplete="new-password"
+              placeholder="Min 8 chars: Upper, Lower, Digit & Special"
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Confirm Password *</label>
+            <input
+              className="form-input"
+              type="password"
+              value={resetPwConfirm}
+              onChange={e => setResetPwConfirm(e.target.value)}
+              required
+              autoComplete="new-password"
+              placeholder="Re-enter new password"
+            />
+            <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: 'var(--space-1)' }}>
+              Must contain uppercase, lowercase, digit, and special character (@$!%*?&)
+            </p>
+          </div>
+
+          <div className="form-actions">
+            <button type="button" className="btn btn-secondary" onClick={() => { setResetTarget(null); setResetPw(''); setResetPwConfirm('') }}>
+              Cancel
+            </button>
+            <motion.button
+              type="submit"
+              className="btn btn-warning"
+              style={{ background: 'var(--color-warning)', color: '#fff' }}
+              disabled={resetSaving}
+              whileTap={{ scale: 0.95 }}
+            >
+              <KeyRound size={15} />
+              {resetSaving ? 'Resetting...' : 'Reset Password'}
+            </motion.button>
+          </div>
+        </form>
+      </Modal>
     </div>
   )
 }

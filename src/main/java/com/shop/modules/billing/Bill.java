@@ -5,6 +5,7 @@ import com.shop.modules.customer.Customer;
 import com.shop.modules.user.User;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.BatchSize;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -32,7 +33,7 @@ public class Bill {
     @Column(name = "bill_number", unique = true)
     private String billNumber;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY) // LAZY: BillRepository uses @EntityGraph where needed
     @JoinColumn(name = "customer_id")
     @JsonIgnore  // ← use DTO fields instead
     private Customer customer;
@@ -88,7 +89,23 @@ public class Bill {
 
     private String notes;
 
-    @ManyToOne
+    @Column(name = "shop_name")
+    private String shopName;
+
+    @Column(name = "shop_gstin")
+    private String shopGstin;
+
+    @Column(name = "shop_fssai")
+    private String shopFssai;
+
+    @Column(name = "shop_state_code")
+    private String shopStateCode;
+
+    @Column(name = "is_legacy_snapshot")
+    @Builder.Default
+    private Boolean isLegacySnapshot = false;
+
+    @ManyToOne(fetch = FetchType.LAZY) // LAZY: BillRepository uses @EntityGraph where needed
     @JoinColumn(name = "created_by")
     @JsonIgnore  // ← never expose user object
     private User createdBy;
@@ -107,6 +124,7 @@ public class Bill {
             cascade = CascadeType.ALL,
             orphanRemoval = true,
             fetch = FetchType.LAZY)
+    @BatchSize(size = 50) // Prevents N+1: loads items for up to 50 bills in one IN-clause query
     @Builder.Default
     @JsonIgnore  // ← use DTO items list instead
     private List<BillItem> items = new ArrayList<>();

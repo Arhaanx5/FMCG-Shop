@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Package, Users, ShoppingCart, Warehouse,
   BookOpen, Receipt, AlertTriangle, MapPin, UserCog,
   Menu, X, LogOut, ChevronLeft, Award, Truck, Sun, Moon, Palette,
-  MessageSquare, Clock, Activity, TrendingUp, DollarSign
+  MessageSquare, Clock, Activity, TrendingUp, DollarSign, Settings, FileText
 } from 'lucide-react'
 
 const navItems = [
@@ -31,6 +31,8 @@ const navItems = [
   { path: '/schedulers', label: 'Schedulers', icon: Clock, roles: ['ADMIN'] },
   { path: '/health-report', label: 'Business Health', icon: Activity, roles: ['ADMIN', 'MANAGER'] },
   { path: '/health-trend', label: 'Health Trends', icon: TrendingUp, roles: ['ADMIN', 'MANAGER'] },
+  { path: '/gst-reports', label: 'GST Reports', icon: FileText, roles: ['ADMIN', 'MANAGER'] },
+  { path: '/settings', label: 'Settings', icon: Settings, roles: ['ADMIN', 'MANAGER'] },
 ]
 
 const pageNames = {
@@ -52,6 +54,8 @@ const pageNames = {
   '/schedulers': 'Task Schedulers & Backups',
   '/health-report': 'Business Health Report',
   '/health-trend': 'Business Health Trends',
+  '/gst-reports': 'GST Filing Reports',
+  '/settings': 'Shop Profile & HSN Settings',
 }
 
 export default function Layout() {

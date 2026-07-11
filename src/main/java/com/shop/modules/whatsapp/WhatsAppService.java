@@ -1,6 +1,8 @@
-package com.shop.modules.customer;
+package com.shop.modules.whatsapp;
 
-import lombok.RequiredArgsConstructor;
+import com.shop.modules.customer.Customer;
+import com.shop.modules.customer.CustomerService;
+import com.shop.modules.customer.AiReminderGenerator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -12,7 +14,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class WhatsAppService {
 
@@ -20,8 +21,21 @@ public class WhatsAppService {
     private final AiReminderGenerator aiReminderGenerator;
     private final com.shop.modules.receivables.UdharReminderLogRepository udharReminderLogRepository;
     private final com.shop.modules.user.UserRepository userRepository;
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate;
     private final String nodeServiceUrl = "http://127.0.0.1:3000";
+
+    public WhatsAppService(
+            CustomerService customerService,
+            AiReminderGenerator aiReminderGenerator,
+            com.shop.modules.receivables.UdharReminderLogRepository udharReminderLogRepository,
+            com.shop.modules.user.UserRepository userRepository,
+            @org.springframework.beans.factory.annotation.Qualifier("whatsAppRestTemplate") RestTemplate restTemplate) {
+        this.customerService = customerService;
+        this.aiReminderGenerator = aiReminderGenerator;
+        this.udharReminderLogRepository = udharReminderLogRepository;
+        this.userRepository = userRepository;
+        this.restTemplate = restTemplate;
+    }
 
     @org.springframework.beans.factory.annotation.Value("${app.whatsapp.internal-secret:}")
     private String internalSecret;
@@ -234,4 +248,3 @@ public class WhatsAppService {
         }
     }
 }
-

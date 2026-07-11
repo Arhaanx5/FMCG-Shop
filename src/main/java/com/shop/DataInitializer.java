@@ -338,5 +338,32 @@ public class DataInitializer implements CommandLineRunner {
                 System.out.println("✅ Successfully seeded 6 check deliveries to 'Rahul Sharma' (9555555555 / delivery123)!");
             }
         }
+
+        // Restore/Migrate historical StockMovement snapshot columns and set receiveSource on existing batches
+        if (!isProd) {
+            try {
+                jdbcTemplate.execute("UPDATE stock_batches SET receive_source = 'OCR_SCAN' WHERE receive_source IS NULL");
+                jdbcTemplate.execute(
+                    "UPDATE stock_movements m " +
+                    "SET " +
+                    "  buy_price_without_tax = COALESCE(b.buy_price_without_tax, p.buy_price_without_tax, 0), " +
+                    "  buy_price_with_tax = COALESCE(b.buy_price_with_tax, p.buy_price_with_tax, 0), " +
+                    "  gst_percent = COALESCE(b.gst_percent, p.gst_percent, 5), " +
+                    "  secondary_per_primary = COALESCE(p.secondary_per_primary, 1), " +
+                    "  receive_source = 'OCR_SCAN' " +
+                    "FROM products p " +
+                    "LEFT JOIN stock_batches b ON b.product_id = p.id " +
+                    "WHERE m.product_id = p.id " +
+                    "  AND (m.batch_id = b.id OR (m.batch_id IS NULL AND b.invoice_number = m.reference_number)) " +
+                    "  AND m.movement_type IN ('PURCHASE', 'PURCHASE_TOPUP', 'OFFER_RECEIVE') " +
+                    "  AND m.buy_price_without_tax IS NULL"
+                );
+                System.out.println("✅ Restored snapshot columns and receiveSource for historical stock movements & batches");
+            } catch (Exception e) {
+                System.out.println("⚠️ Historical stock movements snapshot restoration skipped/failed: " + e.getMessage());
+            }
+        } else {
+            System.out.println("ℹ️ PROD environment detected. Skipping automatic stock_movements database migration.");
+        }
     }
 }

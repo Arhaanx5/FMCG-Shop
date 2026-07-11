@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.shop.modules.area.Area;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.BatchSize;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -39,9 +40,10 @@ public class Customer {
 
     private String phone;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY) // LAZY: prevents N+1 — avoids 500 area queries for 500 customers
     @JoinColumn(name = "area_id")
     @JsonIgnore
+    @BatchSize(size = 50) // Batch-loads areas: 500 customers = ~10 IN-clause queries instead of 500
     private Area area;
 
     private Double latitude;

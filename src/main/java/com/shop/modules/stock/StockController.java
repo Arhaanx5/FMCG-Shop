@@ -5,6 +5,7 @@ import com.shop.modules.product.Product;
 import com.shop.modules.stock.dto.ReceiveStockRequest;
 import com.shop.modules.stock.dto.StockBatchResponse;
 import com.shop.modules.stock.dto.StockResponse;
+import com.shop.modules.stock.dto.BatchHistoryResponse;
 import com.shop.modules.billing.BillRepository;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +21,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.UUID;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.stream.Collectors;
 
 @RestController
@@ -31,7 +34,9 @@ public class StockController {
     private final StockReportService reportService;
     private final BillRepository billRepository;
     private final StockBatchRepository batchRepository;
+    private final StockMovementRepository movementRepository;
     private final jakarta.validation.Validator validator;
+
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
@@ -85,6 +90,35 @@ public class StockController {
         return ResponseEntity.ok(ApiResponse.success(batches));
     }
 
+    /**
+     * Real-time batch-exists check for frontend forms.
+     * Returns whether a non-exhausted batch exists for the given product + batchNumber,
+     * and whether the price matches (to determine top-up eligibility).
+     */
+    @GetMapping("/batch-exists")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<java.util.Map<String, Object>>> checkBatchExists(
+            @RequestParam UUID productId,
+            @RequestParam String batchNumber,
+            @RequestParam(required = false) java.math.BigDecimal buyPrice) {
+
+        java.util.Map<String, Object> result = new java.util.HashMap<>();
+
+        batchRepository.findByProductIdAndBatchNumberIgnoreCaseAndExhaustedFalse(productId, batchNumber.trim())
+            .ifPresentOrElse(batch -> {
+                result.put("exists", true);
+                result.put("priceMatch", buyPrice == null || batch.getBuyPriceWithoutTax().compareTo(buyPrice) == 0);
+                result.put("existingPrice", batch.getBuyPriceWithoutTax());
+                result.put("secondaryRemaining", batch.getSecondaryRemaining());
+                result.put("offerSecondaryRemaining", batch.getOfferSecondaryRemaining());
+                result.put("expiryDate", batch.getExpiryDate());
+                result.put("invoiceNumber", batch.getInvoiceNumber());
+                result.put("batchId", batch.getId());
+            }, () -> result.put("exists", false));
+
+        return ResponseEntity.ok(ApiResponse.success(result));
+    }
+
     @PostMapping("/receive")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<ApiResponse<StockBatchResponse>> receiveStock(
@@ -117,6 +151,7 @@ public class StockController {
         serviceReq.setStockReceivedDate(req.getStockReceivedDate());
         serviceReq.setManufacturingDate(req.getManufacturingDate());
         serviceReq.setRemarks(req.getRemarks());
+        serviceReq.setReceiveSource(req.getReceiveSource());
 
         String username = principal != null ? principal.getName() : "System";
         StockBatch batch = stockService.receiveStock(serviceReq, username);
@@ -133,6 +168,19 @@ public class StockController {
 
         String username = principal != null ? principal.getName() : "System";
         List<StockBatchResponse> responses = new ArrayList<>();
+
+        // Check for duplicate batch numbers within the same bulk request (same productId + batchNumber)
+        java.util.Set<String> seenBatchKeys = new java.util.HashSet<>();
+        for (ReceiveStockRequest req : requests) {
+            if (req.getBatchNumber() != null && !req.getBatchNumber().isBlank() && req.getProductId() != null) {
+                String key = req.getProductId().toString() + "|" + req.getBatchNumber().trim().toUpperCase();
+                if (!seenBatchKeys.add(key)) {
+                    throw new RuntimeException(
+                        "Duplicate batch number '" + req.getBatchNumber().trim() +
+                        "' found in the same bulk request for the same product. Each product must have a unique batch number.");
+                }
+            }
+        }
 
         for (ReceiveStockRequest req : requests) {
             if (req.getPrimaryReceived() == 0 && req.getExtraSecondaryReceived() == 0 && req.getOfferSecondaryReceived() == 0) {
@@ -173,12 +221,78 @@ public class StockController {
             serviceReq.setStockReceivedDate(req.getStockReceivedDate());
             serviceReq.setManufacturingDate(req.getManufacturingDate());
             serviceReq.setRemarks(req.getRemarks());
+            serviceReq.setReceiveSource(req.getReceiveSource());
 
             StockBatch batch = stockService.receiveStock(serviceReq, username);
             responses.add(reportService.toBatchResponse(batch));
         }
 
         return ResponseEntity.ok(ApiResponse.success("Bulk stock received successfully", responses));
+    }
+
+    @GetMapping("/purchases")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<List<com.shop.modules.stock.dto.PurchaseTransactionResponse>>> getPurchases() {
+        List<StockMovement> movements = movementRepository.findAllPurchaseAndOfferMovements();
+        
+        List<StockMovement> paidMovements = new ArrayList<>();
+        Map<String, Integer> offerMap = new HashMap<>(); // key: batchId only — offer may come from different invoice (top-up)
+        
+        for (StockMovement m : movements) {
+            String key = (m.getBatch() != null ? m.getBatch().getId().toString() : "");
+            if ("OFFER_RECEIVE".equals(m.getMovementType())) {
+                offerMap.put(key, offerMap.getOrDefault(key, 0) + Math.abs(m.getQuantity()));
+            } else {
+                paidMovements.add(m);
+            }
+        }
+
+        List<com.shop.modules.stock.dto.PurchaseTransactionResponse> responses = paidMovements.stream()
+                .map(m -> {
+                    StockBatch b = m.getBatch();
+                    Product p = m.getProduct();
+                    int ratio = m.getSecondaryPerPrimary() != null ? m.getSecondaryPerPrimary()
+                            : ((p != null && p.getSecondaryPerPrimary() != null && p.getSecondaryPerPrimary() > 0) ? p.getSecondaryPerPrimary() : 1);
+                    
+                    BigDecimal buyPriceWithoutTax = m.getBuyPriceWithoutTax() != null ? m.getBuyPriceWithoutTax()
+                            : (b != null ? b.getBuyPriceWithoutTax() : BigDecimal.ZERO);
+                    BigDecimal gstPercent = m.getGstPercent() != null ? m.getGstPercent()
+                            : (b != null ? b.getGstPercent() : BigDecimal.ZERO);
+                    BigDecimal gstRate = gstPercent.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
+                    BigDecimal taxAmount = buyPriceWithoutTax.multiply(gstRate).setScale(2, RoundingMode.HALF_UP);
+                    BigDecimal buyPriceWithTax = m.getBuyPriceWithTax() != null ? m.getBuyPriceWithTax()
+                            : buyPriceWithoutTax.add(taxAmount);
+
+                    String key = (b != null ? b.getId().toString() : "");
+                    int offerUnits = offerMap.getOrDefault(key, 0);
+
+                    int secondaryRemaining = b != null ? b.getSecondaryRemaining() : 0;
+                    int offerSecondaryRemaining = b != null ? (b.getOfferSecondaryRemaining() != null ? b.getOfferSecondaryRemaining() : 0) : 0;
+                    String receiveSource = m.getReceiveSource() != null ? m.getReceiveSource()
+                            : (b != null ? b.getReceiveSource() : "BULK_RECEIVE");
+
+                    return com.shop.modules.stock.dto.PurchaseTransactionResponse.builder()
+                            .id(m.getId())
+                            .invoiceNumber(m.getReferenceNumber())
+                            .supplierName(m.getSupplierName() != null ? m.getSupplierName() : (b != null ? b.getSupplierName() : "Unknown"))
+                            .supplierInvoiceDate(m.getSupplierInvoiceDate() != null ? m.getSupplierInvoiceDate() : (b != null ? b.getSupplierInvoiceDate() : m.getTimestamp().toLocalDate()))
+                            .productName(p != null ? p.getName() : "Unknown Product")
+                            .brand(p != null ? p.getBrand() : "N/A")
+                            .secondaryReceived(Math.abs(m.getQuantity()))
+                            .secondaryPerPrimary(ratio)
+                            .buyPriceWithoutTax(buyPriceWithoutTax)
+                            .buyPriceWithTax(buyPriceWithTax)
+                            .gstPercent(gstPercent)
+                            .offerSecondaryReceived(offerUnits)
+                            .secondaryRemaining(secondaryRemaining)
+                            .offerSecondaryRemaining(offerSecondaryRemaining)
+                            .receiveSource(receiveSource)
+                            .batchNumber(b != null ? b.getBatchNumber() : "N/A")
+                            .build();
+                })
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(ApiResponse.success(responses));
     }
 
     @GetMapping("/batches")
@@ -212,6 +326,58 @@ public class StockController {
         return ResponseEntity.ok(ApiResponse.success(responses));
     }
 
+
+    @GetMapping("/batches/{batchId}/history")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<BatchHistoryResponse>> getBatchHistory(@PathVariable UUID batchId) {
+        StockBatch batch = batchRepository.findById(batchId)
+                .orElseThrow(() -> new RuntimeException("Stock batch not found with ID: " + batchId));
+
+        StockBatchResponse batchResponse = reportService.toBatchResponse(batch);
+        
+        List<StockMovement> movements = movementRepository.findByBatchIdOrderByTimestampAsc(batchId);
+        
+        int secondaryRemaining = batch.getSecondaryRemaining() != null ? batch.getSecondaryRemaining() : 0;
+        int offerRemaining = batch.getOfferSecondaryRemaining() != null ? batch.getOfferSecondaryRemaining() : 0;
+        int totalRemaining = secondaryRemaining + offerRemaining;
+        int ratio = (batch.getProduct() != null && batch.getProduct().getSecondaryPerPrimary() != null) 
+                ? batch.getProduct().getSecondaryPerPrimary() : 1;
+        
+        int boxesRemaining = totalRemaining / ratio;
+        int looseRemaining = totalRemaining % ratio;
+
+        BatchHistoryResponse.StockSummary summary = BatchHistoryResponse.StockSummary.builder()
+                .secondaryRemaining(secondaryRemaining)
+                .offerSecondaryRemaining(offerRemaining)
+                .totalSecondaryRemaining(totalRemaining)
+                .boxesRemaining(boxesRemaining)
+                .looseUnitsRemaining(looseRemaining)
+                .build();
+
+        List<BatchHistoryResponse.MovementHistoryItem> historyItems = movements.stream()
+                .map(m -> BatchHistoryResponse.MovementHistoryItem.builder()
+                        .id(m.getId())
+                        .timestamp(m.getTimestamp())
+                        .movementType(m.getMovementType())
+                        .quantity(m.getQuantity())
+                        .quantityBefore(m.getQuantityBefore())
+                        .quantityAfter(m.getQuantityAfter())
+                        .unitPrice(m.getUnitPrice())
+                        .totalValue(m.getTotalValue())
+                        .referenceNumber(m.getReferenceNumber())
+                        .remarks(m.getRemarks())
+                        .username(m.getUsername())
+                        .build())
+                .collect(Collectors.toList());
+
+        BatchHistoryResponse response = BatchHistoryResponse.builder()
+                .batchDetails(batchResponse)
+                .stockSummary(summary)
+                .history(historyItems)
+                .build();
+
+        return ResponseEntity.ok(ApiResponse.success(response));
+    }
 
     @PutMapping("/batches/{batchId}/adjust")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")

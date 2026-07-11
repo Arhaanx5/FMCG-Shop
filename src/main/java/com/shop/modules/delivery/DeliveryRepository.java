@@ -23,6 +23,7 @@ public interface DeliveryRepository extends JpaRepository<Delivery, UUID> {
                      @Param("boyId") UUID boyId,
                      @Param("date") LocalDate date);
 
+       @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"bill", "bill.customer"})
        List<Delivery> findByStatus(DeliveryStatus status);
 
        List<Delivery> findByDeliveryBoyIdAndStatus(UUID boyId, DeliveryStatus status);

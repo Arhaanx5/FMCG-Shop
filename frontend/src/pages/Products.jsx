@@ -19,6 +19,7 @@ const emptyForm = {
   sellPricePrimaryExcl: '', sellPricePrimaryIncl: '',
   sellPriceSecondaryExcl: '', sellPriceSecondaryIncl: '',
   lowStockAlert: '10', lowStockUnit: 'SECONDARY',
+  hsnCode: '',
 }
 
 export default function Products() {
@@ -32,6 +33,7 @@ export default function Products() {
 
   const [products, setProducts] = useState([])
   const [allProducts, setAllProducts] = useState([])
+  const [mappings, setMappings] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('ALL')
   const [showModal, setShowModal] = useState(false)
@@ -51,6 +53,9 @@ export default function Products() {
     try {
       const res = await api.get('/products?size=1000')
       setAllProducts(res.data.data?.content || res.data.data || [])
+
+      const mapRes = await api.get('/hsn-mapping')
+      setMappings(mapRes.data.data || [])
     } catch {}
   }
 
@@ -72,12 +77,8 @@ export default function Products() {
   }, [page, searchQuery, activeTab])
 
   useEffect(() => { 
-    loadProducts(0, searchQuery, activeTab) 
-  }, [activeTab])
-
-  useEffect(() => { 
     loadProducts(page, searchQuery, activeTab) 
-  }, [page])
+  }, [page, activeTab])
 
   useEffect(() => {
     loadAllProductsForCategories()
@@ -137,6 +138,7 @@ export default function Products() {
       lowStockAlert: product.lowStockAlert !== undefined ? product.lowStockAlert.toString() : '10',
       lowStockUnit: product.lowStockUnit || 'SECONDARY',
       isCessApplicable: cess > 0,
+      hsnCode: product.hsnCode || '',
     })
     setEditingId(product.id)
     setShowModal(true)
@@ -347,6 +349,11 @@ export default function Products() {
         </span>
       )
     },
+    {
+      header: 'HSN Code',
+      accessor: 'hsnCode',
+      render: (row) => row.hsnCode || <span style={{ color: 'var(--color-danger)', fontWeight: 'var(--font-weight-semibold)' }}>Missing</span>
+    },
     { header: 'Buy ₹', accessor: 'buyPriceWithoutTax', render: (row) => `₹${Number(row.buyPriceWithoutTax || 0).toLocaleString('en-IN')}` },
     { header: 'Sell (P)', accessor: 'sellPricePrimary', render: (row) => `₹${Number(row.sellPricePrimary || 0).toLocaleString('en-IN')}` },
     { header: 'Sell (S)', accessor: 'sellPriceSecondary', render: (row) => `₹${Number(row.sellPriceSecondary || 0).toLocaleString('en-IN')}` },
@@ -436,6 +443,16 @@ export default function Products() {
 
   const updateField = (key, val) => setForm(f => ({ ...f, [key]: val }))
 
+  const missingHsnProductsCount = allProducts.filter(p => !p.hsnCode).length
+  const activeCategories = Array.from(new Set(allProducts.map(p => {
+    if (p.category === 'OTHER') {
+      return p.otherCategoryDetail ? p.otherCategoryDetail.trim().toLowerCase() : 'other'
+    }
+    return p.category ? p.category.trim().toLowerCase() : ''
+  }).filter(Boolean)))
+  const mappedKeys = mappings.map(m => m.categoryKey.trim().toLowerCase())
+  const unmappedCategoriesCount = activeCategories.filter(c => !mappedKeys.includes(c)).length
+
   return (
     <div className="page-container">
       <style>{`
@@ -508,6 +525,41 @@ export default function Products() {
         </div>
       </div>
 
+      {unmappedCategoriesCount > 0 && (
+        <div style={{
+          background: 'rgba(245, 158, 11, 0.1)',
+          color: '#d97706',
+          padding: '12px var(--space-4)',
+          borderRadius: 'var(--radius-md)',
+          marginBottom: 'var(--space-4)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--space-2)',
+          fontSize: 'var(--font-size-sm)',
+          border: '1px solid rgba(245, 158, 11, 0.2)'
+        }}>
+          <AlertTriangle size={18} />
+          <span>{unmappedCategoriesCount} active categories are not mapped to any HSN code. <a href="/settings" style={{ fontWeight: 'var(--font-weight-semibold)', color: 'inherit', textDecoration: 'underline' }}>Go to HSN Mapping</a> to configure them.</span>
+        </div>
+      )}
+      {missingHsnProductsCount > 0 && (
+        <div style={{
+          background: 'rgba(239, 68, 68, 0.1)',
+          color: 'var(--color-danger)',
+          padding: '12px var(--space-4)',
+          borderRadius: 'var(--radius-md)',
+          marginBottom: 'var(--space-4)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--space-2)',
+          fontSize: 'var(--font-size-sm)',
+          border: '1px solid rgba(239, 68, 68, 0.2)'
+        }}>
+          <AlertTriangle size={18} />
+          <span>{missingHsnProductsCount} products are missing HSN codes. Please edit them or apply category mapping in settings.</span>
+        </div>
+      )}
+
       {/* Search + Category filter */}
       <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', marginBottom: 'var(--space-6)', flexWrap: 'wrap' }}>
         <input
@@ -573,7 +625,7 @@ export default function Products() {
       {/* Create/Edit Modal */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editingId ? 'Edit Product' : 'Add Product'} wide>
         <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          <div className="form-row">
+          <div className="form-row-3">
             <div className="form-group">
               <label className="form-label">Product Name *</label>
               <input className="form-input" value={form.name} onChange={e => updateField('name', e.target.value)} required minLength={2} placeholder="e.g. Lays Classic" />
@@ -581,6 +633,10 @@ export default function Products() {
             <div className="form-group">
               <label className="form-label">Brand</label>
               <input className="form-input" value={form.brand} onChange={e => updateField('brand', e.target.value)} placeholder="e.g. PepsiCo" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">HSN Code</label>
+              <input className="form-input" value={form.hsnCode} onChange={e => updateField('hsnCode', e.target.value)} placeholder="e.g. 19053100" maxLength={20} />
             </div>
           </div>
           <div className="form-row-4">
@@ -590,14 +646,21 @@ export default function Products() {
                 {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
               {form.category === 'OTHER' && (
-                <input
-                  className="form-input"
-                  style={{ marginTop: 'var(--space-2)' }}
-                  value={form.otherCategoryDetail}
-                  onChange={e => updateField('otherCategoryDetail', e.target.value)}
-                  placeholder="Specify Category (e.g. Soaps)"
-                  required
-                />
+                <>
+                  <input
+                    className="form-input"
+                    style={{ marginTop: 'var(--space-2)' }}
+                    value={form.otherCategoryDetail}
+                    onChange={e => updateField('otherCategoryDetail', e.target.value)}
+                    placeholder="Specify Category (e.g. Soaps)"
+                    required
+                  />
+                  {form.otherCategoryDetail && CATEGORIES.filter(c => c !== 'OTHER').includes(form.otherCategoryDetail.trim().toUpperCase()) && (
+                    <span style={{ color: '#d97706', fontSize: '11px', marginTop: '4px', display: 'block' }}>
+                      Warning: Standard category matches this name. Please select standard dropdown option.
+                    </span>
+                  )}
+                </>
               )}
             </div>
             <div className="form-group">

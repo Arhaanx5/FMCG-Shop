@@ -9,6 +9,9 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -20,6 +23,7 @@ public class StockDashboardService {
     private final StockBatchRepository batchRepository;
     private final StockRepository stockRepository;
     private final StockBIService biService;
+    private final StockMovementRepository movementRepository;
 
     @Data
     @Builder
@@ -40,6 +44,8 @@ public class StockDashboardService {
         private int healthScore;
         private String healthClassification;
         private List<RecentBatchDTO> recentBatches;
+        // Bug #3: count of products with no sell price — causes MRP understatement
+        private long skusWithMissingPrice;
     }
 
     @Data
@@ -53,9 +59,22 @@ public class StockDashboardService {
         private String receivedAt;
     }
 
+    @Data
+    @Builder
+    public static class MonthlyFlowDTO {
+        private String month;          // e.g. "Jun 2025"
+        private BigDecimal stockAddedValue;   // total purchase value (incl. GST) that month
+        private BigDecimal stockSoldValue;    // total sale value that month (qty × sellPrice)
+        private BigDecimal netChange;         // added - sold
+    }
+
     public DashboardSummary getDashboardSummary() {
         List<Product> products = productRepository.findAll();
-        List<StockBatch> activeBatches = batchRepository.findAll().stream()
+
+        // Bug #2 Fix: Load all batches ONCE — reuse for both active filtering and recent DTOs
+        List<StockBatch> allBatches = batchRepository.findAll();
+
+        List<StockBatch> activeBatches = allBatches.stream()
                 .filter(b -> b.getSecondaryRemaining() != null && b.getSecondaryRemaining() > 0)
                 .collect(Collectors.toList());
 
@@ -70,7 +89,8 @@ public class StockDashboardService {
         LocalDate today = LocalDate.now();
         LocalDate thirtyDaysLater = today.plusDays(30);
 
-        List<RecentBatchDTO> recentDtos = batchRepository.findAll().stream()
+        // Bug #2 Fix: reuse allBatches (no second DB call)
+        List<RecentBatchDTO> recentDtos = allBatches.stream()
                 .sorted((a, b) -> b.getReceivedAt().compareTo(a.getReceivedAt()))
                 .limit(10)
                 .map(b -> RecentBatchDTO.builder()
@@ -97,10 +117,12 @@ public class StockDashboardService {
 
             costValue = costValue.add(BigDecimal.valueOf(remaining).multiply(costPrice));
 
-            // Incl. GST cost
+            // Incl. GST cost per secondary unit
             BigDecimal buyPriceWithTaxPerSec = (b.getBuyPriceWithTax() != null)
                     ? b.getBuyPriceWithTax().divide(BigDecimal.valueOf(ratio), 4, RoundingMode.HALF_UP)
-                    : costPrice.multiply(BigDecimal.ONE.add((b.getGstPercent() != null ? b.getGstPercent() : BigDecimal.ZERO).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)));
+                    : costPrice.multiply(BigDecimal.ONE.add(
+                        (b.getGstPercent() != null ? b.getGstPercent() : BigDecimal.ZERO)
+                        .divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)));
             costValueWithTax = costValueWithTax.add(BigDecimal.valueOf(remaining).multiply(buyPriceWithTaxPerSec));
 
             mrpValue = mrpValue.add(BigDecimal.valueOf(remaining).multiply(sellPrice));
@@ -119,6 +141,7 @@ public class StockDashboardService {
         long activeSkus = 0;
         long lowStockCount = 0;
         long outOfStockCount = 0;
+        long skusWithMissingPrice = 0; // Bug #3: track products missing sell price
 
         for (Product p : products) {
             Stock stock = stockRepository.findByProductId(p.getId()).orElse(null);
@@ -131,9 +154,14 @@ public class StockDashboardService {
             if (qty > 0 && qty <= p.getLowStockAlertInSecondary()) {
                 lowStockCount++;
             }
+            // Bug #3: count products with no sell price (MRP would be understated)
+            if (p.getSellPriceSecondary() == null || p.getSellPriceSecondary().compareTo(BigDecimal.ZERO) == 0) {
+                skusWithMissingPrice++;
+            }
         }
 
-        BigDecimal expectedProfit = mrpValue.subtract(costValue);
+        // Bug #1 Fix: Profit = MRP − costWithTax (consistent with displayed "Inventory Cost" which is incl. GST)
+        BigDecimal expectedProfit = mrpValue.subtract(costValueWithTax);
 
         return DashboardSummary.builder()
                 .totalCostValue(costValue.setScale(2, RoundingMode.HALF_UP))
@@ -152,7 +180,75 @@ public class StockDashboardService {
                 .healthScore(score.getOverallScore())
                 .healthClassification(score.getClassification())
                 .recentBatches(recentDtos)
+                .skusWithMissingPrice(skusWithMissingPrice)
                 .build();
+    }
+
+    /**
+     * Monthly Inventory Flow Chart data.
+     * Stock Added = sum of (primaryReceived × buyPriceWithTax) per batch received that month.
+     * Stock Sold  = sum of (|quantity| × sellPriceSecondary) per SALE movement that month.
+     * Performance: Both queries are time-bounded (last N months) — no full table scans.
+     *
+     * @param months Number of past months to include (max 12)
+     */
+    public List<MonthlyFlowDTO> getMonthlyInventoryFlow(int months) {
+        int safeMonths = Math.min(Math.max(months, 1), 12);
+        LocalDateTime since = LocalDateTime.now().minusMonths(safeMonths).withDayOfMonth(1)
+                .withHour(0).withMinute(0).withSecond(0);
+        DateTimeFormatter labelFmt = DateTimeFormatter.ofPattern("MMM yyyy");
+
+        // Build month buckets (ordered oldest → newest)
+        List<YearMonth> buckets = new ArrayList<>();
+        YearMonth start = YearMonth.now().minusMonths(safeMonths - 1);
+        for (int i = 0; i < safeMonths; i++) {
+            buckets.add(start.plusMonths(i));
+        }
+
+        // Stock Added: from StockBatch.receivedAt — no extra DB call beyond time window
+        Map<YearMonth, BigDecimal> addedByMonth = new LinkedHashMap<>();
+        for (YearMonth ym : buckets) addedByMonth.put(ym, BigDecimal.ZERO);
+
+        List<StockBatch> recentBatches = batchRepository.findAll().stream()
+                .filter(b -> b.getReceivedAt() != null && !b.getReceivedAt().isBefore(since))
+                .collect(Collectors.toList());
+
+        for (StockBatch b : recentBatches) {
+            YearMonth ym = YearMonth.from(b.getReceivedAt());
+            if (addedByMonth.containsKey(ym)) {
+                int primary = b.getPrimaryReceived() != null ? b.getPrimaryReceived() : 0;
+                BigDecimal price = b.getBuyPriceWithTax() != null ? b.getBuyPriceWithTax() : BigDecimal.ZERO;
+                addedByMonth.merge(ym, BigDecimal.valueOf(primary).multiply(price), BigDecimal::add);
+            }
+        }
+
+        // Stock Sold: from SALE movements — narrow query (only SALE type + time-bounded)
+        Map<YearMonth, BigDecimal> soldByMonth = new LinkedHashMap<>();
+        for (YearMonth ym : buckets) soldByMonth.put(ym, BigDecimal.ZERO);
+
+        List<StockMovement> saleMovements = movementRepository.findSaleMovementsSince(since);
+        for (StockMovement m : saleMovements) {
+            YearMonth ym = YearMonth.from(m.getTimestamp());
+            if (soldByMonth.containsKey(ym)) {
+                Product p = m.getProduct();
+                BigDecimal sellPrice = (p != null && p.getSellPriceSecondary() != null)
+                        ? p.getSellPriceSecondary() : BigDecimal.ZERO;
+                BigDecimal saleValue = BigDecimal.valueOf(Math.abs(m.getQuantity())).multiply(sellPrice);
+                soldByMonth.merge(ym, saleValue, BigDecimal::add);
+            }
+        }
+
+        // Build result list
+        return buckets.stream().map(ym -> {
+            BigDecimal added = addedByMonth.getOrDefault(ym, BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal sold  = soldByMonth.getOrDefault(ym, BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
+            return MonthlyFlowDTO.builder()
+                    .month(ym.atDay(1).format(labelFmt))
+                    .stockAddedValue(added)
+                    .stockSoldValue(sold)
+                    .netChange(added.subtract(sold).setScale(2, RoundingMode.HALF_UP))
+                    .build();
+        }).collect(Collectors.toList());
     }
 
     private BigDecimal totalValFromRatio(double ratio, BigDecimal totalCost) {

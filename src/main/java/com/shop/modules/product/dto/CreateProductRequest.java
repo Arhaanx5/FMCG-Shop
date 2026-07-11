@@ -82,4 +82,7 @@ public class CreateProductRequest {
     // Which unit to check for low stock
     // PRIMARY or SECONDARY
     private String lowStockUnit = "SECONDARY";
+
+    @Size(max = 20, message = "HSN code cannot exceed 20 characters")
+    private String hsnCode;
 }

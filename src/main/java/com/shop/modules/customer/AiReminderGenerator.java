@@ -20,6 +20,12 @@ public class AiReminderGenerator {
     @Value("${app.gemini.api-key:}")
     private String apiKey;
 
+    private final RestTemplate restTemplate;
+
+    public AiReminderGenerator(@org.springframework.beans.factory.annotation.Qualifier("shortTimeoutRestTemplate") RestTemplate restTemplate) {
+        this.restTemplate = restTemplate;
+    }
+
     @Cacheable(value = "aiReminders", key = "#customerId.toString() + '_' + #pendingAmount.toString() + '_' + #currentDate + '_' + #name + '_' + #shopName")
     public String generateReminderMessage(UUID customerId, BigDecimal pendingAmount, String currentDate, String name, String shopName) {
         log.info("Cache miss for customer {}. Generating fresh AI Hinglish reminder from Gemini API.", customerId);
@@ -66,12 +72,7 @@ public class AiReminderGenerator {
             headers.setContentType(MediaType.APPLICATION_JSON);
 
             HttpEntity<String> entity = new HttpEntity<>(jsonRequest, headers);
-            RestTemplate restTemplate = new RestTemplate();
-            
-            SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-            factory.setConnectTimeout(4000); 
-            factory.setReadTimeout(6000);    
-            restTemplate.setRequestFactory(factory);
+
 
             ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {

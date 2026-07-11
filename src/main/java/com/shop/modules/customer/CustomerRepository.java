@@ -18,7 +18,9 @@ public interface CustomerRepository extends JpaRepository<Customer, UUID> {
 
     Page<Customer> findByActiveTrue(Pageable pageable);
 
-    @Query("SELECT c FROM Customer c WHERE " +
+    // NOTE: LEFT JOIN FETCH with Pageable causes HHH90003004 (in-memory pagination).
+    // Use a plain query here; area will lazy-load in batches via @BatchSize on Customer.area
+    @Query(value = "SELECT c FROM Customer c WHERE " +
            "(COALESCE(:search, '') = '' OR " +
            " LOWER(c.name) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
            " LOWER(c.shopName) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
@@ -34,8 +36,7 @@ public interface CustomerRepository extends JpaRepository<Customer, UUID> {
 
     Page<Customer> findByNameContainingIgnoreCaseAndActiveTrue(String name, Pageable pageable);
 
-    @Query("SELECT c FROM Customer c WHERE " +
-           "c.lastOrderAt < :cutoff AND c.active = true")
+    @Query("SELECT c FROM Customer c LEFT JOIN FETCH c.area WHERE c.lastOrderAt < :cutoff AND c.active = true")
     List<Customer> findInactiveCustomers(
             @Param("cutoff") LocalDateTime cutoff);
 

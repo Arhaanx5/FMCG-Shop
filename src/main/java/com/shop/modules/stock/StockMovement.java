@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -59,6 +60,27 @@ public class StockMovement {
 
     @Column(name = "remarks", length = 500)
     private String remarks;
+
+    @Column(name = "supplier_invoice_date")
+    private LocalDate supplierInvoiceDate;
+
+    @Column(name = "supplier_name", length = 255)
+    private String supplierName;
+
+    @Column(name = "buy_price_without_tax")
+    private BigDecimal buyPriceWithoutTax;
+
+    @Column(name = "buy_price_with_tax")
+    private BigDecimal buyPriceWithTax;
+
+    @Column(name = "gst_percent")
+    private BigDecimal gstPercent;
+
+    @Column(name = "secondary_per_primary")
+    private Integer secondaryPerPrimary;
+
+    @Column(name = "receive_source", length = 50)
+    private String receiveSource;
 
     @PrePersist
     public void prePersist() {

@@ -16,29 +16,12 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-
-    // Convert entity to DTO
-    private UserResponse toResponse(User user) {
-        return UserResponse.builder()
-                .id(user.getId())
-                .name(user.getName())
-                .phone(user.getPhone())
-                .role(user.getRole())
-                .active(user.getActive())
-                .mustChangePassword(
-                        user.getMustChangePassword())
-                .lastLatitude(user.getLastLatitude())
-                .lastLongitude(user.getLastLongitude())
-                .lastLocationTime(user.getLastLocationTime())
-                .monthlySalary(user.getMonthlySalary())
-                .createdAt(user.getCreatedAt())
-                .build();
-    }
+    private final UserMapper userMapper;
 
     public List<UserResponse> getAllUsers() {
         return userRepository.findAll()
                 .stream()
-                .map(this::toResponse)
+                .map(userMapper::toResponse)
                 .collect(Collectors.toList());
     }
 
@@ -47,16 +30,17 @@ public class UserService {
                 .findByRoleAndActive(
                         UserRole.DELIVERY_BOY, true)
                 .stream()
-                .map(this::toResponse)
+                .map(userMapper::toResponse)
                 .collect(Collectors.toList());
     }
 
     public UserResponse getUserById(UUID id) {
-        return toResponse(userRepository.findById(id)
+        return userMapper.toResponse(userRepository.findById(id)
                 .orElseThrow(() ->
                         new RuntimeException(
                                 "User not found: " + id)));
     }
+
 
     public UserResponse createUser(CreateUserRequest req) {
 
@@ -93,7 +77,7 @@ public class UserService {
                 .monthlySalary(req.getMonthlySalary())
                 .build();
 
-        return toResponse(userRepository.save(user));
+        return userMapper.toResponse(userRepository.save(user));
     }
 
     public UserResponse updateUser(
@@ -138,7 +122,7 @@ public class UserService {
         }
         // If password is null or blank → keep existing hash unchanged
 
-        return toResponse(userRepository.save(user));
+        return userMapper.toResponse(userRepository.save(user));
     }
 
     public void toggleActive(UUID id) {

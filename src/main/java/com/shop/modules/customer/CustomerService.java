@@ -18,6 +18,7 @@ public class CustomerService {
     private final CustomerRepository customerRepository;
     private final AreaRepository areaRepository;
     private final com.shop.modules.billing.BillRepository billRepository;
+    private final CustomerMapper customerMapper;
 
     public java.math.BigDecimal calculateEffectiveCreditLimit(Customer customer) {
         if (customer.getCreditLimit() != null) {
@@ -41,77 +42,8 @@ public class CustomerService {
         return java.math.BigDecimal.ZERO;
     }
 
-    // Convert entity to DTO
-    private CustomerResponse toResponse(Customer customer) {
-        return toResponse(customer, false);
-    }
-
-    private CustomerResponse toResponse(Customer customer, boolean includeFinancials) {
-
-        boolean isInactive = customer.getLastOrderAt() != null
-                && customer.getLastOrderAt()
-                .isBefore(LocalDateTime.now().minusDays(30));
-
-        long daysActive = 0;
-        if (customer.getCreatedAt() != null) {
-            daysActive = java.time.temporal.ChronoUnit.DAYS.between(customer.getCreatedAt(), java.time.LocalDateTime.now());
-        }
-
-        java.math.BigDecimal cumulativePaid = java.math.BigDecimal.ZERO;
-        java.math.BigDecimal effectiveLimit = customer.getCreditLimit() != null ? customer.getCreditLimit() : java.math.BigDecimal.ZERO;
-        boolean autoEligible = false;
-
-        if (includeFinancials) {
-            cumulativePaid = billRepository.sumPaidAmountByCustomerId(customer.getId());
-            if (cumulativePaid == null) {
-                cumulativePaid = java.math.BigDecimal.ZERO;
-            }
-            if (customer.getCreditLimit() != null) {
-                effectiveLimit = customer.getCreditLimit();
-            } else if (daysActive >= 30 && cumulativePaid.compareTo(new java.math.BigDecimal("25000.00")) >= 0) {
-                effectiveLimit = new java.math.BigDecimal("50000.00");
-                autoEligible = true;
-            }
-        } else {
-            if (customer.getCreditLimit() != null) {
-                effectiveLimit = customer.getCreditLimit();
-            }
-        }
-
-        boolean isManualOverride = customer.getCreditLimit() != null;
-
-        return CustomerResponse.builder()
-                .id(customer.getId())
-                .name(customer.getName())
-                .customerCode(customer.getCustomerCode())
-                .shopName(customer.getShopName())
-                .phone(customer.getPhone())
-                .areaId(customer.getArea() != null
-                        ? customer.getArea().getId() : null)
-                .areaName(customer.getArea() != null
-                        ? customer.getArea().getName() : null)
-                .latitude(customer.getLatitude())
-                .longitude(customer.getLongitude())
-                .locationMethod(customer.getLocationMethod())
-                .hasLocation(customer.getLatitude() != null
-                        && customer.getLongitude() != null)
-                .totalPending(customer.getTotalPending())
-                .hasOutstanding(customer.getTotalPending()
-                        .compareTo(java.math.BigDecimal.ZERO) > 0)
-                .openingBalance(customer.getOpeningBalance())
-                .creditLimit(effectiveLimit)
-                .manualCreditLimit(customer.getCreditLimit())
-                .effectiveCreditLimit(effectiveLimit)
-                .cumulativePaidAmount(cumulativePaid)
-                .daysActive(daysActive)
-                .autoEligible(autoEligible)
-                .isManualOverride(isManualOverride)
-                .isNpa(customer.getIsNpa())
-                .lastOrderAt(customer.getLastOrderAt())
-                .inactive(isInactive)
-                .active(customer.getActive())
-                .createdAt(customer.getCreatedAt())
-                .build();
+    public CustomerResponse getCustomerByIdentifier(String identifier) {
+        return customerMapper.toResponse(findCustomerByIdentifier(identifier), true);
     }
 
     public Customer findCustomerByIdentifier(String identifier) {
@@ -129,9 +61,6 @@ public class CustomerService {
         }
     }
 
-    public CustomerResponse getCustomerByIdentifier(String identifier) {
-        return toResponse(findCustomerByIdentifier(identifier), true);
-    }
 
     private String generateCustomerCode() {
         int nextSeq = customerRepository.findMaxCustomerSequence() + 1;
@@ -141,13 +70,13 @@ public class CustomerService {
     public List<CustomerResponse> getAllCustomers() {
         return customerRepository.findByActiveTrue()
                 .stream()
-                .map(c -> toResponse(c, false))
+                .map(c -> customerMapper.toResponse(c, false))
                 .collect(Collectors.toList());
     }
 
     public org.springframework.data.domain.Page<CustomerResponse> getAllCustomers(org.springframework.data.domain.Pageable pageable) {
         return customerRepository.findByActiveTrue(pageable)
-                .map(c -> toResponse(c, false));
+                .map(c -> customerMapper.toResponse(c, false));
     }
 
     public org.springframework.data.domain.Page<CustomerResponse> getFilteredCustomersPaged(
@@ -157,11 +86,11 @@ public class CustomerService {
         String cleanSearch = (search != null && !search.isBlank()) ? search.trim() : null;
         
         return customerRepository.findCustomersFiltered(cleanSearch, cleanActive, pageable)
-                .map(c -> toResponse(c, false));
+                .map(c -> customerMapper.toResponse(c, false));
     }
 
     public CustomerResponse getCustomerById(UUID id) {
-        return toResponse(customerRepository.findById(id)
+        return customerMapper.toResponse(customerRepository.findById(id)
                 .orElseThrow(() ->
                         new RuntimeException(
                                 "Customer not found: " + id)), true);
@@ -177,7 +106,7 @@ public class CustomerService {
                 .findByNameContainingIgnoreCaseAndActiveTrue(
                         name.trim())
                 .stream()
-                .map(c -> toResponse(c, false))
+                .map(c -> customerMapper.toResponse(c, false))
                 .collect(Collectors.toList());
     }
 
@@ -188,7 +117,7 @@ public class CustomerService {
         }
         return customerRepository
                 .findByNameContainingIgnoreCaseAndActiveTrue(name.trim(), pageable)
-                .map(c -> toResponse(c, false));
+                .map(c -> customerMapper.toResponse(c, false));
     }
 
     public List<CustomerResponse> getInactiveCustomers() {
@@ -197,7 +126,7 @@ public class CustomerService {
         return customerRepository
                 .findInactiveCustomers(cutoff)
                 .stream()
-                .map(c -> toResponse(c, false))
+                .map(c -> customerMapper.toResponse(c, false))
                 .collect(Collectors.toList());
     }
 
@@ -248,7 +177,7 @@ public class CustomerService {
                 .active(true)
                 .build();
 
-        return toResponse(customerRepository.save(customer), true);
+        return customerMapper.toResponse(customerRepository.save(customer), true);
     }
 
     public CustomerResponse updateCustomer(
@@ -295,7 +224,7 @@ public class CustomerService {
             customer.setCreditLimit(req.getCreditLimit());
         }
 
-        return toResponse(customerRepository.save(customer), true);
+        return customerMapper.toResponse(customerRepository.save(customer), true);
     }
 
     public CustomerResponse updateLocation(
@@ -325,7 +254,7 @@ public class CustomerService {
         customer.setLongitude(lng);
         customer.setLocationMethod(method);
 
-        return toResponse(customerRepository.save(customer), true);
+        return customerMapper.toResponse(customerRepository.save(customer), true);
     }
 
     public void deactivateCustomer(String idOrCode) {

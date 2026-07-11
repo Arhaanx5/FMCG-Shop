@@ -5,12 +5,15 @@ import com.shop.modules.dashboard.dto.DashboardResponse;
 import com.shop.modules.dashboard.dto.MonthlyReportResponse;
 import com.shop.modules.dashboard.dto.SalesmanPerformanceResponse;
 import com.shop.modules.dashboard.dto.DashboardSummaryResponse;
+import com.shop.modules.backup.BackupService;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.Map;
 import com.shop.modules.dashboard.dto.DailyTrendPoint;
 
@@ -20,6 +23,7 @@ import com.shop.modules.dashboard.dto.DailyTrendPoint;
 public class DashboardController {
 
     private final DashboardService dashboardService;
+    private final BackupService backupService;
 
     @GetMapping("/summary")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
@@ -84,4 +88,16 @@ public class DashboardController {
                  ApiResponse.success(
                          dashboardService.getBusinessHealth()));
      }
-}
+
+     @GetMapping("/system-status")
+     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+     public ResponseEntity<ApiResponse<Map<String, Object>>> getSystemStatus() {
+         Map<String, Object> status = new HashMap<>();
+         LocalDateTime lastBackupTime = backupService.getLastRunTime();
+         status.put("lastBackupTime", lastBackupTime);
+         status.put("backupStale", lastBackupTime == null || lastBackupTime.isBefore(LocalDateTime.now().minusHours(25)));
+         return ResponseEntity.ok(
+                 ApiResponse.success(status)
+         );
+     }
+}

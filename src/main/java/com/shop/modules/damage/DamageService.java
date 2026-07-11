@@ -9,6 +9,11 @@ import com.shop.modules.product.UnitType;
 import com.shop.modules.stock.StockBatch;
 import com.shop.modules.stock.StockBatchRepository;
 import com.shop.modules.stock.StockService;
+import com.shop.modules.stock.StockRepository;
+import com.shop.modules.stock.StockInventoryService;
+import com.shop.modules.stock.StockMovementService;
+import com.shop.modules.stock.Stock;
+import com.shop.modules.stock.BatchStatus;
 import com.shop.modules.user.User;
 import com.shop.modules.user.UserRepository;
 import jakarta.persistence.EntityNotFoundException;
@@ -32,34 +37,17 @@ public class DamageService {
     private final StockBatchRepository batchRepository;
     private final StockService stockService;
     private final UserRepository userRepository;
+    private final StockRepository stockRepository;
+    private final StockInventoryService inventoryService;
+    private final StockMovementService movementService;
+    private final DamageMapper damageMapper;
 
-    // Convert entity to DTO
-    private DamageResponse toResponse(DamageLog log) {
-        return DamageResponse.builder()
-                .id(log.getId())
-                .productId(log.getProduct().getId())
-                .productName(log.getProduct().getName())
-                .brand(log.getProduct().getBrand())
-                .batchNumber(log.getBatch() != null
-                        ? log.getBatch().getBatchNumber() : null)
-                .unitType(log.getUnitType())
-                .quantity(log.getQuantity())
-                .reason(log.getReason())
-                .valueLoss(log.getValueLoss())
-                .unitLevel(log.getUnitLevel())
-                .claimStatus(log.getClaimStatus())
-                .notes(log.getNotes())
-                .loggedBy(log.getLoggedBy() != null
-                        ? log.getLoggedBy().getName() : null)
-                .loggedAt(log.getLoggedAt())
-                .supplierName(log.getSupplierName())
-                .build();
-    }
+
 
     public List<DamageResponse> getAllDamageLogs() {
         return damageLogRepository.findAll()
                 .stream()
-                .map(this::toResponse)
+                .map(damageMapper::toResponse)
                 .collect(Collectors.toList());
     }
 
@@ -70,7 +58,7 @@ public class DamageService {
         LocalDateTime end = start.plusMonths(1);
         return damageLogRepository.findForMonth(start, end)
                 .stream()
-                .map(this::toResponse)
+                .map(damageMapper::toResponse)
                 .collect(Collectors.toList());
     }
 
@@ -201,7 +189,7 @@ public class DamageService {
             );
         }
 
-        return toResponse(damageLogRepository.save(log));
+        return damageMapper.toResponse(damageLogRepository.save(log));
     }
 
     // ── Delete damage log (ADMIN only) ──
@@ -270,6 +258,105 @@ public class DamageService {
             log.setNotes(notes);
         }
 
-        return toResponse(damageLogRepository.save(log));
+        return damageMapper.toResponse(damageLogRepository.save(log));
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void markBatchDamage(UUID batchId, int quantity, String damageType, String reason, String username) {
+        if (quantity <= 0) {
+            throw new RuntimeException("Quantity must be greater than 0");
+        }
+
+        StockBatch batch = batchRepository.findByIdForUpdate(batchId)
+                .orElseThrow(() -> new RuntimeException("Batch not found: " + batchId));
+
+        int available = batch.getSecondaryRemaining() != null ? batch.getSecondaryRemaining() : 0;
+        if (available < quantity) {
+            throw new RuntimeException("Insufficient stock in batch " + batch.getBatchNumber()
+                    + " | Available: " + available + " | Requested: " + quantity);
+        }
+
+        Product product = batch.getProduct();
+        
+        // Compute value loss
+        BigDecimal buyPricePerSecondary = product.getBuyPricePerSecondary();
+        if (buyPricePerSecondary == null || buyPricePerSecondary.compareTo(BigDecimal.ZERO) == 0) {
+            buyPricePerSecondary = batch.getBuyPricePerSecondary(product.getSecondaryPerPrimary());
+        }
+        BigDecimal valueLoss = buyPricePerSecondary.multiply(BigDecimal.valueOf(quantity));
+
+        User user = null;
+        if (username != null && !username.equals("System")) {
+            user = userRepository.findByPhone(username).orElse(null);
+        }
+
+        // Map damageType to ClaimStatus
+        ClaimStatus claimStatus = ClaimStatus.NON_CLAIMABLE;
+        if ("PERMANENT".equalsIgnoreCase(damageType)) {
+            claimStatus = ClaimStatus.PERMANENT_LOSS;
+        } else if ("RECLAIMABLE".equalsIgnoreCase(damageType)) {
+            claimStatus = ClaimStatus.CLAIMABLE;
+        }
+
+        // Map reason string to DamageReason enum
+        DamageReason damageReason = DamageReason.OTHER;
+        String notes = reason;
+        try {
+            damageReason = DamageReason.valueOf(reason.toUpperCase().trim());
+            notes = "Marked as damage from batch action.";
+        } catch (IllegalArgumentException e) {
+            // Keep DamageReason.OTHER and use the original reason as notes
+        }
+
+        // Create DamageLog
+        UnitType unitType = UnitType.SINGLE;
+        if (product.getSecondaryUnit() != null) {
+            try {
+                unitType = UnitType.valueOf(product.getSecondaryUnit().toUpperCase().trim());
+            } catch (Exception ignored) {}
+        }
+
+        DamageLog damage = DamageLog.builder()
+                .product(product)
+                .batch(batch)
+                .unitType(unitType)
+                .unitLevel(UnitLevel.SECONDARY)
+                .claimStatus(claimStatus)
+                .quantity(quantity)
+                .reason(damageReason)
+                .valueLoss(valueLoss)
+                .notes(notes)
+                .loggedBy(user)
+                .build();
+        damageLogRepository.save(damage);
+
+        // Deduct from batch
+        int qtyBefore = batch.getSecondaryRemaining();
+        int qtyAfter = qtyBefore - quantity;
+        batch.setSecondaryRemaining(qtyAfter);
+        batch.setExhausted(qtyAfter == 0);
+        batchRepository.save(batch);
+
+        // Deduct from total stock
+        Stock stock = inventoryService.getOrCreateStock(product.getId());
+        int totalQtyBefore = stock.getTotalSecondaryUnits();
+        int totalQtyAfter = Math.max(0, totalQtyBefore - quantity);
+        stock.setTotalSecondaryUnits(totalQtyAfter);
+        inventoryService.normalizeStock(stock, product);
+        stockRepository.save(stock);
+
+        // Log movement as DAMAGE
+        movementService.logMovement(
+                product,
+                batch,
+                "DAMAGE",
+                -quantity,
+                totalQtyBefore,
+                totalQtyAfter,
+                buyPricePerSecondary,
+                username,
+                batch.getInvoiceNumber(),
+                reason
+        );
     }
 }

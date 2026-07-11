@@ -32,15 +32,19 @@ public interface BillRepository extends JpaRepository<Bill, UUID> {
     @Query(value = "SELECT nextval('bill_number_seq')", nativeQuery = true)
     Long getNextBillSequence();
 
-    @EntityGraph(attributePaths = {"customer", "createdBy", "items.product"})
+    // NOTE: @EntityGraph intentionally excludes "items.product" (a collection) here.
+    // Including a collection in @EntityGraph with Pageable causes Hibernate to load ALL rows
+    // into memory before paginating (HHH90003004). With OSIV enabled, items lazy-load fine
+    // during JSON serialization in toResponse().
+    @EntityGraph(attributePaths = {"customer", "createdBy"})
     @Query("SELECT b FROM Bill b WHERE " +
            "(:status IS NULL OR b.status = :status) AND " +
            "(:excludeDrafts = false OR b.status <> 'DRAFT') AND " +
            "(:salesmanId IS NULL OR b.createdBy.id = :salesmanId) AND " +
-           "(:search IS NULL OR LOWER(b.billNumber) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
-           "                  LOWER(b.customer.name) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
-           "                  LOWER(b.customer.shopName) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
-           "                  LOWER(b.customer.phone) LIKE LOWER(CONCAT('%', :search, '%')))")
+           "(COALESCE(:search, '') = '' OR LOWER(b.billNumber) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+           "                              LOWER(b.customer.name) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+           "                              LOWER(b.customer.shopName) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+           "                              LOWER(b.customer.phone) LIKE LOWER(CONCAT('%', :search, '%')))")
     org.springframework.data.domain.Page<Bill> findBillsPaged(
             @Param("status") BillStatus status,
             @Param("excludeDrafts") boolean excludeDrafts,
@@ -48,7 +52,8 @@ public interface BillRepository extends JpaRepository<Bill, UUID> {
             @Param("search") String search,
             org.springframework.data.domain.Pageable pageable);
 
-    @EntityGraph(attributePaths = {"customer", "createdBy", "items.product"})
+    // Same reasoning: exclude collection from EntityGraph on paged query to avoid in-memory pagination.
+    @EntityGraph(attributePaths = {"customer", "createdBy"})
     @Query("SELECT b FROM Bill b WHERE " +
            "b.customer.id = :customerId AND " +
            "(:salesmanId IS NULL OR b.createdBy.id = :salesmanId)")
@@ -57,10 +62,17 @@ public interface BillRepository extends JpaRepository<Bill, UUID> {
             @Param("salesmanId") UUID salesmanId,
             org.springframework.data.domain.Pageable pageable);
 
-    @EntityGraph(attributePaths = {"customer", "createdBy", "items.product"})
+    @EntityGraph(attributePaths = {"customer", "createdBy", "items.product", "items.batch"})
     @Query("SELECT b FROM Bill b WHERE " +
            "b.createdAt BETWEEN :start AND :end")
     List<Bill> findBillsBetween(
+            @Param("start") LocalDateTime start,
+            @Param("end") LocalDateTime end);
+
+    @EntityGraph(attributePaths = {"customer"})
+    @Query("SELECT b FROM Bill b WHERE " +
+           "b.createdAt BETWEEN :start AND :end")
+    List<Bill> findBillsBetweenBasic(
             @Param("start") LocalDateTime start,
             @Param("end") LocalDateTime end);
 
