@@ -43,8 +43,11 @@ public class Gstr1ReportService {
         List<Bill> bills = billRepository.findBillsBetween(start, end);
 
         // 1. Missing HSN Blocking Validation Check
+        // Include PAID, PARTIAL, and CONFIRMED bills (exclude DRAFT and CANCELLED)
         List<Bill> confirmedBills = bills.stream()
-                .filter(b -> b.getStatus() == BillStatus.CONFIRMED)
+                .filter(b -> b.getStatus() == BillStatus.PAID
+                        || b.getStatus() == BillStatus.PARTIAL
+                        || b.getStatus() == BillStatus.CONFIRMED)
                 .collect(Collectors.toList());
 
         List<String> missingHsnProducts = new ArrayList<>();
@@ -171,7 +174,7 @@ public class Gstr1ReportService {
         // 4. Build Document Summary
         String fromInum = "";
         String toInum = "";
-        int totalCount = bills.size();
+        int totalCount = confirmedBills.size();
         int cancelledCount = 0;
 
         if (!bills.isEmpty()) {

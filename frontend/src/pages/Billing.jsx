@@ -1187,6 +1187,45 @@ export default function Billing() {
       }
     }
 
+    // ─── Frontend Stock Validation (before preview opens) ───────────────────
+    const stockErrors = []
+    for (const item of cart) {
+      if (item.isOffer) continue // offer items use separate offer stock
+      const product = products.find(p => String(p.id).toLowerCase() === String(item.productId).toLowerCase())
+      if (!product) continue
+      const secPerPri = Number(product.secondaryPerPrimary || 1)
+      const qPri = Number(item.quantityPrimary || 0)
+      const qSec = Number(item.quantitySecondary || 0)
+      const totalSecRequested = (qPri * secPerPri) + qSec
+      if (totalSecRequested === 0) continue
+
+      // Look up in virtualStockCache (case-insensitive key match)
+      const cacheKey = Object.keys(virtualStockCache).find(k => k.toLowerCase() === String(item.productId).toLowerCase())
+      const cacheItem = cacheKey ? virtualStockCache[cacheKey] : undefined
+
+      let available = null
+      if (cacheItem !== undefined && cacheItem !== null) {
+        available = typeof cacheItem === 'object' ? cacheItem.virtual : Number(cacheItem)
+      } else if (product.totalSecondaryUnits !== undefined && product.totalSecondaryUnits !== null) {
+        available = Number(product.totalSecondaryUnits)
+      }
+
+      if (available !== null && totalSecRequested > available) {
+        const primaryUnit = product.primaryUnit || 'BOX'
+        const secondaryUnit = product.secondaryUnit || 'units'
+        const availPrimary = Math.floor(available / secPerPri)
+        const availSecRem = available % secPerPri
+        stockErrors.push(
+          `Out of stock: ${item.name} — Requested: ${qPri > 0 ? qPri + ' ' + primaryUnit : ''}${qPri > 0 && qSec > 0 ? ' + ' : ''}${qSec > 0 ? qSec + ' ' + secondaryUnit : ''} | Available: ${availPrimary} ${primaryUnit}, ${availSecRem} ${secondaryUnit}`
+        )
+      }
+    }
+    if (stockErrors.length > 0) {
+      stockErrors.forEach(err => toast.error(err))
+      return
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
     const activeUser = localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')) : null
     
     // Generate mock bill items
