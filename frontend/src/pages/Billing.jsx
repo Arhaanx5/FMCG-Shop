@@ -1158,7 +1158,6 @@ export default function Billing() {
   const grandTotal = Math.max(0, Math.round((subtotal - Number(discount || 0)) * 100) / 100)
 
   const handlePreviewCartBill = () => {
-    toast.info('Running stock validation (v1.0.3)...')
     console.log('[STOCK VALIDATION] Entry point triggered. Cart:', cart)
     if (!customerId) { toast.error('Please select a customer'); return }
     if (cart.length === 0) { toast.error('Cart is empty'); return }
