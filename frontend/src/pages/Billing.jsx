@@ -1158,6 +1158,8 @@ export default function Billing() {
   const grandTotal = Math.max(0, Math.round((subtotal - Number(discount || 0)) * 100) / 100)
 
   const handlePreviewCartBill = () => {
+    toast.info('Running stock validation (v1.0.3)...')
+    console.log('[STOCK VALIDATION] Entry point triggered. Cart:', cart)
     if (!customerId) { toast.error('Please select a customer'); return }
     if (cart.length === 0) { toast.error('Cart is empty'); return }
     const hasItems = cart.some(item => Number(item.quantityPrimary || 0) > 0 || Number(item.quantitySecondary || 0) > 0)
@@ -1192,7 +1194,10 @@ export default function Billing() {
     for (const item of cart) {
       if (item.isOffer) continue // offer items use separate offer stock
       const product = products.find(p => String(p.id).toLowerCase() === String(item.productId).toLowerCase())
-      if (!product) continue
+      if (!product) {
+        console.warn(`[STOCK VALIDATION] Product not found in products list for item: ${item.name} (ID: ${item.productId})`)
+        continue
+      }
       const secPerPri = Number(product.secondaryPerPrimary || 1)
       const qPri = Number(item.quantityPrimary || 0)
       const qSec = Number(item.quantitySecondary || 0)
@@ -1204,26 +1209,33 @@ export default function Billing() {
       const cacheItem = cacheKey ? virtualStockCache[cacheKey] : undefined
 
       let available = null
+      let source = 'NONE'
       if (cacheItem !== undefined && cacheItem !== null) {
         available = typeof cacheItem === 'object' ? cacheItem.virtual : Number(cacheItem)
+        source = 'VIRTUAL_CACHE'
       } else if (product.totalSecondaryUnits !== undefined && product.totalSecondaryUnits !== null) {
         available = Number(product.totalSecondaryUnits)
+        source = 'PRODUCT_TOTAL_UNITS'
       }
+
+      console.log(`[STOCK VALIDATION] Item: ${item.name} | Requested Sec: ${totalSecRequested} | Available Sec: ${available} (Source: ${source})`)
 
       if (available !== null && totalSecRequested > available) {
         const primaryUnit = product.primaryUnit || 'BOX'
         const secondaryUnit = product.secondaryUnit || 'units'
         const availPrimary = Math.floor(available / secPerPri)
         const availSecRem = available % secPerPri
-        stockErrors.push(
-          `Out of stock: ${item.name} — Requested: ${qPri > 0 ? qPri + ' ' + primaryUnit : ''}${qPri > 0 && qSec > 0 ? ' + ' : ''}${qSec > 0 ? qSec + ' ' + secondaryUnit : ''} | Available: ${availPrimary} ${primaryUnit}, ${availSecRem} ${secondaryUnit}`
-        )
+        const errMsg = `Out of stock: ${item.name} — Requested: ${qPri > 0 ? qPri + ' ' + primaryUnit : ''}${qPri > 0 && qSec > 0 ? ' + ' : ''}${qSec > 0 ? qSec + ' ' + secondaryUnit : ''} | Available: ${availPrimary} ${primaryUnit}, ${availSecRem} ${secondaryUnit}`
+        console.error(`[STOCK VALIDATION] Validation FAILED: ${errMsg}`)
+        stockErrors.push(errMsg)
       }
     }
     if (stockErrors.length > 0) {
+      console.warn(`[STOCK VALIDATION] Blocking preview. Errors:`, stockErrors)
       stockErrors.forEach(err => toast.error(err))
       return
     }
+    console.log('[STOCK VALIDATION] All items passed validation. Opening preview...')
     // ────────────────────────────────────────────────────────────────────────
 
     const activeUser = localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')) : null
@@ -1841,8 +1853,9 @@ Thank you for doing business with Lari Traders!`
 
   return (
     <div className="page-container">
-      <div className="page-header">
+      <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: '10px', flexWrap: 'wrap' }}>
         <h2 className="page-title">Billing</h2>
+        <span style={{ fontSize: '10px', color: 'var(--color-text-muted)', background: 'var(--color-surface-2)', padding: '4px 10px', borderRadius: 'var(--radius-full)', border: '1px solid var(--color-border)', fontWeight: 'var(--font-weight-semibold)' }}>v1.0.3-stock-fix</span>
       </div>
 
       <div className="tabs">
