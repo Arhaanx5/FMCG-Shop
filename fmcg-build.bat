@@ -14,7 +14,7 @@ if %ERRORLEVEL% NEQ 0 (
 )
 echo.
 echo [2/2] Uploading and deploying to Cloudflare Pages...
-call npx wrangler pages deploy dist --project-name lari-traders-uat-ui
+call npx wrangler pages deploy dist --project-name lari-traders-uat-ui --branch main
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo [ERROR] Cloudflare Pages deployment failed!
